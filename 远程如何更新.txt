@@ -1,0 +1,72 @@
+下次官方有更新，在 F:\projects\deepseek-harness 里做（不要再用 D 盘那份 zip）。
+
+
+cd F:\projects\deepseek-harness
+# 1. 把官方最新历史拉到本机（不改你正在编辑的文件）
+git fetch upstream
+# 2. 把官方 master 叠到你当前分支上，百炼那次 commit 会跟在后面
+git rebase upstream/master
+# 3. 若有冲突：打开 git 标出的文件，改完后
+#    git add <那些文件>
+#    git rebase --continue
+#    想放弃这次 rebase：git rebase --abort
+# 4. 依赖和生成物
+pnpm install
+# 5. 推到你的 fork（rebase 改写了历史，需要 --force-with-lease，不要用 --force）
+git push --force-with-lease origin master
+冲突多半只在接线处：packages/bundle/base/cordis.patch.yml、package.json、apps/desktop/src/main.ts、project-manager.ts。packages/web/web-search-bailian/ 一般不用动。
+
+--force-with-lease 的原因：rebase 之后本地 master 的“形状”变了，普通 git push 会被拒。它只会在 GitHub 上的 master 仍是你上次推送的那个提交时才覆盖；别人如果又推了新提交，它会失败而不是盲盖。
+
+网页上的 Sync fork 也可以用，但有自定义 commit 时容易多出一个 merge。更稳的是上面这套 fetch + rebase。
+
+合完如果改到了 Session 事件或文档地图，再跑：
+
+
+pnpm run gen-tsconfig-paths
+pnpm run gen-doc-graphs
+pnpm run gen-config-catalog
+pnpm run gen-plugin-packages
+新事件类型才需要重新 persistence-changes --record。只是官方改了别处、百炼事件没动，就不用 record。
+
+----------------------------------------------------------------------------------------------------
+
+如果出了新版本，本地如果合并完后。需要重新测试下吗
+
+要测，但只测和你的补丁相交的那一层，不必每次都跑全仓。
+
+官方更新之后，你的百炼代码多半没改，变的是它旁边的接线（ctx.web、Desktop 启动、bundle）。所以目标是：新版本上，百炼还能搜、trial 还能注入、默认 DeepSeek 搜索没被你改坏。
+
+每次 rebase 完都跑
+在 F:\projects\deepseek-harness：
+
+
+pnpm install
+pnpm exec vitest run packages/web/web-search-bailian packages/bundle/base/tests/base.spec.ts apps/desktop/tests/trial-defaults.spec.ts apps/desktop/tests/desktop-package-environment.spec.ts apps/desktop/tests/installer-packaging.spec.ts apps/desktop/tests/project-manager.spec.ts
+这一组大约一两分钟，覆盖：provider、base 里 disabled 插件、trial JSON、打包 extraResources、首次 patch 不覆盖。
+
+有冲突且动过 main.ts / project-manager.ts 时，再加上相关 desktop 测试（至少 project-manager 已经在上面）。
+
+能编过再算稳：
+
+
+pnpm run build
+（或至少 tsc -b tsconfig.host.json。上次 micromark 那种问题就是在这一步才爆。）
+
+冲突碰到哪类文件，再加哪类检查
+冲突/改动落在	再跑
+Session 事件、known-event-types、persistence
+pnpm --silent run verify-persistence-changes --json
+README / capability-seams / catalog
+pnpm run doc-sync 或至少 pairing + gen-doc-graphs
+cordis.patch.yml / bundle package.json
+上面的 base.spec.ts 已经够；可再 pnpm dsh web 看能否起来
+Desktop 启动 / Host env
+打包试用安装包才是最终验证；日常用 project-manager + trial-defaults 单测即可
+不必每次跑
+全量 pnpm run test / test:coverage（CI 才需要）
+没改 GUI 就不用浏览器点一遍
+没改搜索协议就不用带 DEEPSEEK_API_KEY 的真网 e2e
+真网抽查（可选、有密钥时）：开一次 Web，确认默认仍是 DeepSeek 搜索；用 trial patch 打开百炼后，搜一条，session 里有 web/bailian-search-llm-request 且不含 key。
+
+结论： 每次合完官方新版本，跑「install + 那 6 个 vitest + 一次 host 编译」就够作为出门检查。全套回归只在你大改接线、或准备对外发安装包时再做。
