@@ -62,10 +62,12 @@ export class DesktopProjectManager {
   /**
    * @param paths - Electron-owned package state and reserved desktop profile paths.
    * @param runtime - location of the bundled application runtime.
+   * @param initialPatch - optional first-launch profile patch from a trial installer.
    */
   constructor(
     readonly paths: DesktopPaths,
     readonly runtime: { readonly dsh: string },
+    private readonly initialPatch?: string,
   ) {}
 
   /**
@@ -85,7 +87,7 @@ export class DesktopProjectManager {
       // Validation only: an unreadable or mismatched runtime descriptor stops preparation before the Host starts.
       readDesktopRuntime(this.runtime.dsh)
       migrateProfileSettings(this.paths.profile)
-      createPluginProfile(this.paths.profile)
+      createPluginProfile(this.paths.profile, this.initialPatch)
       removeLinkProjections(this.paths.profile)
     })
   }
@@ -170,7 +172,16 @@ export function createDevelopmentProjectMetadata(projectDir: string, release: De
   writeFileSync(join(projectDir, 'pnpm-workspace.yaml'), workspaceFile(), { mode: 0o600 })
 }
 
-/** Create the first external plugin profile without running a package manager. */
-export function createPluginProfile(projectDir: string): void {
+/**
+ * Create the first external plugin profile without running a package manager.
+ * @param projectDir - Desktop profile directory.
+ * @param initialPatch - written only when `cordis.patch.yml` does not already exist.
+ */
+export function createPluginProfile(projectDir: string, initialPatch?: string): void {
+  const patchPath = join(projectDir, 'cordis.patch.yml')
+  if (initialPatch !== undefined && !existsSync(patchPath)) {
+    mkdirSync(projectDir, { recursive: true, mode: 0o700 })
+    writeFileSync(patchPath, initialPatch.endsWith('\n') ? initialPatch : `${initialPatch}\n`, { flag: 'wx', mode: 0o600 })
+  }
   initProfile(projectDir, WEB_PROFILE.bundles)
 }
