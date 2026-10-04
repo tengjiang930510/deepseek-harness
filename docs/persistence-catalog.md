@@ -81,6 +81,7 @@ The [format references](persistence-changes/historical-formats/README.md) cover 
 | `event:turn/end` | event | `0f8512903d94f57a4748fa1a2092e64342856796684e6b8343db685b192745ce` | [`{ type: "turn/end" }`](#persistence-type-sha256-0f8512903d94f57a4748fa1a2092e64342856796684e6b8343db685b192745ce) |
 | `event:turn/start` | event | `aa0957eca50aeb28bcd2e6930b95809926edacb550c8c340ba526ba6b861b3d8` | [`{ type: "turn/start" }`](#persistence-type-sha256-aa0957eca50aeb28bcd2e6930b95809926edacb550c8c340ba526ba6b861b3d8) |
 | `event:user/message` | event | `5bb231bc5afdb532a6898a20604e76bf0c1db438bfcdc17d4847dceaddc02451` | [`{ type: "user/message" }`](#persistence-type-sha256-5bb231bc5afdb532a6898a20604e76bf0c1db438bfcdc17d4847dceaddc02451) |
+| `event:web/bailian-search-llm-request` | event | `95d60acfcdeb2b92ee667b2a75a3f5879a41208dd29a06add98a8a1d7aed3c99` | [`{ type: "web/bailian-search-llm-request" }`](#persistence-type-sha256-95d60acfcdeb2b92ee667b2a75a3f5879a41208dd29a06add98a8a1d7aed3c99) |
 | `event:web/deepseek-search-llm-request` | event | `0c556c9b9f2a96238a6b9bbb99e748206cbff2ed6203041c9571f04ae5802f52` | [`{ type: "web/deepseek-search-llm-request" }`](#persistence-type-sha256-0c556c9b9f2a96238a6b9bbb99e748206cbff2ed6203041c9571f04ae5802f52) |
 | `event:working-directory/change` | event | `124aa62078ca3311353b39cc3bf6c75da281338be6bbf672f8b361d828cddca3` | [`{ type: "working-directory/change" }`](#persistence-type-sha256-124aa62078ca3311353b39cc3bf6c75da281338be6bbf672f8b361d828cddca3) |
 | `event:workspace/changes` | event | `e308ccf867a5398e316e0af8cb6ce238a8d33a63b9b384c8250a686786285f72` | [`{ type: "workspace/changes" }`](#persistence-type-sha256-e308ccf867a5398e316e0af8cb6ce238a8d33a63b9b384c8250a686786285f72) |
@@ -1293,6 +1294,17 @@ Source: [`packages/core/session/src/types.ts:315`](../packages/core/session/src/
 
 ### `web/*`
 
+<a id="webbailian-search-llm-request--log-only"></a>
+
+#### `web/bailian-search-llm-request` — log-only
+
+```ts persistence-catalog
+/** Auxiliary Bailian search request recorded before dispatch. */
+'web/bailian-search-llm-request': BailianSearchLlmRequest
+```
+
+Source: [`packages/web/web-search-bailian/src/provider.ts:23`](../packages/web/web-search-bailian/src/provider.ts)
+
 <a id="webdeepseek-search-llm-request--log-only"></a>
 
 #### `web/deepseek-search-llm-request` — log-only
@@ -2411,6 +2423,14 @@ SHA-256: `3e0eff5946255ff05d88a10839c60305135801f97794ea48d409f8503303317e`
 
 `"request/header"`
 
+<a id="persistence-type-sha256-db3a0dab525a755036dfd23cb66626397bbd94bc6fd74eba1a54c326b3366880"></a>
+
+### `"required"`
+
+SHA-256: `db3a0dab525a755036dfd23cb66626397bbd94bc6fd74eba1a54c326b3366880`
+
+`"required"`
+
 <a id="persistence-type-sha256-5bd310104cfe448e530beb11422d2f791e2e32e8e95fdc528a15f9ca693dae75"></a>
 
 ### `"resource-cost"`
@@ -2987,6 +3007,14 @@ SHA-256: `de25352d2dc4196309bd84b5bac6319f6d5c898ea0e82bb5ae66c5738d0d426f`
 
 `"user/message"`
 
+<a id="persistence-type-sha256-aef2cc36ef042ccb7812851e1aec7a34575314da2874bd009d9fff4d59c11c20"></a>
+
+### `"web/bailian-search-llm-request"`
+
+SHA-256: `aef2cc36ef042ccb7812851e1aec7a34575314da2874bd009d9fff4d59c11c20`
+
+`"web/bailian-search-llm-request"`
+
 <a id="persistence-type-sha256-6f611bed14b2106542480c4a230b4a83baf76dc0d8ac0cd13319a7cb8dae7675"></a>
 
 ### `"web/deepseek-search-llm-request"`
@@ -3229,6 +3257,23 @@ One of:
 SHA-256: `84bbfdce7d2eab5b0c53e72ff7406db856c8bfd621b965b72fd86598ba493bf7`
 
 Array of [`AssistantStreamRecord`](#persistence-type-sha256-33341aac09312300de5a178e6cc6f6544a4876f7f710cfea55eda473c8d329ef).
+
+<a id="persistence-type-sha256-0df5a8d55183853431ca3035c2c857e0a3b01f5486587a3c749f8f62545bef65"></a>
+
+<a id="persistence-type-bailiansearchllmrequest"></a>
+
+<a id="persistence-type-packageswebweb-search-bailiansrcprovidertsbailiansearchllmrequest"></a>
+
+### `BailianSearchLlmRequest`
+
+SHA-256: `0df5a8d55183853431ca3035c2c857e0a3b01f5486587a3c749f8f62545bef65`
+
+Sources: [`packages/web/web-search-bailian/src/provider.ts:10`](../packages/web/web-search-bailian/src/provider.ts)
+
+| Property | Presence | Type |
+|---|---|---|
+| `body` | required | [`{ input, model, tool_choice, tools }`](#persistence-type-sha256-c384c55ef12a5a46d61a547c8547d7d2ab61c6f7fae942fb5932c3e406e7a4de) |
+| `endpoint` | required | `string` |
 
 <a id="persistence-type-sha256-ada310bf0bdb8fed51f3b56ea63f6ea6b18bbd587f04fccb63a14ab0b2a24e05"></a>
 
@@ -5631,6 +5676,16 @@ SHA-256: `dacf3d5f3e4ff619c1320e64a48dec5e7ecd7870bece65fbd449a0e63adfa521`
 
 `true`
 
+<a id="persistence-type-sha256-225306c59d6d377bf6f285ae24d0f9a41e8052df9afe696ab22b0c03def7b715"></a>
+
+### `tuple (1 positions)`
+
+SHA-256: `225306c59d6d377bf6f285ae24d0f9a41e8052df9afe696ab22b0c03def7b715`
+
+| Position | Presence | Type |
+|---|---|---|
+| 0 | required | [`{ type: "web_search" }`](#persistence-type-sha256-58b4d71b2a49e2680f2fc3ebbd77fe8bd62e55e11b959765233862170ee44362) |
+
 <a id="persistence-type-sha256-4aed17ec726b5397c29f6cb4bcd7905dc1a12bb6140f1657f073cd24380f2af8"></a>
 
 ### `tuple (1 positions)`
@@ -6424,6 +6479,21 @@ Sources: [`packages/core/session/src/types.ts:435`](../packages/core/session/src
 | Property | Presence | Type |
 |---|---|---|
 | `inherited` | optional | `true` |
+
+<a id="persistence-type-sha256-c384c55ef12a5a46d61a547c8547d7d2ab61c6f7fae942fb5932c3e406e7a4de"></a>
+
+### `{ input, model, tool_choice, tools }`
+
+SHA-256: `c384c55ef12a5a46d61a547c8547d7d2ab61c6f7fae942fb5932c3e406e7a4de`
+
+Sources: [`packages/web/web-search-bailian/src/provider.ts:12`](../packages/web/web-search-bailian/src/provider.ts)
+
+| Property | Presence | Type |
+|---|---|---|
+| `input` | required | `string` |
+| `model` | required | `string` |
+| `tool_choice` | required | `"required"` |
+| `tools` | required | [`tuple (1 positions)`](#persistence-type-sha256-225306c59d6d377bf6f285ae24d0f9a41e8052df9afe696ab22b0c03def7b715) |
 
 <a id="persistence-type-sha256-d4d960185026266ed7bd127be1e252234689e8b4890c7c2677a644ba58f35401"></a>
 
@@ -9206,6 +9276,22 @@ SHA-256: `5bb231bc5afdb532a6898a20604e76bf0c1db438bfcdc17d4847dceaddc02451`
 | `time` | required | `number` |
 | `type` | required | `"user/message"` |
 
+<a id="persistence-type-sha256-95d60acfcdeb2b92ee667b2a75a3f5879a41208dd29a06add98a8a1d7aed3c99"></a>
+
+<a id="persistence-type-eventwebbailian-search-llm-request"></a>
+
+### `{ type: "web/bailian-search-llm-request" }`
+
+SHA-256: `95d60acfcdeb2b92ee667b2a75a3f5879a41208dd29a06add98a8a1d7aed3c99`
+
+| Property | Presence | Type |
+|---|---|---|
+| `data` | required | [`BailianSearchLlmRequest`](#persistence-type-sha256-0df5a8d55183853431ca3035c2c857e0a3b01f5486587a3c749f8f62545bef65) |
+| `ignorable` | optional | `true` |
+| `seq` | required | `number` |
+| `time` | required | `number` |
+| `type` | required | `"web/bailian-search-llm-request"` |
+
 <a id="persistence-type-sha256-0c556c9b9f2a96238a6b9bbb99e748206cbff2ed6203041c9571f04ae5802f52"></a>
 
 <a id="persistence-type-eventwebdeepseek-search-llm-request"></a>
@@ -9221,6 +9307,18 @@ SHA-256: `0c556c9b9f2a96238a6b9bbb99e748206cbff2ed6203041c9571f04ae5802f52`
 | `seq` | required | `number` |
 | `time` | required | `number` |
 | `type` | required | `"web/deepseek-search-llm-request"` |
+
+<a id="persistence-type-sha256-58b4d71b2a49e2680f2fc3ebbd77fe8bd62e55e11b959765233862170ee44362"></a>
+
+### `{ type: "web_search" }`
+
+SHA-256: `58b4d71b2a49e2680f2fc3ebbd77fe8bd62e55e11b959765233862170ee44362`
+
+Sources: [`packages/web/web-search-bailian/src/provider.ts:15`](../packages/web/web-search-bailian/src/provider.ts)
+
+| Property | Presence | Type |
+|---|---|---|
+| `type` | required | `"web_search"` |
 
 <a id="persistence-type-sha256-2d11ca7b0d4493e244b74eba093227866b33249841e59a1e9bf56afed38604c3"></a>
 

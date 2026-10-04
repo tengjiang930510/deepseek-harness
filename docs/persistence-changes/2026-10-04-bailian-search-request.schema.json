@@ -1,0 +1,136 @@
+{
+  "formatVersion": 2,
+  "roots": [
+    {
+      "key": "event:web/bailian-search-llm-request",
+      "kind": "event",
+      "event": "web/bailian-search-llm-request",
+      "surface": false,
+      "digest": "95d60acfcdeb2b92ee667b2a75a3f5879a41208dd29a06add98a8a1d7aed3c99",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 8,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 9,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 9,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 10,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "body",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "endpoint",
+                "type": 3,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "input",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "model",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "tool_choice",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "tools",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "literal",
+            "value": "required"
+          },
+          {
+            "kind": "tuple",
+            "elements": [
+              {
+                "type": 6,
+                "optional": false,
+                "rest": false
+              }
+            ]
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "type",
+                "type": 7,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "web_search"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "web/bailian-search-llm-request"
+          }
+        ]
+      }
+    }
+  ],
+  "types": []
+}
