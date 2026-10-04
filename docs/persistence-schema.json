@@ -21522,6 +21522,136 @@
       }
     },
     {
+      "key": "event:web/bailian-search-llm-request",
+      "kind": "event",
+      "event": "web/bailian-search-llm-request",
+      "surface": false,
+      "digest": "95d60acfcdeb2b92ee667b2a75a3f5879a41208dd29a06add98a8a1d7aed3c99",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 8,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 9,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 9,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 10,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "body",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "endpoint",
+                "type": 3,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "input",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "model",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "tool_choice",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "tools",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "literal",
+            "value": "required"
+          },
+          {
+            "kind": "tuple",
+            "elements": [
+              {
+                "type": 6,
+                "optional": false,
+                "rest": false
+              }
+            ]
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "type",
+                "type": 7,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "web_search"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "web/bailian-search-llm-request"
+          }
+        ]
+      }
+    },
+    {
       "key": "event:web/deepseek-search-llm-request",
       "kind": "event",
       "event": "web/deepseek-search-llm-request",
@@ -21955,6 +22085,15 @@
       ]
     },
     {
+      "digest": "0df5a8d55183853431ca3035c2c857e0a3b01f5486587a3c749f8f62545bef65",
+      "names": [
+        "packages/web/web-search-bailian/src/provider.ts#BailianSearchLlmRequest"
+      ],
+      "sources": [
+        "packages/web/web-search-bailian/src/provider.ts:10"
+      ]
+    },
+    {
       "digest": "0e10d7c096b47e61defe372a5fc8bd37d835199410eac44367f95c45082498bd",
       "names": [],
       "sources": []
@@ -22345,6 +22484,11 @@
     },
     {
       "digest": "224aa11d4d5f88c450822d01b99e6ca5e3a9c7f26a5ede10bae33384a09ef4dc",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "225306c59d6d377bf6f285ae24d0f9a41e8052df9afe696ab22b0c03def7b715",
       "names": [],
       "sources": []
     },
@@ -23142,6 +23286,13 @@
       "digest": "589d0d91239681f89ee485459dc8c2f73ea47183b5534289d966637024a2c35d",
       "names": [],
       "sources": []
+    },
+    {
+      "digest": "58b4d71b2a49e2680f2fc3ebbd77fe8bd62e55e11b959765233862170ee44362",
+      "names": [],
+      "sources": [
+        "packages/web/web-search-bailian/src/provider.ts:15"
+      ]
     },
     {
       "digest": "58f94390b982f8a5ac1f4f235ba612557f4a1dc4a995d8b1cec63ce7639decb0",
@@ -23988,6 +24139,11 @@
       "sources": []
     },
     {
+      "digest": "95d60acfcdeb2b92ee667b2a75a3f5879a41208dd29a06add98a8a1d7aed3c99",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "9645cf93769a6dfb227bd400bd6cb9fa7bab9140f4a851e4ae92514ade6e3114",
       "names": [],
       "sources": []
@@ -24383,6 +24539,11 @@
       "sources": []
     },
     {
+      "digest": "aef2cc36ef042ccb7812851e1aec7a34575314da2874bd009d9fff4d59c11c20",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "af0750d32d97d47b12b7361a587db41894b17e04c9a805fe212f0114aa2248c7",
       "names": [],
       "sources": []
@@ -24710,6 +24871,13 @@
       ]
     },
     {
+      "digest": "c384c55ef12a5a46d61a547c8547d7d2ab61c6f7fae942fb5932c3e406e7a4de",
+      "names": [],
+      "sources": [
+        "packages/web/web-search-bailian/src/provider.ts:12"
+      ]
+    },
+    {
       "digest": "c43b119ce579b3e9983a0d3adc4ba402ebb9ba773d89738a2dab01ecf5813943",
       "names": [],
       "sources": []
@@ -24904,6 +25072,11 @@
     },
     {
       "digest": "db06ef35b27a38425046b2228fa6bce9582abe140d781d363137eb2f4d233a1c",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "db3a0dab525a755036dfd23cb66626397bbd94bc6fd74eba1a54c326b3366880",
       "names": [],
       "sources": []
     },

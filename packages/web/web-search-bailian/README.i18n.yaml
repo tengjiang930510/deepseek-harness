@@ -1,0 +1,58 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/web/web-search-bailian/README.md
+/:
+  en: 13c53bdf55233e6f
+  zh: 09bd283602a4626d
+/deepseek-ai-dsh-web-search-bailian:
+  en: be4d97a308975c5d
+  zh: a1100cdef70899fc
+/deepseek-ai-dsh-web-search-bailian/summary:
+  en: 20d9515a052f0ca3
+  zh: f3e6cacc8a66da44
+/deepseek-ai-dsh-web-search-bailian/table-of-contents:
+  en: c910fb46894c7cb8
+  zh: b73c83ce583f5a94
+/deepseek-ai-dsh-web-search-bailian/use-this-package:
+  en: e68a06fed48aaa8c
+  zh: b9ad3f96dc24a008
+/deepseek-ai-dsh-web-search-bailian/understand-the-implementation:
+  en: d39bb7def7f9b546
+  zh: 15466df7583f0900
+/deepseek-ai-dsh-web-search-bailian/further-exploration:
+  en: 6985c73f2cf8bbf2
+  zh: d61cae238f2b4eba
+/deepseek-ai-dsh-web-search-bailian/dev-note:
+  en: 2882da46c89aff6e
+  zh: 4b2bc431280ece12
+/deepseek-ai-dsh-web-search-bailian/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-web-search-bailian/model-experience/auxiliary-bailian-request:
+  en: 0ef65f15aa42b0bf
+  zh: 8646fd77cd7925f7
+/deepseek-ai-dsh-web-search-bailian/model-experience/auxiliary-bailian-request/what-the-model-sees:
+  en: e6810e656e0b33c8
+  zh: 0ef519c8af4c3c8a
+/deepseek-ai-dsh-web-search-bailian/model-experience/auxiliary-bailian-request/token-effect:
+  en: dc713fb82ed55a1b
+  zh: 58d6928f8c7bfc7b
+/deepseek-ai-dsh-web-search-bailian/model-experience/auxiliary-bailian-request/kv-cache-effect:
+  en: 58b480f30a6da0ed
+  zh: d053363b5844788b
+/deepseek-ai-dsh-web-search-bailian/model-experience/conversation-tool-result:
+  en: 28975074795bc523
+  zh: bddffc6e1647bb64
+/deepseek-ai-dsh-web-search-bailian/model-experience/conversation-tool-result/what-the-model-sees:
+  en: ca2f93b80b957952
+  zh: f372e555cb4977e4
+/deepseek-ai-dsh-web-search-bailian/model-experience/conversation-tool-result/token-effect:
+  en: 2cb5239869284299
+  zh: 30afa7b2a9f6db2e
+/deepseek-ai-dsh-web-search-bailian/model-experience/conversation-tool-result/kv-cache-effect:
+  en: a48f8874429ddd2e
+  zh: 4a083eb4dbe975ba
+/deepseek-ai-dsh-web-search-bailian/known-limitations-and-deferred-work:
+  en: 3c89ca95fa438d0c
+  zh: 63daf8f304fa3642

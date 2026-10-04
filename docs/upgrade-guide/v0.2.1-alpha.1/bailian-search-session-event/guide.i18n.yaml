@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.1-alpha.1/bailian-search-session-event/guide.md
+/:
+  en: 3da5d4954da3bf95
+  zh: 20702610e019ea79
+/bailian-search-logs-a-required-session-event:
+  en: b68323eb81069e81
+  zh: c0d401df76600ed7
+/bailian-search-logs-a-required-session-event/change:
+  en: ac980380047ddc98
+  zh: c794e53b60bf807d
+/bailian-search-logs-a-required-session-event/migration:
+  en: acfc2b7f6443fb7b
+  zh: 5e60d650d35757b5

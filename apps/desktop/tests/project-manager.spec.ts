@@ -43,6 +43,17 @@ afterEach(() => {
 })
 
 describe('desktop external plugin profile', () => {
+  it('uses trial defaults only for a profile without a patch', async () => {
+    const { manager } = setup()
+    const trial = new DesktopProjectManager(manager.paths, manager.runtime, '- id: agent-default-model\n  config: { model: trial }\n')
+    await trial.applyRelease()
+    const patch = join(manager.paths.profile, 'cordis.patch.yml')
+    expect(readFileSync(patch, 'utf8')).toContain('model: trial')
+    writeFileSync(patch, '[]\n')
+    await trial.applyRelease()
+    expect(readFileSync(patch, 'utf8')).toBe('[]\n')
+  })
+
   it('preserves installed packages, profile state, and the lockfile when preparing a launch', async () => {
     const { manager } = setup()
     await manager.applyRelease()

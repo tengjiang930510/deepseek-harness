@@ -319,6 +319,8 @@ Apple 工具使用 macOS 当前活动网络服务的 HTTP/HTTPS 代理。配置�
 
 ### 未签名 Windows 测试安装包
 
+可选的私有试用构建可在目标的已忽略 `.env.windows` 或 `.env.macos` 中设置 `DSH_DESKTOP_TRIAL_DEFAULTS_FILE`，指向包含 `patch`（完整的 profile patch YAML 字符串）、`credentialRef`（该 patch 引用的键名）和 `credential`（API 密钥）的本地 JSON 文件。打包会把该文件复制进应用归档。首次启动时，仅当 Desktop profile 尚无 patch 才会写入该 patch，并把凭据交给 Host；之后启动会保留用户对 profile 的修改。任何拿到安装包或已安装应用的人都能提取该凭据，因此应使用独立的、额度受限的密钥，并在试用结束后撤销。该 JSON 源文件和组装后的应用不得提交到仓库，也不得作为正式发行发布。
+
 在 Windows x64 上，使用完整的未签名打包命令进行本地安装测试：
 
 ```sh

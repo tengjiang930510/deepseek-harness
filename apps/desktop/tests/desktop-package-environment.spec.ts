@@ -23,6 +23,20 @@ async function withDirectory(action: (directory: string) => Promise<void>): Prom
 }
 
 describe('Desktop local packaging configuration', () => {
+  it('accepts a local trial resource and rejects malformed input before packaging', async () => {
+    await withDirectory(async (directory) => {
+      const path = join(directory, 'trial-defaults.json')
+      await writeFile(join(directory, '.env.windows'), 'DSH_DESKTOP_TRIAL_DEFAULTS_FILE=trial-defaults.json\n')
+      await writeFile(path, JSON.stringify({ patch: '- id: model\n', credentialRef: 'TRIAL_API_KEY', credential: 'test-key' }))
+      const settings = loadDesktopPackageEnvironment('win32', {}, directory)
+      expect(settings.DSH_DESKTOP_TRIAL_DEFAULTS_FILE).toBe(path)
+      expect(() => { validateDesktopPackageEnvironment({ ...settings, ...RELEASE }, WINDOWS, { unsigned: true }) }).not.toThrow()
+      await writeFile(path, JSON.stringify({ patch: '[]', credentialRef: 'TRIAL_API_KEY', credential: 'secret-value' }))
+      expect(() => { validateDesktopPackageEnvironment({ ...settings, ...RELEASE }, WINDOWS, { unsigned: true }) })
+        .toThrow('DSH_DESKTOP_TRIAL_DEFAULTS_FILE has invalid fields')
+    })
+  })
+
   it('takes cache concurrency from the Windows file and defaults to four without ambient overrides', async () => {
     await withDirectory(async (directory) => {
       const parent = { DSH_DESKTOP_WINDOWS_SIGNATURE_CACHE_CONCURRENCY: '8' }

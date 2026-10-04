@@ -59,6 +59,7 @@ import { DesktopUpdateOverlays } from './update-overlay.ts'
 import { DesktopQuitConfirmation } from './quit-confirmation.ts'
 import { DesktopTray } from './tray.ts'
 import { DesktopBackgroundNotice } from './background-notice.ts'
+import { readDesktopTrialDefaults } from './trial-defaults.ts'
 
 let focusPrimaryWindow = (): void => {}
 let stopForRecovery = async (): Promise<void> => {}
@@ -317,13 +318,14 @@ async function main(): Promise<void> {
   const journalDirectory = process.env.DSH_DESKTOP_UPDATE_JOURNAL_DIR
   const updateJournal = journalDirectory === undefined ? undefined : new DesktopUpdateJournal(journalDirectory, app.getVersion())
   const resources = runtimeResources()
+  const trialDefaults = app.isPackaged ? readDesktopTrialDefaults(join(process.resourcesPath, 'trial-defaults.json')) : undefined
   const paths = resolveDesktopPaths()
   const development = !app.isPackaged
   const primaryRuntime = development
     ? developmentPrimaryRuntime()
     : join(process.resourcesPath, 'runtime', 'primary-runtime')
   const activeProject = paths.profile
-  const manager = new DesktopProjectManager(paths, resources)
+  const manager = new DesktopProjectManager(paths, resources, trialDefaults?.patch)
   // Dock and Finder launches inherit only launchd's environment; every Host shares one login-shell read.
   const loginShellRead = new AbortController()
   // The probe runs in its own process group, which outlives Desktop unless the read is aborted.
@@ -442,7 +444,11 @@ async function main(): Promise<void> {
   const backend = new DesktopBackendController((onFailure) => {
     const hostInspectPort = developmentHostInspectPort(development)
     const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
-      hostInspectPort, { ...hostEnvironment, DSH_CLIENT_VERSION: desktopClientVersion() }, onFailure,
+      hostInspectPort, {
+        ...hostEnvironment,
+        DSH_CLIENT_VERSION: desktopClientVersion(),
+        ...trialDefaults === undefined ? {} : { [trialDefaults.credentialRef]: trialDefaults.credential },
+      }, onFailure,
       primaryRuntime,
       resources, (next) => { platformView.setSession(next) })
     return {

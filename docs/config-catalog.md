@@ -4182,6 +4182,30 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-web-fetch-http -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-web-search-bailian -->
+<a id="deepseek-aidsh-web-search-bailian"></a>
+
+## `@deepseek-ai/dsh-web-search-bailian`
+
+- `inject`: `web`
+- `refs`: `Volatile` (`@deepseek-ai/cordis`)
+- `source`: [`packages/web/web-search-bailian/src/index.ts:22`](../packages/web/web-search-bailian/src/index.ts)
+
+```ts config-catalog
+/** Search request settings. `baseURL` is the OpenAI-compatible `/v1` base. */
+export interface Config {
+  /** Credential reference resolved for every request. */
+  apiKeyEnv: Volatile<string>
+  /** Optional literal credential; prefer `apiKeyEnv`. */
+  apiKey: Volatile<string | undefined>
+  /** Bailian OpenAI-compatible base URL ending in `/v1`. */
+  baseURL: Volatile<string>
+  /** Bailian model for the auxiliary search request. */
+  model: Volatile<string>
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-web-search-bailian -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-web-search-deepseek -->
 <a id="deepseek-aidsh-web-search-deepseek"></a>
 

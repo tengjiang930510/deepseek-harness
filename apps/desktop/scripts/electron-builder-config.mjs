@@ -142,6 +142,7 @@ export function createElectronBuilderConfig(
     ],
     asarUnpack: unpack,
     extraResources: [
+      ...(env.DSH_DESKTOP_TRIAL_DEFAULTS_FILE ? [{ from: env.DSH_DESKTOP_TRIAL_DEFAULTS_FILE, to: 'trial-defaults.json' }] : []),
       { from: buildPaths.runtime, to: 'runtime' },
       { from: fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)), to: 'icon.png' },
       // Windows tray bitmaps; macOS keeps the Dock and ships no menu bar icon.
