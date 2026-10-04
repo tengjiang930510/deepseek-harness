@@ -480,6 +480,11 @@
       config:
         apiKeyEnv: DEEPSEEK_API_KEY
 
+    # Opt in through a profile patch with its own workspace endpoint and model.
+    - id: web-search-bailian
+      name: '@deepseek-ai/dsh-web-search-bailian'
+      disabled: true
+
     - id: web-fetch-http
       name: '@deepseek-ai/dsh-web-fetch-http'
 

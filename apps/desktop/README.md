@@ -317,6 +317,8 @@ Apple tooling uses the active macOS network service's HTTP/HTTPS proxies. Config
 
 ### Unsigned Windows test installer
 
+An optional private trial build can set `DSH_DESKTOP_TRIAL_DEFAULTS_FILE` in the target's ignored `.env.windows` or `.env.macos` to a local JSON file containing `patch` (a complete profile patch YAML string), `credentialRef` (the key named by that patch), and `credential` (the API key). Packaging copies this file into the application archive. On first launch, Desktop writes the patch only when the Desktop profile has no patch yet and supplies the credential to its Host; later launches preserve user edits to the profile. The credential is extractable from every installer and installed application, so use a separate key with a limited budget and revoke it after the trial. The JSON source and assembled application must not be committed or published as a normal release.
+
 On Windows x64, use the complete unsigned packaging command for local installation testing:
 
 ```sh

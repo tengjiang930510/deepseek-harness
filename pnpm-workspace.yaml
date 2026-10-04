@@ -16,6 +16,9 @@ packages:
 
 overrides:
   'extract-zip>yauzl': '3.4.0'
+  # mdast-util-from-markdown and micromark-extension-gfm still lock 2.0.2 while
+  # the rest of the micromark graph uses 2.0.3; mixed copies fail tsc on Extension.
+  micromark-util-types: '2.0.3'
   '@deepseek-ai/cosmokit': 'link:vendor/cosmokit'
   '@deepseek-ai/schemastery': 'link:vendor/schemastery'
 
