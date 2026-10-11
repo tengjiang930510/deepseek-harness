@@ -1,0 +1,41 @@
+{
+  "name": "t4y-bilibili-search",
+  "version": "0.2.0",
+  "description": "铁四院能力：B站视频搜索（内置 Playwright）。模型可直接调用 bilibili_video_search。",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "lib",
+    "src",
+    "auth",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "build": "node ./scripts/build.mjs",
+    "prepare": "node ./scripts/build.mjs",
+    "postinstall": "node ./scripts/ensure-chromium.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "playwright": "^1.63.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.12",
+    "typescript": "^5.8.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/schemastery": "*"
+  },
+  "license": "MIT"
+}

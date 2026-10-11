@@ -9,9 +9,6 @@ window.__ModuleLoader__.load({
 
     const React = require('react')
     const OFFICE_NS = 't4y.office-workflows'
-    const SETTINGS_NS = 't4y.settings.capability'
-    const PACKAGE_NAME = 't4y-review'
-    const PLUGIN_COMMANDS = ['/leave', '/travel', '/office', '/brand-review', '/brand-review-guidance']
     const COMMAND_KINDS = { leave: 'leave', travel: 'travel', office: 'office' }
     const STORAGE_PREFIX = 't4y.office-workflow.v2.'
     const copy = {
@@ -32,43 +29,6 @@ window.__ModuleLoader__.load({
         submit: 'Confirm and submit', submitted: 'Request submitted. Current status: approval pending.', draft: 'Review and complete your request before submitting.', status: 'Needs confirmation'
       }
     }
-    const settingsCopy = {
-      zh: {
-        tab: '铁四院能力插件',
-        intro: '开启或关闭铁四院智能助手能力插件。关闭后相关斜杠命令不再进入菜单。部分变更可能需要重启后生效。',
-        pluginTitle: '办公事务表单',
-        pluginDescription: '铁四院智能助手：办公申请卡片、审查任务与审查指导（/brand-review）。可在本页启用或禁用。',
-        commands: '命令',
-        enabled: '已开启',
-        disabled: '已关闭',
-        enableToggle: '启用 {name}',
-        loading: '正在读取插件状态…',
-        missing: '当前 profile 未安装 t4y-review。请在仓库根目录执行：pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-review',
-        error: '无法读取插件状态。',
-        restart: '已记录变更，请重启 Web 后生效。',
-        applied: '已更新启用状态。',
-        toggleFailed: '切换失败：{message}',
-        locked: '此包受保护，无法在此切换。'
-      },
-      en: {
-        tab: 'T4Y capability plugins',
-        intro: 'Turn T4Y Smart Assistant capability plugins on or off. Slash commands leave the menu when disabled. Some changes need a restart.',
-        pluginTitle: 'Office forms',
-        pluginDescription: 'T4Y Smart Assistant: office request cards, review tasks, and review guidance (/brand-review). Enable or disable on this page.',
-        commands: 'Commands',
-        enabled: 'On',
-        disabled: 'Off',
-        enableToggle: 'Enable {name}',
-        loading: 'Loading plugin status…',
-        missing: 't4y-review is not installed in this profile. From the repo root run: pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-review',
-        error: 'Could not read plugin status.',
-        restart: 'Change recorded. Restart Web for it to take effect.',
-        applied: 'Enablement updated.',
-        toggleFailed: 'Toggle failed: {message}',
-        locked: 'This package is protected and cannot be toggled here.'
-      }
-    }
-
     function isRecord(value) { return typeof value === 'object' && value !== null && !Array.isArray(value) }
     function parseArgs(value) {
       if (typeof value !== 'string') return isRecord(value) ? value : {}
@@ -296,85 +256,9 @@ window.__ModuleLoader__.load({
         }
       }
     }
-    function CapabilityTab(props) {
-      const t = props.t
-      const listBundle = props.listBundle
-      const setEnabled = props.setEnabled
-      const resolveText = props.resolveText
-      const [view, setView] = React.useState({ status: 'loading' })
-      const [busy, setBusy] = React.useState(false)
-      const [notice, setNotice] = React.useState(null)
-      const reload = React.useCallback(async () => {
-        try {
-          const bundle = await listBundle()
-          setView(bundle ? { status: 'ready', bundle } : { status: 'missing' })
-        } catch (error) {
-          setView({ status: 'error', message: error instanceof Error ? error.message : String(error) })
-        }
-      }, [listBundle])
-      React.useEffect(() => { void reload() }, [reload])
-      const title = view.status === 'ready'
-        ? (view.bundle.meta?.title ? resolveText(view.bundle.meta.title) : t('pluginTitle'))
-        : t('pluginTitle')
-      const description = view.status === 'ready'
-        ? (view.bundle.description || (view.bundle.meta?.description ? resolveText(view.bundle.meta.description) : t('pluginDescription')))
-        : t('pluginDescription')
-      const version = view.status === 'ready' && view.bundle.version ? `v${view.bundle.version}` : ''
-      const enabled = view.status === 'ready' ? view.bundle.enabled : false
-      const locked = view.status === 'ready' && view.bundle.readOnlyReason !== undefined
-      return React.createElement('div', { className: 't4y-capability' },
-        React.createElement('p', { className: 't4y-capability-intro' }, t('intro')),
-        view.status === 'loading' && React.createElement('p', { className: 't4y-capability-note' }, t('loading')),
-        view.status === 'error' && React.createElement('p', { className: 't4y-capability-error', role: 'alert' }, t('error'), ' ', view.message),
-        view.status === 'missing' && React.createElement('p', { className: 't4y-capability-error', role: 'alert' }, t('missing')),
-        view.status === 'ready' && React.createElement('article', { className: 't4y-capability-card' },
-          React.createElement('div', { className: 't4y-capability-card-main' },
-            React.createElement('div', { className: 't4y-capability-card-heading' },
-              React.createElement('strong', null, title),
-              version && React.createElement('span', { className: 't4y-capability-version' }, version)),
-            React.createElement('p', { className: 't4y-capability-commands' },
-              React.createElement('span', null, t('commands'), '：'),
-              PLUGIN_COMMANDS.map((command) => React.createElement('code', { key: command }, command))),
-            React.createElement('p', { className: 't4y-capability-description' }, description),
-            notice && React.createElement('p', {
-              className: notice.kind === 'error' ? 't4y-capability-error' : 't4y-capability-note',
-              role: notice.kind === 'error' ? 'alert' : 'status'
-            }, notice.text),
-            locked && React.createElement('p', { className: 't4y-capability-note' }, t('locked'))),
-          React.createElement('label', { className: 't4y-capability-toggle' },
-            React.createElement('input', {
-              type: 'checkbox',
-              checked: enabled,
-              disabled: busy || locked,
-              'aria-label': t('enableToggle', { name: title }),
-              onChange: (event) => {
-                const next = event.target.checked
-                setBusy(true)
-                setNotice(null)
-                void setEnabled(next).then((change) => {
-                  setView((previous) => previous.status === 'ready'
-                    ? { status: 'ready', bundle: { ...previous.bundle, enabled: next } }
-                    : previous)
-                  if (change?.application === 'restart-required') setNotice({ kind: 'info', text: t('restart') })
-                  else setNotice({ kind: 'info', text: t('applied') })
-                }).catch((error) => {
-                  setNotice({
-                    kind: 'error',
-                    text: t('toggleFailed', { message: error instanceof Error ? error.message : String(error) })
-                  })
-                  void reload()
-                }).finally(() => { setBusy(false) })
-              }
-            }),
-            React.createElement('span', null, enabled ? t('enabled') : t('disabled'))))
-      )
-    }
-
-    exports.inject = ['slots', 'locale', 'uiConversation', 'remote', 'remote.pluginManager']
+    exports.inject = ['slots', 'locale', 'uiConversation']
     exports.apply = (ctx) => {
       ctx.effect(() => ctx.locale.register(OFFICE_NS, copy), 't4y review: office workflow locale')
-      ctx.effect(() => ctx.locale.register(SETTINGS_NS, settingsCopy), 't4y review: settings tab locale')
-      const tSettings = ctx.locale.bind(SETTINGS_NS)
       ctx.effect(() => {
         const id = 't4y-office-workflow-style'
         const previousStyle = document.getElementById(id)
@@ -385,72 +269,6 @@ window.__ModuleLoader__.load({
         style.dataset.owners = String(Number(style.dataset.owners || 0) + 1)
         if (!style.isConnected) document.head.appendChild(style)
         style.textContent = `
-          .t4y-capability {
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-            max-width: 720px;
-          }
-          .t4y-capability-intro,
-          .t4y-capability-note,
-          .t4y-capability-description,
-          .t4y-capability-commands {
-            margin: 0;
-            color: var(--dsw-alias-label-secondary);
-            font-size: 13px;
-            line-height: 1.6;
-          }
-          .t4y-capability-card {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: 20px;
-            padding: 20px 22px;
-            border: 1px solid var(--dsw-alias-border-l2);
-            border-radius: 12px;
-            background: var(--dsw-alias-bg-base);
-          }
-          .t4y-capability-card-main { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 8px; }
-          .t4y-capability-card-heading {
-            display: flex;
-            align-items: baseline;
-            gap: 10px;
-            color: var(--dsw-alias-label-primary);
-          }
-          .t4y-capability-card-heading strong { font-size: 16px; font-weight: 600; }
-          .t4y-capability-version {
-            color: var(--dsw-alias-label-tertiary);
-            font-size: 12px;
-          }
-          .t4y-capability-commands code {
-            display: inline-block;
-            margin: 0 6px 0 0;
-            padding: 1px 6px;
-            border-radius: 4px;
-            background: var(--dsw-alias-bg-module-platform);
-            font-size: 12px;
-          }
-          .t4y-capability-toggle {
-            flex: none;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            color: var(--dsw-alias-label-secondary);
-            font-size: 13px;
-            cursor: pointer;
-            user-select: none;
-          }
-          .t4y-capability-toggle input {
-            width: 16px;
-            height: 16px;
-            accent-color: var(--dsw-alias-brand-primary);
-          }
-          .t4y-capability-error {
-            margin: 0;
-            color: var(--dsw-alias-state-error-primary);
-            font-size: 13px;
-            line-height: 1.6;
-          }
           .t4y-office-card {
             width: min(640px, 100%);
             box-sizing: border-box;
@@ -580,30 +398,6 @@ window.__ModuleLoader__.load({
         { name: 'conversation.chat.turnTail', id: 't4y-office-workflow', locale: OFFICE_NS },
         props => React.createElement(OfficeTurnTail, { ...props, t: ctx.locale.bind(OFFICE_NS) })
       ))
-      ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
-        name: 'settings.plugins.tab',
-        id: 't4y-capability',
-        order: 20,
-        label: () => tSettings('tab'),
-        locale: SETTINGS_NS,
-        inject: () => ({
-          listBundle: async () => {
-            const result = await ctx.remote.pluginManager.listBundles()
-            if (!result.ok) {
-              throw new Error(`${result.error.code}: ${result.error.message}`)
-            }
-            return result.value.find((bundle) => bundle.name === PACKAGE_NAME) ?? null
-          },
-          setEnabled: async (enabled) => {
-            const result = await ctx.remote.pluginManager.setBundleEnabled(PACKAGE_NAME, enabled)
-            if (!result.ok) {
-              throw new Error(`${result.error.code}: ${result.error.message}`)
-            }
-            return result.value
-          },
-          resolveText: (text) => ctx.locale.resolveText(text),
-        }),
-      }, CapabilityTab))
     }
     return module.exports
   }
