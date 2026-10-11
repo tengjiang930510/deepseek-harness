@@ -1,7 +1,7 @@
 {
   "name": "t4y-capability-hub",
   "version": "0.1.0",
-  "description": "铁四院能力插件设置页：统一管理 t4y-review、t4y-bilibili-search 等能力包的启停。",
+  "description": "武汉地铁能力插件设置页：统一管理 t4y-review、t4y-bilibili-search 等能力包的启停。",
   "private": true,
   "type": "module",
   "main": "./index.js",

@@ -15,7 +15,7 @@
 - button "Settings"
 - banner:
   - button "Open right sidebar"
-- text: T4Y Smart Assistant
+- text: Wuhan Metro Smart Assistant
 - button "Choose workspace": workspace
 - button "Standard mode"
 - textbox "Describe what you want to build, / commands, @ files or sessions":

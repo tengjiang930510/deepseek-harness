@@ -199,7 +199,7 @@ export async function apply(ctx) {
   })
   ctx.commands.register({
     name: 'brand-review',
-    description: '发起铁四院智能助手审查任务。',
+    description: '发起武汉地铁智能助手审查任务。',
     input: { hint: '可选：补充审查重点' },
     async handler({ rawInput = '' } = {}) {
       const focus = rawInput.trim()
@@ -211,7 +211,7 @@ export async function apply(ctx) {
   })
   ctx.commands.register({
     name: 'brand-review-guidance',
-    description: '查看铁四院智能助手的审查指导。',
+    description: '查看武汉地铁智能助手的审查指导。',
     input: { hint: '可选：补充审查对象或重点' },
     handler({ rawInput = '' } = {}) {
       return loadGuidance(rawInput)

@@ -14,7 +14,7 @@ const client = `window.__ModuleLoader__.load({
 
     const React = require('react')
     const LOGO_SRC = ${JSON.stringify(dataUrl)}
-    const BRAND_NAME = '铁四院智能助手'
+    const BRAND_NAME = '武汉地铁智能助手'
 
     function BrandMark(props) {
       const size = typeof props.size === 'number' ? props.size : 24

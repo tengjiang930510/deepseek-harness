@@ -1,10 +1,10 @@
-/** Running-status brand mark (CRCC) for the Chat status row. */
+/** Running-status brand mark (Wuhan Metro) for the Chat status row. */
 import css from './ChatView.module.css'
 import { RUNNING_BRAND_MARK_SRC } from './running-brand-data.ts'
 
 /**
  * Render the decorative running icon beside the processing label.
- * @returns CRCC mark sized to the status row.
+ * @returns Wuhan Metro mark sized to the status row.
  */
 export function RunningWhaleTail() {
   return (

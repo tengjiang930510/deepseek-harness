@@ -1,8 +1,8 @@
 # t4y-review
 
-铁四院智能助手：办公申请卡片、`/brand-review`、审查指导，以及办公平台请假「新增」页预览（Playwright）。
+武汉地铁智能助手：办公申请卡片、`/brand-review`、审查指导，以及办公平台请假「新增」页预览（Playwright）。
 
-设置页 **铁四院能力插件** tab 由独立包 [`t4y-capability-hub`](../t4y-capability-hub/) 提供。
+设置页 **武汉地铁能力插件** tab 由独立包 [`t4y-capability-hub`](../t4y-capability-hub/) 提供。
 
 ## Install
 

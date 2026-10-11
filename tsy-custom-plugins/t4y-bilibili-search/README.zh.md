@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-铁四院能力：B站视频搜索。Playwright 实现在本包 `src/`，构建产物为 `lib/search.js`，不再依赖外部 `enterprise-browser-skills` 仓库。
+武汉地铁能力：B站视频搜索。Playwright 实现在本包 `src/`，构建产物为 `lib/search.js`，不再依赖外部 `enterprise-browser-skills` 仓库。
 
 ## Layout
 
@@ -38,7 +38,7 @@ Restart `pnpm dsh web`. Ask e.g.「在 B 站按最多播放搜刘欢」— 模�
 
 ## Settings
 
-若已安装 `t4y-capability-hub`，可在 **设置 → 内置插件 → 铁四院能力插件** 中启停本包。
+若已安装 `t4y-capability-hub`，可在 **设置 → 内置插件 → 武汉地铁能力插件** 中启停本包。
 
 ## Test
 

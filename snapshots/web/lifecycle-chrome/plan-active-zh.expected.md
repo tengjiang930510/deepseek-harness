@@ -15,7 +15,7 @@
 - button "设置"
 - banner:
   - button "打开右侧边栏"
-- text: 铁四院智能助手
+- text: 武汉地铁智能助手
 - button "选择工作区": workspace
 - button "标准模式"
 - textbox "描述你想要构建的内容, / 调用指令, @ 文件或对话"

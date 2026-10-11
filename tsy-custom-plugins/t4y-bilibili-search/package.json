@@ -1,7 +1,7 @@
 {
   "name": "t4y-bilibili-search",
   "version": "0.2.0",
-  "description": "铁四院能力：B站视频搜索（内置 Playwright）。模型可直接调用 bilibili_video_search。",
+  "description": "武汉地铁能力：B站视频搜索（内置 Playwright）。模型可直接调用 bilibili_video_search。",
   "private": true,
   "type": "module",
   "main": "./index.js",

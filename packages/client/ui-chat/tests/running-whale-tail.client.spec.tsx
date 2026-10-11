@@ -7,7 +7,7 @@ import { RunningWhaleTail } from '../src/client/chat/RunningWhaleTail.tsx'
 afterEach(cleanup)
 
 describe('RunningWhaleTail', () => {
-  it('renders the CRCC brand mark as a decorative image', () => {
+  it('renders the Wuhan Metro brand mark as a decorative image', () => {
     const view = render(<RunningWhaleTail />)
     const icon = view.container.firstElementChild!
     expect(icon.tagName).toBe('SPAN')

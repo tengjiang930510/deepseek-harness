@@ -46,8 +46,8 @@ pnpm dsh web --patch ./tsy-custom-plugins/t4y-review/cordis.yml
 
 | Directory | Package | Role |
 |---|---|---|
-| `t4y-brand/` | `t4y-brand` | CRCC logo + sidebar name **铁四院智能助手** |
-| `t4y-capability-hub/` | `t4y-capability-hub` | Settings tab **铁四院能力插件**（启停列表） |
+| `t4y-brand/` | `t4y-brand` | Wuhan Metro logo + sidebar name **武汉地铁智能助手** |
+| `t4y-capability-hub/` | `t4y-capability-hub` | Settings tab **武汉地铁能力插件**（启停列表） |
 | `t4y-review/` | `t4y-review` | Office forms + review commands |
 | `t4y-bilibili-search/` | `t4y-bilibili-search` | Tool `bilibili_video_search`（内置 Playwright，`src/`） |
 
@@ -56,4 +56,4 @@ pnpm dsh web --patch ./tsy-custom-plugins/t4y-review/cordis.yml
 1. Create `tsy-custom-plugins/<name>/` with `package.json` (`dsh.bundle.patch`), `cordis.patch.yml` (`name: <package-name>`), and the plugin entry.
 2. Optional: `cordis.yml` with `name: ./index.js` for `--patch` iteration.
 3. Install with `pnpm dsh plugin --profile web add ./tsy-custom-plugins/<name>`.
-4. If it should appear under **铁四院能力插件**, append an entry to `CAPABILITY_PACKAGES` in `t4y-capability-hub/client.js`.
+4. If it should appear under **武汉地铁能力插件**, append an entry to `CAPABILITY_PACKAGES` in `t4y-capability-hub/client.js`.
