@@ -4,6 +4,22 @@ Out-of-tree custom plugins for this fork. Not part of the harness `packages/*/*`
 
 Each subdirectory is one installable package. Config in this tree uses **package names** or **paths relative to the patch file** — never machine-specific absolute paths — so a checkout works on another machine after a one-time profile install.
 
+## Desktop profile (unpackaged + packaging)
+
+Desktop uses a separate profile from Web. After quitting Desktop, sync every `t4y-*` plugin into both `~/.dsh/profiles/desktop` and the development home profile:
+
+```sh
+node ./tsy-custom-plugins/scripts/sync-desktop-plugins.mjs
+```
+
+To bake the Bailian/`QWEN_TOKEN_PLAN_API_KEY` into a private Desktop installer (gitignored):
+
+```sh
+node ./tsy-custom-plugins/scripts/seed-desktop-trial-defaults.mjs
+```
+
+This writes `apps/desktop/.desktop-build/trial-defaults.json` and sets `DSH_DESKTOP_TRIAL_DEFAULTS_FILE` in `apps/desktop/.env.windows`. Then package with `pnpm run package:desktop:win:x64:unsigned` (fill the rest of `.env.windows` from `.env.windows.example` first). The key is extractable from the installer — use only a limited key.
+
 ## Install into the Web profile (preferred)
 
 From the repository root (after `pnpm install`):
