@@ -1,4 +1,5 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import z from '@deepseek-ai/schemastery'
 import { searchVideos } from './lib/search.js'
 
@@ -129,14 +130,14 @@ export async function apply(ctx, config) {
     name: 'bilibili',
     description: '在 B站搜索视频（可选：关键词与排序说明）。',
     input: { hint: '例如：刘欢 最多播放 10条' },
-    handler({ rawInput = '' } = {}) {
+    handler({ agent, rawInput }) {
       const focus = rawInput.trim()
-      return {
-        kind: 'success',
-        text: focus
-          ? `请使用 bilibili_video_search 工具搜索：${focus}`
-          : '请使用 bilibili_video_search 工具，并填写 keyword（及可选 limit / order）。',
-      }
+      if (!focus) return { kind: 'error', text: '请输入 B站搜索关键词，例如：刘欢 最多播放 10条。' }
+      agent.steer(createUserMessage({
+        source: { kind: 'user' },
+        content: [{ type: 'text', text: `请使用 bilibili_video_search 工具搜索：${focus}` }],
+      }))
+      return { kind: 'success' }
     },
   })
 }

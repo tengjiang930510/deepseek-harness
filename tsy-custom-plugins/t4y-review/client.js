@@ -18,7 +18,11 @@ window.__ModuleLoader__.load({
         startDate: '开始日期', endDate: '结束日期', destination: '出差地点', itinerary: '行程安排', budget: '预算（元）', companions: '同行人',
         officeType: '事务类型', meeting: '会议预约', supplies: '办公用品申领', ledger: '流程台账查询', subject: '主题 / 名称', reason: '事由', detail: '说明',
         required: '请补全必填信息后再提交。',
-        submit: '确认并提交', submitted: '申请已提交，当前状态：审批中。', draft: '核对并补全申请信息，确认后提交。', status: '待确认'
+        submit: '确认并提交到办公平台', submitting: '正在提交到办公平台…',
+        submitted: '已提交到办公平台，当前状态：审批中。',
+        submitFailed: '提交失败：{message}',
+        leaveOnly: '目前仅请假支持提交到办公平台；出差与办公事务仍为本地确认。',
+        draft: '核对并补全申请信息，确认后将写入办公平台请假流程。', status: '待确认'
       },
       en: {
         leave: 'Leave request', travel: 'Business trip', office: 'Office request',
@@ -26,7 +30,11 @@ window.__ModuleLoader__.load({
         startDate: 'Start date', endDate: 'End date', destination: 'Destination', itinerary: 'Itinerary', budget: 'Budget (CNY)', companions: 'Travellers',
         officeType: 'Request type', meeting: 'Meeting reservation', supplies: 'Office supplies', ledger: 'Workflow ledger query', subject: 'Subject / name', reason: 'Reason', detail: 'Details',
         required: 'Complete the required fields before submitting.',
-        submit: 'Confirm and submit', submitted: 'Request submitted. Current status: approval pending.', draft: 'Review and complete your request before submitting.', status: 'Needs confirmation'
+        submit: 'Confirm and submit to ZhiJianYun', submitting: 'Submitting to ZhiJianYun…',
+        submitted: 'Submitted to ZhiJianYun. Status: approval pending.',
+        submitFailed: 'Submit failed: {message}',
+        leaveOnly: 'Only leave requests submit to ZhiJianYun for now; travel and office stay local.',
+        draft: 'Review and complete your request. Confirming will submit the leave form to ZhiJianYun.', status: 'Needs confirmation'
       }
     }
     function isRecord(value) { return typeof value === 'object' && value !== null && !Array.isArray(value) }
@@ -145,10 +153,11 @@ window.__ModuleLoader__.load({
     function Field({ label, children, wide = false }) {
       return React.createElement('label', { className: `t4y-office-field${wide ? ' t4y-office-field-wide' : ''}` }, React.createElement('span', null, label), children)
     }
-    function OfficeCard({ node, t }) {
+    function OfficeCard({ node, t, sessionId, submitLeave }) {
       const initial = React.useMemo(() => normalize(node.data), [node.data])
       const [values, setValues] = React.useState(() => readState(node.id, initial))
       const [submitted, setSubmitted] = React.useState(() => readState(node.id, initial).submitted === true)
+      const [busy, setBusy] = React.useState(false)
       const [error, setError] = React.useState('')
       React.useEffect(() => {
         setValues((current) => mergeForm(initial, current))
@@ -161,9 +170,32 @@ window.__ModuleLoader__.load({
           : ['subject', 'detail']
       const submit = event => {
         event.preventDefault()
+        if (busy) return
         if (needs.some(name => !String(values[name] || '').trim())) { setError(t('required')); return }
-        const next = { ...values, submitted: true, submittedAt: new Date().toISOString() }
-        setValues(next); setSubmitted(true); setError(''); writeState(node.id, next)
+        if (values.kind !== 'leave') {
+          setError(t('leaveOnly'))
+          return
+        }
+        setBusy(true)
+        setError('')
+        void submitLeave({
+          sessionId,
+          leave_type: values.leaveType || 'annual',
+          start_date: values.startDate,
+          end_date: values.endDate,
+          reason: values.reason,
+        }).then((outcome) => {
+          if (!outcome.ok) {
+            setError(t('submitFailed', { message: outcome.message }))
+            return
+          }
+          const next = { ...values, submitted: true, submittedAt: new Date().toISOString(), remoteText: outcome.message }
+          setValues(next)
+          setSubmitted(true)
+          writeState(node.id, next)
+        }).catch((err) => {
+          setError(t('submitFailed', { message: err instanceof Error ? err.message : String(err) }))
+        }).finally(() => { setBusy(false) })
       }
       if (submitted) return React.createElement('section', { className: 't4y-office-card t4y-office-card-submitted', role: 'status' },
         React.createElement('div', { className: 't4y-office-card-frame' },
@@ -176,14 +208,14 @@ window.__ModuleLoader__.load({
           React.createElement('div', { className: 't4y-office-card-heading' },
             React.createElement('div', { className: 't4y-office-card-title' },
               React.createElement('strong', null, t(values.kind))),
-            React.createElement('span', { className: 't4y-office-card-badge' }, t('status'))),
+            React.createElement('span', { className: 't4y-office-card-badge' }, busy ? t('submitting') : t('status'))),
           React.createElement('p', { className: 't4y-office-note' }, t('draft')),
           React.createElement('form', { onSubmit: submit },
             values.kind === 'leave' && React.createElement(React.Fragment, null,
-              React.createElement(Field, { label: t('leaveType'), wide: true }, React.createElement('select', { value: values.leaveType, onChange: update('leaveType') },
+              React.createElement(Field, { label: t('leaveType'), wide: true }, React.createElement('select', { value: values.leaveType, onChange: update('leaveType'), disabled: busy },
                 React.createElement('option', { value: 'annual' }, t('annual')), React.createElement('option', { value: 'personal' }, t('personal')), React.createElement('option', { value: 'sick' }, t('sick')))),
-              React.createElement(Field, { label: t('startDate') }, React.createElement('input', { type: 'date', value: values.startDate, onChange: update('startDate') })),
-              React.createElement(Field, { label: t('endDate') }, React.createElement('input', { type: 'date', value: values.endDate, onChange: update('endDate') }))
+              React.createElement(Field, { label: t('startDate') }, React.createElement('input', { type: 'date', value: values.startDate, onChange: update('startDate'), disabled: busy })),
+              React.createElement(Field, { label: t('endDate') }, React.createElement('input', { type: 'date', value: values.endDate, onChange: update('endDate'), disabled: busy }))
             ),
             values.kind === 'travel' && React.createElement(React.Fragment, null,
               React.createElement(Field, { label: t('destination') }, React.createElement('input', { value: values.destination, onChange: update('destination') })),
@@ -198,18 +230,28 @@ window.__ModuleLoader__.load({
                 React.createElement('option', { value: 'meeting' }, t('meeting')), React.createElement('option', { value: 'supplies' }, t('supplies')), React.createElement('option', { value: 'ledger' }, t('ledger')))),
               React.createElement(Field, { label: t('subject') }, React.createElement('input', { value: values.subject, onChange: update('subject') }))
             ),
-            React.createElement(Field, { label: t(values.kind === 'office' ? 'detail' : 'reason') }, React.createElement('textarea', { value: values.kind === 'office' ? values.detail : values.reason, onChange: update(values.kind === 'office' ? 'detail' : 'reason') })),
+            React.createElement(Field, { label: t(values.kind === 'office' ? 'detail' : 'reason') }, React.createElement('textarea', {
+              value: values.kind === 'office' ? values.detail : values.reason,
+              onChange: update(values.kind === 'office' ? 'detail' : 'reason'),
+              disabled: busy && values.kind === 'leave',
+            })),
             error && React.createElement('p', { className: 't4y-office-error', role: 'alert' }, error),
-            React.createElement('button', { type: 'submit', className: 't4y-office-submit' },
-              t('submit'))
+            React.createElement('button', { type: 'submit', className: 't4y-office-submit', disabled: busy },
+              busy ? t('submitting') : t('submit'))
           )))
     }
-    function OfficeTurnTail({ turn, sessionId, t }) {
+    function OfficeTurnTail({ turn, sessionId, t, submitLeave }) {
       const source = turn.data.source('t4y-office-workflow')
       const workflow = React.useSyncExternalStore(source.subscribe, source.getSnapshot, source.getSnapshot)
       if (!workflow) return null
       const id = `${sessionId}:${workflow.id}`
-      return React.createElement(OfficeCard, { key: id, node: { id, data: workflow.data }, t })
+      return React.createElement(OfficeCard, {
+        key: id,
+        node: { id, data: workflow.data },
+        t,
+        sessionId,
+        submitLeave,
+      })
     }
     function officeFormState(event) {
       if (event.type === 'command/run') {
@@ -256,9 +298,24 @@ window.__ModuleLoader__.load({
         }
       }
     }
-    exports.inject = ['slots', 'locale', 'uiConversation']
+    exports.inject = ['slots', 'locale', 'uiConversation', 'remote', 'remote.commands']
     exports.apply = (ctx) => {
       ctx.effect(() => ctx.locale.register(OFFICE_NS, copy), 't4y review: office workflow locale')
+      const submitLeave = async ({ sessionId, leave_type, start_date, end_date, reason }) => {
+        const line = `/leave-submit ${JSON.stringify({ leave_type, start_date, end_date, reason })}`
+        const result = await ctx.remote.commands.execute(sessionId, line, [])
+        if (!result.ok) {
+          return { ok: false, message: `${result.error.code}: ${result.error.message}` }
+        }
+        if (result.value === undefined) {
+          return { ok: false, message: 'unknown command: /leave-submit' }
+        }
+        const commandResult = result.value.result
+        if (commandResult?.kind === 'error') {
+          return { ok: false, message: commandResult.text || 'leave-submit failed' }
+        }
+        return { ok: true, message: commandResult?.text || 'ok' }
+      }
       ctx.effect(() => {
         const id = 't4y-office-workflow-style'
         const previousStyle = document.getElementById(id)
@@ -396,7 +453,11 @@ window.__ModuleLoader__.load({
       // A pending application is an actionable result, outside both process disclosures.
       ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register(
         { name: 'conversation.chat.turnTail', id: 't4y-office-workflow', locale: OFFICE_NS },
-        props => React.createElement(OfficeTurnTail, { ...props, t: ctx.locale.bind(OFFICE_NS) })
+        props => React.createElement(OfficeTurnTail, {
+          ...props,
+          t: ctx.locale.bind(OFFICE_NS),
+          submitLeave,
+        })
       ))
     }
     return module.exports

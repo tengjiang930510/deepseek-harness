@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { submitLeaveForm } from './lib/leave-open.js'
 
 export const name = 't4y-review'
 export const inject = ['commands', 'tools']
@@ -54,8 +55,104 @@ export function officeWorkflowTool() {
   })
 }
 
+/** Login, fill 办公平台请假 form, and click 发起流程. */
+export function leaveFormSubmitTool() {
+  return defineTool({
+    name: 'zjy_leave_submit',
+    description:
+      '用 Playwright 登录办公平台，进入请假申请「新增」，填写假别/开始日期/结束日期/事由并点击「发起流程」。'
+      + '当用户确认要将请假单提交到办公平台时必须调用本工具。'
+      + 'leave_type：annual 年假、personal 事假、sick 病假；日期 YYYY-MM-DD。',
+    parameters: {
+      leave_type: {
+        type: 'string',
+        required: true,
+        enum: ['annual', 'personal', 'sick'],
+        description: '假别：annual 年假，personal 事假，sick 病假。',
+      },
+      start_date: { type: 'string', required: true, description: '开始日期，YYYY-MM-DD。' },
+      end_date: { type: 'string', required: true, description: '结束日期，YYYY-MM-DD。' },
+      reason: { type: 'string', required: true, description: '请假事由。' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          finalUrl: { type: 'string', required: true },
+          title: { type: 'string', required: true },
+          leaveType: { type: 'string', required: true },
+          startDate: { type: 'string', required: true },
+          endDate: { type: 'string', required: true },
+          reason: { type: 'string', required: true },
+          submitted: { type: 'boolean', required: true },
+          message: { type: 'string', required: true },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: value.message }],
+    },
+    presentCall: (args) => ({
+      card: 'generic',
+      kind: 'write',
+      title: '办公平台请假提交',
+      rawInput: args,
+    }),
+    async execute(args, exec) {
+      if (exec?.signal?.aborted) throw new Error('Leave submit was cancelled.')
+      const result = await submitLeaveForm({
+        leaveType: args.leave_type,
+        startDate: args.start_date,
+        endDate: args.end_date,
+        reason: args.reason,
+        headed: process.env.HEADED === '1' || process.env.HEADED === 'true',
+        submit: true,
+      })
+      if (exec?.signal?.aborted) throw new Error('Leave submit was cancelled.')
+      return {
+        ...result,
+        message: [
+          '已在办公平台填写并点击「发起流程」。',
+          `假别：${result.leaveType}`,
+          `开始：${result.startDate}`,
+          `结束：${result.endDate}`,
+          `事由：${result.reason}`,
+          `页面：${result.title}`,
+          `URL：${result.finalUrl}`,
+        ].join('\n'),
+      }
+    },
+  })
+}
+
+/**
+ * Parse JSON payload from `/leave-submit {...}`.
+ * @param {string} rawInput
+ */
+function parseLeaveSubmitPayload(rawInput) {
+  const text = String(rawInput ?? '').trim()
+  if (!text) throw new Error('leave-submit 需要 JSON：leave_type、start_date、end_date、reason')
+  let payload
+  try {
+    payload = JSON.parse(text)
+  } catch {
+    throw new Error('leave-submit 参数不是合法 JSON')
+  }
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+    throw new Error('leave-submit 参数必须是 JSON 对象')
+  }
+  const leaveType = String(payload.leave_type ?? '').trim()
+  const startDate = String(payload.start_date ?? '').trim()
+  const endDate = String(payload.end_date ?? '').trim()
+  const reason = String(payload.reason ?? '').trim()
+  if (!leaveType || !startDate || !endDate || !reason) {
+    throw new Error('leave-submit 缺少 leave_type / start_date / end_date / reason')
+  }
+  return { leaveType, startDate, endDate, reason }
+}
+
 export async function apply(ctx) {
   ctx.tools.register(officeWorkflowTool())
+  ctx.tools.register(leaveFormSubmitTool())
   for (const [name, description] of [
     ['leave', '发起请假申请，在会话中填写并确认表单。'],
     ['travel', '发起出差申请，在会话中填写并确认表单。'],
@@ -68,6 +165,38 @@ export async function apply(ctx) {
       handler: () => ({ kind: 'success', text: '已创建办公申请，请在会话卡片中补全并确认。' })
     })
   }
+  ctx.commands.register({
+    name: 'leave-submit',
+    description: '将会话请假卡片提交到办公平台（Playwright 填表并发起流程）。',
+    input: { hint: 'JSON：{"leave_type":"sick","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","reason":"..."}' },
+    async handler({ rawInput = '', signal } = {}) {
+      try {
+        const payload = parseLeaveSubmitPayload(rawInput)
+        if (signal?.aborted) throw new Error('Leave submit was cancelled.')
+        const result = await submitLeaveForm({
+          ...payload,
+          headed: false,
+          submit: true,
+        })
+        if (signal?.aborted) throw new Error('Leave submit was cancelled.')
+        return {
+          kind: 'success',
+          text: [
+            '已提交到办公平台并点击「发起流程」。',
+            `假别：${result.leaveType}`,
+            `开始：${result.startDate}`,
+            `结束：${result.endDate}`,
+            `事由：${result.reason}`,
+          ].join('\n'),
+        }
+      } catch (error) {
+        return {
+          kind: 'error',
+          text: error instanceof Error ? error.message : String(error),
+        }
+      }
+    },
+  })
   ctx.commands.register({
     name: 'brand-review',
     description: '发起铁四院智能助手审查任务。',

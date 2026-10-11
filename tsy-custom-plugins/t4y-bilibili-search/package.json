@@ -17,9 +17,11 @@
     "cordis.patch.yml"
   ],
   "scripts": {
+    "test": "node --import tsx/esm --test index.test.js",
     "build": "node ./scripts/build.mjs",
     "prepare": "node ./scripts/build.mjs",
-    "postinstall": "node ./scripts/ensure-chromium.mjs"
+    "postinstall": "node ./scripts/ensure-chromium.mjs",
+    "codegen": "playwright codegen https://jgyw.crfsdi.com.cn:51111/smart-supervision-hhjc/#/company/hhjczhjl/login"
   },
   "dsh": {
     "bundle": {
@@ -31,9 +33,12 @@
   },
   "devDependencies": {
     "esbuild": "^0.25.12",
+    "tsx": "^4.22.4",
     "typescript": "^5.8.0"
   },
   "peerDependencies": {
+    "@deepseek-ai/dsh-commands": "*",
+    "@deepseek-ai/dsh-llm": "*",
     "@deepseek-ai/dsh-tools": "*",
     "@deepseek-ai/schemastery": "*"
   },

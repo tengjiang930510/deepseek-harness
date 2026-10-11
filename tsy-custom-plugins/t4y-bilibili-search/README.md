@@ -1,6 +1,8 @@
 # t4y-bilibili-search
 
-铁四院能力：B站视频搜索。Playwright 实现在本包 `src/`，构建产物为 `lib/search.js`，不再依赖外部 `enterprise-browser-skills` 仓库。
+English | [中文](README.zh.md)
+
+T4Y capability: Bilibili video search. The Playwright implementation lives in this package's `src/` and builds to `lib/search.js`; no external `enterprise-browser-skills` repository is required.
 
 ## Layout
 
@@ -19,7 +21,7 @@ From the harness repository root:
 pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-bilibili-search
 ```
 
-`prepare` / `postinstall` 会构建 `lib/search.js` 并尝试 `playwright install chromium`。离线可设 `T4Y_BILIBILI_SKIP_BROWSER_INSTALL=1`，再手动：
+`prepare` / `postinstall` build `lib/search.js` and attempt `playwright install chromium`. For offline installation, set `T4Y_BILIBILI_SKIP_BROWSER_INSTALL=1`, then run manually:
 
 ```sh
 cd tsy-custom-plugins/t4y-bilibili-search
@@ -28,10 +30,16 @@ pnpm exec playwright install chromium
 pnpm run build
 ```
 
-Restart `pnpm dsh web`. Ask e.g.「在 B 站按最多播放搜刘欢」— 模型应调用 `bilibili_video_search`。
+Restart `pnpm dsh web`. Ask, for example, "Search Bilibili for Liu Huan, sorted by most plays"; the model should call `bilibili_video_search`.
 
-可选：`config.headed: true` 或环境变量 `HEADED=1` 显示浏览器窗口。登录态可放到 `auth/bilibili.json`（Playwright storageState）。
+You can also enter `/bilibili 刘欢 最多播放 10条`. The command submits the search request to the current Agent, whose model calls `bilibili_video_search` and replies in the conversation; if a task is running, the request is handled at the next step. Empty arguments return an error without starting a search.
+
+Optionally, set `config.headed: true` or the environment variable `HEADED=1` to show the browser window. Login state can be saved to `auth/bilibili.json` as Playwright storageState.
 
 ## Settings
 
-若已安装 `t4y-capability-hub`，可在 **设置 → 内置插件 → 铁四院能力插件** 中启停本包。
+If `t4y-capability-hub` is installed, enable or disable this package under **Settings → Built-in plugins → T4Y capability plugins**.
+
+## Test
+
+Run `npm test` in this package's directory to verify search-request submission, empty-keyword rejection, and submission failures; tests do not launch a browser or call a model.
