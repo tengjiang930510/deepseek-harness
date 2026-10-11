@@ -9,6 +9,7 @@ Each subdirectory is one installable package. Config in this tree uses **package
 From the repository root (after `pnpm install`):
 
 ```sh
+pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-brand
 pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-review
 pnpm dsh --profile web --dump-config
 ```
@@ -29,6 +30,7 @@ pnpm dsh web --patch ./tsy-custom-plugins/t4y-review/cordis.yml
 
 | Directory | Package | Role |
 |---|---|---|
+| `t4y-brand/` | `t4y-brand` | CRCC logo + sidebar name **铁四院智能助手** |
 | `t4y-capability-hub/` | `t4y-capability-hub` | Settings tab **铁四院能力插件**（启停列表） |
 | `t4y-review/` | `t4y-review` | Office forms + review commands |
 | `t4y-bilibili-search/` | `t4y-bilibili-search` | Tool `bilibili_video_search`（内置 Playwright，`src/`） |
