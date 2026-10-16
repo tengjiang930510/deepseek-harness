@@ -1,3 +1,5 @@
+- id: ui-brand-official
+  disabled: true
 - insert:
     - id: t4y-brand
       name: t4y-brand

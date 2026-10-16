@@ -321,6 +321,8 @@ Apple 工具使用 macOS 当前活动网络服务的 HTTP/HTTPS 代理。配置�
 
 可选的私有试用构建可在目标的已忽略 `.env.windows` 或 `.env.macos` 中设置 `DSH_DESKTOP_TRIAL_DEFAULTS_FILE`，指向包含 `patch`（完整的 profile patch YAML 字符串）、`credentialRef`（该 patch 引用的键名）和 `credential`（API 密钥）的本地 JSON 文件。打包会把该文件复制进应用归档。首次启动时，仅当 Desktop profile 尚无 patch 才会写入该 patch，并把凭据交给 Host；之后启动会保留用户对 profile 的修改。任何拿到安装包或已安装应用的人都能提取该凭据，因此应使用独立的、额度受限的密钥，并在试用结束后撤销。该 JSON 源文件和组装后的应用不得提交到仓库，也不得作为正式发行发布。
 
+同一构建还可设置 `DSH_DESKTOP_TRIAL_PLUGINS_DIR`，指向一个本地目录，其每个子目录包含一个插件包，生产依赖平铺安装在该插件自己的 `node_modules` 中。打包会把该目录复制到应用资源中的 `trial-plugins`。启动时，Desktop 把 profile 尚未声明的每个随附插件复制到 profile 的 `node_modules`，以 `file:` 依赖声明，并追加到 `dsh.profile.bundles`；profile 中的 `trial-plugins.json` 记录已写入的版本。写入后被用户移除的插件不会再次加入；仍被声明的插件在安装包携带其他版本时会被替换；用户自行管理的声明不受影响。
+
 在 Windows x64 上，使用完整的未签名打包命令进行本地安装测试：
 
 ```sh

@@ -71,10 +71,17 @@ export async function launchChromium(options: BrowserLaunchOptions = {}): Promis
     throw new Error(`Unsupported browser: ${kind}. Phase 1 only supports Chromium.`)
   }
 
-  return chromium.launch({
+  const launchOptions = {
     headless: resolveHeadless(options),
     args: ['--disable-blink-features=AutomationControlled'],
-  })
+  }
+  try {
+    return await chromium.launch(launchOptions)
+  } catch (error) {
+    // Machines without Playwright's downloaded Chromium (e.g. a packaged Desktop install) use the system Edge.
+    if (!/Executable doesn't exist/i.test(error instanceof Error ? error.message : String(error))) throw error
+    return chromium.launch({ ...launchOptions, channel: 'msedge' })
+  }
 }
 
 export async function createBrowserContext(

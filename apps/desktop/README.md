@@ -319,6 +319,8 @@ Apple tooling uses the active macOS network service's HTTP/HTTPS proxies. Config
 
 An optional private trial build can set `DSH_DESKTOP_TRIAL_DEFAULTS_FILE` in the target's ignored `.env.windows` or `.env.macos` to a local JSON file containing `patch` (a complete profile patch YAML string), `credentialRef` (the key named by that patch), and `credential` (the API key). Packaging copies this file into the application archive. On first launch, Desktop writes the patch only when the Desktop profile has no patch yet and supplies the credential to its Host; later launches preserve user edits to the profile. The credential is extractable from every installer and installed application, so use a separate key with a limited budget and revoke it after the trial. The JSON source and assembled application must not be committed or published as a normal release.
 
+The same build can also set `DSH_DESKTOP_TRIAL_PLUGINS_DIR` to a local directory whose children each hold one plugin package with its production dependencies installed flat in its own `node_modules`. Packaging copies the directory into the application resources as `trial-plugins`. At launch, Desktop copies each carried plugin the profile does not already declare into the profile's `node_modules`, declares it with a `file:` dependency, and appends it to `dsh.profile.bundles`; `trial-plugins.json` in the profile records the seeded versions. A plugin removed after seeding stays removed, a still-declared one is replaced when the installer carries another version, and user-managed declarations are never touched.
+
 On Windows x64, use the complete unsigned packaging command for local installation testing:
 
 ```sh
