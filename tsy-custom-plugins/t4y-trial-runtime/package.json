@@ -1,0 +1,23 @@
+{
+  "name": "t4y-trial-runtime",
+  "version": "0.1.10",
+  "description": "武汉地铁智能助手内置运行时：Qwen 模型、联网搜索与免登录配置。",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "runtime.js",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "MIT"
+}
