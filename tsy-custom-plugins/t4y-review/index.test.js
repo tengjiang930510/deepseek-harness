@@ -47,7 +47,7 @@ test('office workflow tool creates a structured conversation workflow', async ()
   })
   assert.deepEqual(result, {
     kind: 'travel',
-    message: '已在会话中创建办公申请卡片，请补全并确认后提交。',
+    message: '已创建办公申请卡片。请停止回复并等待用户在卡片中补全、确认后提交；本轮不要再输出任何文字或调用工具。',
   })
-  await assert.rejects(() => tool.execute({ kind: 'unknown' }), /kind.*one of/)
+  await assert.rejects(() => tool.execute({ kind: 'unknown' }), /不支持的办公申请类型/)
 })

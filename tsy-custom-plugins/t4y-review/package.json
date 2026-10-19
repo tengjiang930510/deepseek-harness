@@ -1,6 +1,6 @@
 {
   "name": "t4y-review",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "武汉地铁智能助手：审查任务、办公申请与办公平台请假表单预览（Playwright）。",
   "private": true,
   "type": "module",

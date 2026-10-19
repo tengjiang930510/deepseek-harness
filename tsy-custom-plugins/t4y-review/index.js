@@ -1,8 +1,18 @@
 import { readFile } from 'node:fs/promises'
-import { submitLeaveForm } from './lib/leave-open.js'
 
 export const name = 't4y-review'
 export const inject = ['commands', 'tools']
+
+/** Lazy-load Playwright submit so the plugin still boots when lib/leave-open.js is absent. */
+async function submitLeaveForm(options) {
+  try {
+    const mod = await import('./lib/leave-open.js')
+    return mod.submitLeaveForm(options)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(`请假提交模块不可用（缺少 lib/leave-open.js）：${detail}`)
+  }
+}
 
 const defineTool = (tool) => tool
 
@@ -26,7 +36,12 @@ function optionalText(value) {
 export function officeWorkflowTool() {
   return defineTool({
     name: 'office_workflow_prepare',
-    description: '当用户自然语言提出请假、出差、会议预约、办公用品申领或流程台账查询时，必须调用此工具创建或补全会话中的办公申请卡片。优先从用户原话提取信息；不确定的字段留空，不要编造。请假用 kind="leave"，出差用 kind="travel"，其他办公事务用 kind="office"。日期使用 YYYY-MM-DD；如用户仅给出相对日期，结合当前日期换算后填写。用户说“明天请假去杭州、三天后回”属于出差，应填 destination、start_date、end_date 和 reason。',
+    description:
+      '当用户自然语言提出请假、出差、会议预约、办公用品申领或流程台账查询时，必须调用此工具创建或补全会话中的办公申请卡片。'
+      + '优先从用户原话提取信息；不确定的字段留空，不要编造。请假用 kind="leave"，出差用 kind="travel"，其他办公事务用 kind="office"。'
+      + '日期使用 YYYY-MM-DD；如用户仅给出相对日期，结合当前日期换算后填写。'
+      + '用户说“明天请假去杭州、三天后回”属于出差，应填 destination、start_date、end_date 和 reason。'
+      + '调用成功后必须立即结束本轮：不要再输出任何说明、寒暄或追问，也不要再调用其他工具；等待用户在会话卡片中补全并确认提交。',
     parameters: {
       kind: { type: 'string', required: true, enum: ['leave', 'travel', 'office'], description: '申请类型。' },
       leave_type: { type: 'string', enum: ['annual', 'personal', 'sick'], description: '请假类型。' },
@@ -42,16 +57,24 @@ export function officeWorkflowTool() {
       detail: { type: 'string', description: '办公事务说明。' }
     },
     output: {
-      schema: { type: 'object', additionalProperties: false, properties: {
-        kind: { type: 'string', required: true },
-        message: { type: 'string', required: true }
-      } },
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['kind', 'message'],
+        properties: {
+          kind: { type: 'string' },
+          message: { type: 'string' },
+        },
+      },
       render: (_args, value) => [{ type: 'text', text: value.message }]
     },
     presentCall: args => ({ card: 'generic', kind: 'write', title: '创建办公申请', rawInput: args }),
     async execute(args) {
       if (!OFFICE_KINDS.has(args.kind)) throw new Error('不支持的办公申请类型。')
-      return { kind: args.kind, message: '已在会话中创建办公申请卡片，请补全并确认后提交。' }
+      return {
+        kind: args.kind,
+        message: '已创建办公申请卡片。请停止回复并等待用户在卡片中补全、确认后提交；本轮不要再输出任何文字或调用工具。',
+      }
     }
   })
 }
@@ -79,15 +102,16 @@ export function leaveFormSubmitTool() {
       schema: {
         type: 'object',
         additionalProperties: false,
+        required: ['finalUrl', 'title', 'leaveType', 'startDate', 'endDate', 'reason', 'submitted', 'message'],
         properties: {
-          finalUrl: { type: 'string', required: true },
-          title: { type: 'string', required: true },
-          leaveType: { type: 'string', required: true },
-          startDate: { type: 'string', required: true },
-          endDate: { type: 'string', required: true },
-          reason: { type: 'string', required: true },
-          submitted: { type: 'boolean', required: true },
-          message: { type: 'string', required: true },
+          finalUrl: { type: 'string' },
+          title: { type: 'string' },
+          leaveType: { type: 'string' },
+          startDate: { type: 'string' },
+          endDate: { type: 'string' },
+          reason: { type: 'string' },
+          submitted: { type: 'boolean' },
+          message: { type: 'string' },
         },
       },
       render: (_args, value) => [{ type: 'text', text: value.message }],
