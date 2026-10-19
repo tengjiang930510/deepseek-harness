@@ -1,6 +1,6 @@
 {
   "name": "t4y-trial-runtime",
-  "version": "0.1.10",
+  "version": "0.1.12",
   "description": "武汉地铁智能助手内置运行时：Qwen 模型、联网搜索与免登录配置。",
   "private": true,
   "type": "module",

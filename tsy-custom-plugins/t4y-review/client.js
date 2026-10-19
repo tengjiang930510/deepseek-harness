@@ -260,43 +260,51 @@ window.__ModuleLoader__.load({
       }
       return { seq: event.seq, ...parseArgs(event.data.arguments) }
     }
+    function isOfficeKind(kind) {
+      return kind === 'leave' || kind === 'travel' || kind === 'office'
+    }
+    // Turn-scoped projection (same seat as schedule_create): survives process-group
+    // collapse and stays under the closing assistant text after the turn ends.
     const definition = {
       kind: 't4y-office-workflow',
       match: event => {
+        if (event.type === 'turn/start') return { id: String(event.data.turn), role: 'start' }
         if (event.type === 'tool/call' && event.data.name === 'office_workflow_prepare' && typeof event.data.turn === 'number') {
-          return { id: `office:${event.data.turn}`, role: 'start' }
+          return { id: String(event.data.turn), role: 'update' }
         }
-        if (event.type === 'command/run' && COMMAND_KINDS[event.data.name]) {
-          if (typeof event.data.turn === 'number') return { id: `office:${event.data.turn}`, role: 'start' }
-          return { id: `command:${event.data.commandId}`, role: 'start' }
-        }
-        // Refresh turn-owned data when the completed-turn tail becomes available.
-        if (event.type === 'turn/end' && typeof event.data.turn === 'number') {
-          return { id: `office:${event.data.turn}`, role: 'update' }
+        if (event.type === 'command/run' && COMMAND_KINDS[event.data.name] && typeof event.data.turn === 'number') {
+          return { id: String(event.data.turn), role: 'update' }
         }
         return null
       },
-      start: (_context, match) => officeFormState(match.event),
+      start: (_context, match) => {
+        if (match.event.type !== 'turn/start') throw new Error('t4y-office-workflow start requires turn/start')
+        return { turn: match.event.data.turn, form: null }
+      },
       update: (context, match) => {
-        if (match.event.type === 'turn/end') {
-          return { ...context.state, turnEnded: true, endSeq: match.event.seq }
-        }
         if (match.event.type === 'tool/call' || match.event.type === 'command/run') {
-          return officeFormState(match.event)
+          return { ...context.state, form: officeFormState(match.event) }
         }
         return context.state
       },
-      buildLocationData: (context, scope) => {
-        if (scope !== 'turn' || !COMMAND_KINDS[context.state?.kind]) return null
-        const location = context.start?.location ?? context.matches?.at(-1)?.location
-        if (location?.kind !== 'turn' && location?.kind !== 'step') return null
+      buildLocationData: (context, scope, previous) => {
+        const form = context.state?.form
+        if (scope !== 'turn' || form === null || form === undefined || !isOfficeKind(form.kind)) return null
+        const value = { id: `office:${context.state.turn}`, data: form }
+        if (previous?.kind === 'turn'
+          && previous.turn === context.state.turn
+          && previous.key === 't4y-office-workflow'
+          && previous.value?.id === value.id
+          && previous.value?.data === value.data) {
+          return previous
+        }
         return {
           kind: 'turn',
-          turn: location.turn.turn,
+          turn: context.state.turn,
           key: 't4y-office-workflow',
-          value: { id: context.id, data: context.state }
+          value,
         }
-      }
+      },
     }
     exports.inject = ['slots', 'locale', 'uiConversation', 'remote', 'remote.commands']
     exports.apply = (ctx) => {
