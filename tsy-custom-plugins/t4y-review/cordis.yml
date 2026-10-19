@@ -1,0 +1,5 @@
+# Dev overlay: `pnpm dsh web --patch ./tsy-custom-plugins/t4y-review/cordis.yml`
+# Relative plugin names resolve beside this file (portable across machines/checkouts).
+- insert:
+    - id: t4y-review
+      name: ./index.js

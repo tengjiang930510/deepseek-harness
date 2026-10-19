@@ -43,6 +43,15 @@ afterEach(() => {
 })
 
 describe('desktop external plugin profile', () => {
+  it('leaves the user profile patch owned by the profile while runtime settings arrive as bundles', async () => {
+    const { manager } = setup()
+    await manager.applyRelease()
+    const patch = join(manager.paths.profile, 'cordis.patch.yml')
+    writeFileSync(patch, '- id: user-setting\n  config: { value: retained }\n')
+    await manager.applyRelease()
+    expect(readFileSync(patch, 'utf8')).toBe('- id: user-setting\n  config: { value: retained }\n')
+  })
+
   it('preserves installed packages, profile state, and the lockfile when preparing a launch', async () => {
     const { manager } = setup()
     await manager.applyRelease()

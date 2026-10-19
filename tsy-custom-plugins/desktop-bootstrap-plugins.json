@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "plugins": [
+    {
+      "directory": "t4y-brand",
+      "name": "t4y-brand",
+      "spec": "git+https://gitee.com/eureka96/tsy-dsh-plugins-hub.git#4d71110ae9bf5c4bc7ecdcf59237088052db8fa9"
+    },
+    {
+      "directory": "t4y-capability-hub",
+      "name": "t4y-capability-hub",
+      "spec": "git+https://gitee.com/eureka96/tsy-dsh-plugins-hub.git#0d0ec0def25c069d55e8447dbdd02a0c620aa5ae"
+    },
+    {
+      "directory": "t4y-release-manager",
+      "name": "t4y-release-manager",
+      "spec": "git+https://gitee.com/eureka96/tsy-dsh-plugins-hub.git#4eaeb5a7b41aa20b42c958cef3236be5a02af2dc"
+    },
+    {
+      "directory": "t4y-trial-runtime",
+      "name": "t4y-trial-runtime",
+      "spec": "git+https://gitee.com/eureka96/tsy-dsh-plugins-hub.git#7500f4d4756c3d1abe94a34f364b4de9eb7521bf"
+    }
+  ]
+}

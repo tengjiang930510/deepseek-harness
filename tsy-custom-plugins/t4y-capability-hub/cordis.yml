@@ -1,0 +1,4 @@
+# Dev overlay: pnpm dsh web --patch ./tsy-custom-plugins/t4y-capability-hub/cordis.yml
+- insert:
+    - id: t4y-capability-hub
+      name: ./index.js
