@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write tsy-custom-plugins/t4y-bilibili-search/README.md
+/t4y-bilibili-search:
+  en: 1eac8b156c771567
+  zh: f80ada28a6dd470f
+/t4y-bilibili-search/layout:
+  en: 1ab8b509e0fe148b
+  zh: 1ab8b509e0fe148b
+/t4y-bilibili-search/install:
+  en: 14146030332760ff
+  zh: 00fa2d9e7bd51042
+/t4y-bilibili-search/settings:
+  en: 95adf17d38815616
+  zh: a6ef986af7e7d8d6
+/t4y-bilibili-search/test:
+  en: d2e6d48afd4033f7
+  zh: eb2f2fbde1caef45

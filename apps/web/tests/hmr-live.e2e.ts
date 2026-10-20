@@ -1,4 +1,4 @@
-/** Built dsh web + the `pnpm run dev:web --no-serve` watchers → browser HMR, with no page reload. */
+﻿/** Built dsh web + the `pnpm run dev:web --no-serve` watchers → browser HMR, with no page reload. */
 
 import { existsSync, globSync, statSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -94,8 +94,8 @@ it('hot-reloads a real client-plugin source edit without refreshing the page', a
     .map(async path => [path, await readFile(path)] as const))
   const originalClientArtifactPaths = new Set(originalClientArtifacts.map(([path]) => path))
   const originalSource = await readFile(sourcePath)
-  const oldText = 'Into the Unknown'
-  const sourceNeedle = "'hero.headline': 'Into the Unknown'"
+  const oldText = 'Wuhan Metro Smart Assistant'
+  const sourceNeedle = "'hero.headline': 'Wuhan Metro Smart Assistant'"
   const newText = `HMR UPDATED ${'x'.repeat(80)}`
   const updatedSource = originalSource.toString().replace(sourceNeedle, `'hero.headline': '${newText}'`)
   if (updatedSource === originalSource.toString()) throw new Error(`HMR source lacks ${JSON.stringify(sourceNeedle)}`)

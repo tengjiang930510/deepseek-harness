@@ -1,0 +1,6 @@
+# Dev overlay: pnpm dsh web --patch ./tsy-custom-plugins/t4y-bilibili-search/cordis.yml
+- insert:
+    - id: t4y-bilibili-search
+      name: ./index.js
+      config:
+        headed: false
