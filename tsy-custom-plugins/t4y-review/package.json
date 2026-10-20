@@ -1,0 +1,44 @@
+{
+  "name": "t4y-review",
+  "version": "0.2.5",
+  "description": "武汉地铁智能助手：审查任务、办公申请与办公平台请假表单预览（Playwright）。",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "guidance.md",
+    "lib",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "smoke:leave": "node ./scripts/smoke-leave-open.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-chat",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-api-remotes"
+      ],
+      "platform": "web"
+    }
+  },
+  "dependencies": {
+    "playwright": "^1.64.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "*"
+  },
+  "license": "MIT"
+}

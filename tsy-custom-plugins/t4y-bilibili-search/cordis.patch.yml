@@ -1,0 +1,5 @@
+- insert:
+    - id: t4y-bilibili-search
+      name: t4y-bilibili-search
+      config:
+        headed: false

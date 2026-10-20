@@ -1,4 +1,4 @@
-// Web e2e scenarios: lifecycle & chrome — the workspace-aware first-send
+﻿// Web e2e scenarios: lifecycle & chrome — the workspace-aware first-send
 // flow over the real wire, reload recovery, and the dark-mode token cascade.
 // One tiny recorded turn (text-only) drives the whole spec: the empty-state
 // hero materializes a real Workspace + Session on first send (the jsdom
@@ -306,11 +306,11 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     }
     // The blank frame renders the hero, not the resident composer: the
     // headline plus the guidance placeholder are the empty state's anchors.
-    await expect.poll(() => page.getByText('Into the Unknown', { exact: false }).count(), { timeout: 15_000 }).toBe(1)
+    await expect.poll(() => page.getByText('Wuhan Metro Smart Assistant', { exact: false }).count(), { timeout: 15_000 }).toBe(1)
     const input = page.locator('[data-composer-input]').first()
     await input.waitFor({ timeout: 10_000 })
     if (MODE !== 'record') {
-      await page.getByText('Into the Unknown', { exact: false }).hover()
+      await page.getByText('Wuhan Metro Smart Assistant', { exact: false }).hover()
       await expect.poll(() => page.getByRole('tooltip').count()).toBe(0)
       // Golden of the hero's stable waiting state (captured before any send;
       // the conversation-region goldens belong to the other scenarios).

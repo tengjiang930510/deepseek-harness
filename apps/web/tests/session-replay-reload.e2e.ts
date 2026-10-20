@@ -1,4 +1,4 @@
-/** Recorded-session recovery through Chromium and WebKit's native JSON validation. */
+﻿/** Recorded-session recovery through Chromium and WebKit's native JSON validation. */
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium, webkit } from 'playwright'
@@ -67,7 +67,7 @@ describe.skipIf(webSnapshotMode() === 'record')('web session replay', () => {
         await captureExpandedTurnProcessAria(page, '[class*="centerCol"]', scaffold.workspaceCwd), 'replay')
 
       await page.getByRole('button', { name: 'New session', exact: true }).last().click()
-      await page.getByText('Into the Unknown', { exact: true }).waitFor()
+      await page.getByText('Wuhan Metro Smart Assistant', { exact: true }).waitFor()
       await page.getByRole('treeitem').filter({ has: page.getByText('Use the bash tool to', { exact: true }) }).click()
       await page.getByText('DONE', { exact: true }).waitFor({ timeout: 15_000 })
       await compareOrRefreshGolden(UI_EXPECTED,

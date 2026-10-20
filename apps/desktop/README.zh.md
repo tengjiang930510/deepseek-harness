@@ -46,7 +46,7 @@ Windows 在整个运行期间常驻托盘图标。悬停提示为产品名，单
 
 ## 关键技术决策
 
-设计师原稿位于 `resources/icon.png` 和 `resources/icon.svg`；平台适配保留鲸鱼与渐变，分别位于 `resources/icon-windows.*` 和 `resources/icon-macos.*`。将各平台 SVG 导出为透明的 1024×1024 PNG。electron-builder 为 Windows 应用、安装程序和卸载程序生成多尺寸 ICO（[Windows 图标要求](https://learn.microsoft.com/en-us/windows/apps/design/iconography/app-icon-construction)）。安装页面在两种主题下使用匹配的图案；卸载程序的欢迎和完成页共用 `installer/assets/uninstaller-sidebar.png`，准备阶段将其转换为 164×314 BMP。
+设计师原稿位于 `resources/icon.png` 和 `resources/icon.svg`；`resources/icon-macos.*` 保留鲸鱼与渐变；`resources/icon-windows.*` 以及安装程序的 `installer/assets/brand*.png` 和 `uninstaller-sidebar.png` 使用武汉地铁标志，由 `tsy-custom-plugins/t4y-brand/scripts/prepare-desktop-icons.mjs` 生成。将各平台 SVG 导出为透明的 1024×1024 PNG。electron-builder 为 Windows 应用、安装程序和卸载程序生成多尺寸 ICO（[Windows 图标要求](https://learn.microsoft.com/en-us/windows/apps/design/iconography/app-icon-construction)）。安装页面在两种主题下使用匹配的图案；卸载程序的欢迎和完成页共用 `installer/assets/uninstaller-sidebar.png`，准备阶段将其转换为 164×314 BMP。
 
 快捷键覆盖保存在 `app.getPath('userData')/keybindings.json`，与 `DSH_HOME` 分离。主进程校验并串行保存修改后才发布已接受键位。读取失败保留上次接受的键位并阻止编辑，包括全部恢复；不可读和未来版本的文件保持不变。开发时可通过 `DSH_DESKTOP_USER_DATA_DIR` 隔离这些偏好，启动器会输出解析后的路径。格式和冲突语义见[快捷键服务](../../packages/client/shortcuts/README.zh.md)。
 
@@ -320,6 +320,8 @@ Apple 工具使用 macOS 当前活动网络服务的 HTTP/HTTPS 代理。配置�
 ### 未签名 Windows 测试安装包
 
 可选的私有试用构建可在目标的已忽略 `.env.windows` 或 `.env.macos` 中设置 `DSH_DESKTOP_TRIAL_DEFAULTS_FILE`，指向包含 `patch`（完整的 profile patch YAML 字符串）、`credentialRef`（该 patch 引用的键名）和 `credential`（API 密钥）的本地 JSON 文件。打包会把该文件复制进应用归档。首次启动时，仅当 Desktop profile 尚无 patch 才会写入该 patch，并把凭据交给 Host；之后启动会保留用户对 profile 的修改。任何拿到安装包或已安装应用的人都能提取该凭据，因此应使用独立的、额度受限的密钥，并在试用结束后撤销。该 JSON 源文件和组装后的应用不得提交到仓库，也不得作为正式发行发布。
+
+同一构建还可设置 `DSH_DESKTOP_TRIAL_PLUGINS_DIR`，指向一个本地目录，其每个子目录包含一个插件包，生产依赖平铺安装在该插件自己的 `node_modules` 中。打包会把该目录复制到应用资源中的 `trial-plugins`。启动时，Desktop 把 profile 尚未声明的每个随附插件复制到 profile 的 `node_modules`，以 `file:` 依赖声明，并追加到 `dsh.profile.bundles`；profile 中的 `trial-plugins.json` 记录已写入的版本。写入后被用户移除的插件不会再次加入；仍被声明的插件在安装包携带其他版本时会被替换；用户自行管理的声明不受影响。
 
 在 Windows x64 上，使用完整的未签名打包命令进行本地安装测试：
 

@@ -22,6 +22,7 @@ import {
 import type { DesktopPaths } from './paths.ts'
 import type { DesktopRelease } from './release.ts'
 import { readDesktopRuntime } from './runtime-tree.ts'
+import { seedTrialPlugins } from './trial-plugins.ts'
 import {
   initProfile, PROFILE_TEMPLATES, removeLinkProjections, sanitizeProfile, type ProfileTemplate,
 } from '@deepseek-ai/dsh-app-boot'
@@ -63,11 +64,13 @@ export class DesktopProjectManager {
    * @param paths - Electron-owned package state and reserved desktop profile paths.
    * @param runtime - location of the bundled application runtime.
    * @param initialPatch - optional first-launch profile patch from a trial installer.
+   * @param trialPluginsDir - optional installer resource directory of plugins seeded by {@link seedTrialPlugins}.
    */
   constructor(
     readonly paths: DesktopPaths,
     readonly runtime: { readonly dsh: string },
     private readonly initialPatch?: string,
+    private readonly trialPluginsDir?: string,
   ) {}
 
   /**
@@ -88,6 +91,7 @@ export class DesktopProjectManager {
       readDesktopRuntime(this.runtime.dsh)
       migrateProfileSettings(this.paths.profile)
       createPluginProfile(this.paths.profile, this.initialPatch)
+      if (this.trialPluginsDir !== undefined) seedTrialPlugins(this.paths.profile, this.trialPluginsDir)
       removeLinkProjections(this.paths.profile)
     })
   }
