@@ -85,7 +85,7 @@ Windows 在整个运行期间常驻托盘图标。悬停提示为产品名，单
 
 ## 关键技术决策
 
-设计师原稿位于 `resources/icon.png` 和 `resources/icon.svg`；平台适配保留鲸鱼与渐变，分别位于 `resources/icon-windows.*` 和 `resources/icon-macos.*`。将各平台 SVG 导出为透明的 1024×1024 PNG。electron-builder 为 Windows 应用、安装程序和卸载程序生成多尺寸 ICO（[Windows 图标要求](https://learn.microsoft.com/en-us/windows/apps/design/iconography/app-icon-construction)）。安装页面在两种主题下使用匹配的图案；卸载程序的欢迎和完成页共用 `installer/assets/uninstaller-sidebar.png`，准备阶段将其转换为 164×314 BMP。
+设计师原稿位于 `resources/icon.png` 和 `resources/icon.svg`；`resources/icon-macos.*` 保留鲸鱼与渐变；`resources/icon-windows.*` 以及安装程序的 `installer/assets/brand*.png` 和 `uninstaller-sidebar.png` 使用武汉地铁标志，由 `tsy-custom-plugins/t4y-brand/scripts/prepare-desktop-icons.mjs` 生成。将各平台 SVG 导出为透明的 1024×1024 PNG。electron-builder 为 Windows 应用、安装程序和卸载程序生成多尺寸 ICO（[Windows 图标要求](https://learn.microsoft.com/en-us/windows/apps/design/iconography/app-icon-construction)）。安装页面在两种主题下使用匹配的图案；卸载程序的欢迎和完成页共用 `installer/assets/uninstaller-sidebar.png`，准备阶段将其转换为 164×314 BMP。
 
 快捷键覆盖保存在 `app.getPath('userData')/keybindings.json`，与 `DSH_HOME` 分离。主进程校验并串行保存修改后才发布已接受键位。读取失败保留上次接受的键位并阻止编辑，包括全部恢复；不可读和未来版本的文件保持不变。开发时可通过 `DSH_DESKTOP_USER_DATA_DIR` 隔离这些偏好，启动器会输出解析后的路径。格式和冲突语义见[快捷键服务](../../packages/client/shortcuts/README.zh.md)。
 
@@ -253,6 +253,8 @@ Desktop 在 Host 启动后、打开工作区前检查模型 API Key 引用是否
 Windows 安装程序使用原生 NSIS 页面，提供亮暗配色、系统阴影、可编辑的安装目录，以及默认勾选立即启动的完成页。安装仅面向当前用户。点击安装或按 Enter 均校验当前路径；路径规范化后仍拒绝磁盘根目录，包括带重复末尾分隔符的写法。新安装位置必须为空，非空位置必须是已登记的安装目录。受影响安装路径中的程序运行时显示系统提示，并保持应用运行；其他目录中的同名应用不阻止安装。静默更新最多等待受影响应用退出十秒，若仍在运行则以退出码 2 结束。
 
 可选的私有试用构建可在目标的已忽略 `.env.windows` 或 `.env.macos` 中设置 `DSH_DESKTOP_TRIAL_DEFAULTS_FILE`，指向包含 `patch`（完整的 profile patch YAML 字符串）、`credentialRef`（该 patch 引用的键名）和 `credential`（API 密钥）的本地 JSON 文件。打包会把该文件复制进应用归档。首次启动时，仅当 Desktop profile 尚无 patch 才会写入该 patch，并把凭据交给 Host；之后启动会保留用户对 profile 的修改。任何拿到安装包或已安装应用的人都能提取该凭据，因此应使用独立的、额度受限的密钥，并在试用结束后撤销。该 JSON 源文件和组装后的应用不得提交到仓库，也不得作为正式发行发布。
+
+同一构建还可设置 `DSH_DESKTOP_TRIAL_PLUGINS_DIR`，指向一个本地目录，其每个子目录包含一个插件包，生产依赖平铺安装在该插件自己的 `node_modules` 中。打包会把该目录复制到应用资源中的 `trial-plugins`。启动时，Desktop 把 profile 尚未声明的每个随附插件复制到 profile 的 `node_modules`，以 `file:` 依赖声明，并追加到 `dsh.profile.bundles`；profile 中的 `trial-plugins.json` 记录已写入的版本。写入后被用户移除的插件不会再次加入；仍被声明的插件在安装包携带其他版本时会被替换；用户自行管理的声明不受影响。
 
 主题在启动时跟随 Windows；可用 `/THEME=light`、`/THEME=dark` 和 `/THEME=auto` 显式选择配色。窗口在品牌控件准备完成后显示。欢迎页首次出现时，安装窗口会一次性移到普通窗口前方；若焦点在其他窗口，任务栏按钮会闪烁提示，但安装窗口不会始终置顶。进度读取锁定版本的 7-Zip 解压器百分比；目录替换、注册和清理仍使用有界估算。加权百分比不代表剩余时间。NSIS 报告成功后，进度条用 600 毫秒补满并短暂显示 100%，再显示完成页；切换目标时长为 750 毫秒。完成页保留窗口位置。点击完成后，安装程序先隐藏窗口，再启动已安装的可执行文件；启动失败会恢复页面以供重试。目录替换和失败恢复遵循[安装检查](packaging/README.zh.md#runtime-file-selection)。首次启动的配置档案准备仍属于独立的 Desktop 操作。
 

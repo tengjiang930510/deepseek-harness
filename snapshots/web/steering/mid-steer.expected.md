@@ -11,8 +11,8 @@
 - button "Copy"
 - text: Running
 - button "Ask question waiting"
-- status: Deep diving
-- text: "Deep diving for {{duration}} ··· Interjection: include the word BANANA in your final reply."
+- status: Assistant processing
+- text: "Assistant processing for {{duration}} ··· Interjection: include the word BANANA in your final reply."
 - button "Copy"
 - region "Ready to continue?":
   - text: Checkpoint

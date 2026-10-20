@@ -1,6 +1,6 @@
 /** Select local test defaults or platform release settings without changing the caller's environment. */
 
-import { accessSync, constants, readFileSync, statSync } from 'node:fs'
+import { accessSync, constants, readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseEnv } from 'node:util'
@@ -15,11 +15,11 @@ import { resolveWindowsPackageSettings } from './windows-package-settings.mjs'
 import { resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
 
 const APP_ROOT = fileURLToPath(new URL('..', import.meta.url))
-const SHARED_SETTING = /^(?:DSH_DESKTOP_(?:APP_ID|AUTO_UPDATE_ENV|NPM_REGISTRY|TRIAL_DEFAULTS_FILE|MANDATORY_UPDATE_(?:CONFIG|(?:TEST|PROD)_ORIGIN))|DOWNLOAD_TEST_RELEASE_ID|DOWNLOAD_PROD_EO_ZONE_ID|DOWNLOAD_(?:TEST|PROD)_(?:ORIGIN|COS_BUCKET|COS_SECRET_ID|COS_SECRET_KEY))$/u
+const SHARED_SETTING = /^(?:DSH_DESKTOP_(?:APP_ID|AUTO_UPDATE_ENV|NPM_REGISTRY|TRIAL_DEFAULTS_FILE|TRIAL_PLUGINS_DIR|MANDATORY_UPDATE_(?:CONFIG|(?:TEST|PROD)_ORIGIN))|DOWNLOAD_TEST_RELEASE_ID|DOWNLOAD_PROD_EO_ZONE_ID|DOWNLOAD_(?:TEST|PROD)_(?:ORIGIN|COS_BUCKET|COS_SECRET_ID|COS_SECRET_KEY))$/u
 const WINDOWS_SETTING = /^DSH_DESKTOP_WINDOWS_(?:CER_FILE|SIGNTOOL|KEY_CONTAINER|TOKEN_PIN|SIGNATURE_CACHE_DIR|SIGNATURE_CACHE_CONCURRENCY|PACK_CONCURRENCY|COMPRESSION_LEVEL)$/u
 const MACOS_SETTING = /^(?:DSH_DESKTOP_MACOS_(?:SIGNING_IDENTITY|TEAM_ID|SIGNATURE_CACHE_DIR|PACK_CONCURRENCY|ZIP_COMPRESSION_LEVEL|DOWNLOAD_PROXY|NOTARIZATION_PROXY)|APPLE_(?:API_KEY|API_KEY_ID|API_ISSUER|ID|APP_SPECIFIC_PASSWORD|TEAM_ID|KEYCHAIN|KEYCHAIN_PROFILE)|CSC_(?:LINK|KEY_PASSWORD))$/u
 const AMBIENT_RELEASE_SETTING = /^(?:DSH_DESKTOP_(?:APP_ID|AUTO_UPDATE_ENV|MANDATORY_UPDATE_.*|WINDOWS_.*|MACOS_.*)|APPLE_.*|(?:WIN_)?CSC_.*|DOWNLOAD_(?:TEST|PROD)_.*)$/iu
-const FILE_SETTINGS = ['DSH_DESKTOP_WINDOWS_CER_FILE', 'DSH_DESKTOP_WINDOWS_SIGNTOOL', 'DSH_DESKTOP_TRIAL_DEFAULTS_FILE', 'APPLE_API_KEY', 'APPLE_KEYCHAIN', 'CSC_LINK']
+const FILE_SETTINGS = ['DSH_DESKTOP_WINDOWS_CER_FILE', 'DSH_DESKTOP_WINDOWS_SIGNTOOL', 'DSH_DESKTOP_TRIAL_DEFAULTS_FILE', 'DSH_DESKTOP_TRIAL_PLUGINS_DIR', 'APPLE_API_KEY', 'APPLE_KEYCHAIN', 'CSC_LINK']
 
 /**
  * Select local macOS test defaults without reading dotenv files or inheriting release settings.
@@ -145,6 +145,29 @@ function requireReadableFile(environment, name) {
   }
 }
 
+function validateTrialPluginsDirectory(directory) {
+  let children
+  try {
+    if (!statSync(directory).isDirectory()) throw new Error('not a directory')
+    children = readdirSync(directory, { withFileTypes: true }).filter(entry => entry.isDirectory())
+  }
+  catch {
+    throw new Error('desktop package: DSH_DESKTOP_TRIAL_PLUGINS_DIR must identify a readable local directory')
+  }
+  if (children.length === 0) throw new Error('desktop package: DSH_DESKTOP_TRIAL_PLUGINS_DIR contains no plugin directories')
+  for (const child of children) {
+    let manifest
+    try {
+      manifest = JSON.parse(readFileSync(join(directory, child.name, 'package.json'), 'utf8'))
+    } catch {
+      throw new Error(`desktop package: trial plugin ${child.name} lacks a valid package.json`)
+    }
+    if (typeof manifest?.name !== 'string' || !manifest.name || typeof manifest.version !== 'string' || !manifest.version) {
+      throw new Error(`desktop package: trial plugin ${child.name} requires name and version`)
+    }
+  }
+}
+
 /**
  * Validate the packaging mode before preparation without invoking a token or Apple's services.
  * @param {NodeJS.ProcessEnv} environment Selected local defaults or file-owned release settings.
@@ -170,6 +193,7 @@ export function validateDesktopPackageEnvironment(environment, target, options =
       throw new Error('desktop package: DSH_DESKTOP_TRIAL_DEFAULTS_FILE has invalid fields')
     }
   }
+  if (environment.DSH_DESKTOP_TRIAL_PLUGINS_DIR) validateTrialPluginsDirectory(environment.DSH_DESKTOP_TRIAL_PLUGINS_DIR)
   resolveDesktopAppId(environment)
   resolveNpmRegistry(environment)
   if (target.platform !== 'darwin' || !options.unsigned) resolveDesktopPolicyEnvironment(environment)
