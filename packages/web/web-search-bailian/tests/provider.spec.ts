@@ -8,7 +8,8 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import { createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY } from '@deepseek-ai/dsh-launch-environment'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import WebRuntime from '@deepseek-ai/dsh-web'
 import { BailianSearchProvider, mapBailianSources } from '../src/provider.ts'
 import * as bailianPlugin from '../src/index.ts'
@@ -193,9 +194,12 @@ describe('Bailian Responses search', () => {
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ headers: { authorization: 'Bearer environment-key' } })
   })
 
-  it('records an auxiliary request under the initiating agent', async () => {
+  it('records an auxiliary request under the initiating agent', async ({ onTestFinished }) => {
     const ctx = new Context()
+    onTestFinished(() => ctx.fiber.dispose())
     await ctx.plugin(WebRuntime, { searchProvider: 'bailian-responses' })
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(bailianPlugin, options)
     vi.stubGlobal('fetch', vi.fn(async () => result([{ type: 'web_search_call', action: { sources: [{ type: 'url', url: 'https://a.test' }] } }])))
