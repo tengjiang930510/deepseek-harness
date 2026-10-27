@@ -187,7 +187,7 @@ macOS and Linux GUI launches inherit only the session manager's environment, wit
 
 The development application menu offers Reload Page (Cmd+R on macOS, Ctrl+R elsewhere) and Restart App and Host. Restart waits for Host shutdown before relaunching Electron and starting a new Host; neither action rebuilds source files.
 
-`dev:desktop` builds the current Host, client bundles, Web frontend, and Electron shell, projects the built CLI and private Desktop Host packages with their workspace dependencies into a disposable desktop npm project, and launches Electron without resolving dsh from npm:
+`dev:desktop` builds the current Host, client bundles, Web frontend, and Electron shell before loading runtime preparation helpers, projects the built CLI and private Desktop Host packages with their workspace dependencies into a disposable desktop npm project, and launches Electron without resolving dsh from npm:
 
 ```sh
 pnpm run dev:desktop

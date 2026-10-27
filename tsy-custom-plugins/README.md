@@ -1,8 +1,10 @@
 # tsy-custom-plugins
 
+English | [中文](README.zh.md)
+
 Out-of-tree custom plugins for this fork. Not part of the harness `packages/*/*` workspace.
 
-Each subdirectory is one installable package. Config in this tree uses **package names** or **paths relative to the patch file** — never machine-specific absolute paths — so a checkout works on another machine after a one-time profile install.
+Each subdirectory is one installable package. Config in this tree uses **package names** or **paths relative to the patch file** — never machine-specific absolute paths.
 
 ## Desktop profile (unpackaged + packaging)
 
@@ -20,19 +22,19 @@ node ./tsy-custom-plugins/scripts/seed-desktop-trial-defaults.mjs
 
 This writes `apps/desktop/.desktop-build/trial-defaults.json` and sets `DSH_DESKTOP_TRIAL_DEFAULTS_FILE` in `apps/desktop/.env.windows`. Then package with `pnpm run package:desktop:win:x64:unsigned` (fill the rest of `.env.windows` from `.env.windows.example` first). The key is extractable from the installer — use only a limited key.
 
-## Install into the Web profile (preferred)
+## Source Web startup
 
-From the repository root (after `pnpm install`):
+On a new machine, run from the repository root:
 
 ```sh
-pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-brand
-pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-review
-pnpm dsh --profile web --dump-config
+pnpm install
+pnpm run build
+pnpm dsh web
 ```
 
-Then start Web as usual (`pnpm dsh web`). Restart if a Web process was already running.
+The artifact build prepares dependencies for each bundle under this directory and runs its declared build script. Dependency lifecycle scripts are skipped; browser-backed capabilities may still require their documented browser installation. The source Web launcher registers newly discovered bundles in the active `$DSH_HOME/profiles/web` (default `~/.dsh/profiles/web`) before booting. `start:web` and `dev:web` use the same registration.
 
-On a new machine or after relocating the checkout, run the same `plugin add` again so the profile’s `link:` points at the new absolute path. The repo itself stays portable; only `$DSH_HOME/profiles/<name>` is machine-local.
+Registration updates retained local links after moving the checkout, preserves disabled bundles and user removals, and leaves registry-installed copies untouched. Its `source-plugins.json` marker is local to the Web profile. To restore a deliberately removed plugin, install it with `pnpm dsh plugin --profile web add ./tsy-custom-plugins/<name>`. The published CLI and Desktop profile do not use this source-only preload.
 
 ## Dev overlay (no profile install)
 
@@ -55,5 +57,5 @@ pnpm dsh web --patch ./tsy-custom-plugins/t4y-review/cordis.yml
 
 1. Create `tsy-custom-plugins/<name>/` with `package.json` (`dsh.bundle.patch`), `cordis.patch.yml` (`name: <package-name>`), and the plugin entry.
 2. Optional: `cordis.yml` with `name: ./index.js` for `--patch` iteration.
-3. Install with `pnpm dsh plugin --profile web add ./tsy-custom-plugins/<name>`.
+3. Run `pnpm run build`, then restart `pnpm dsh web` to prepare and register the new bundle.
 4. If it should appear under **武汉地铁能力插件**, append an entry to `CAPABILITY_PACKAGES` in `t4y-capability-hub/client.js`.

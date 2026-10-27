@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { submitLeaveForm } from './lib/leave-open.js'
+import { submitLeaveForm } from './src/leave-open.js'
 
 export const name = 't4y-review'
 export const inject = ['commands', 'tools']

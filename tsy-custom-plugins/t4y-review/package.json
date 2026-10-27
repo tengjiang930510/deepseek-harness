@@ -14,7 +14,7 @@
     "index.js",
     "client.js",
     "guidance.md",
-    "lib",
+    "src",
     "cordis.patch.yml"
   ],
   "scripts": {

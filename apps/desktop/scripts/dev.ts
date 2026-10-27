@@ -8,9 +8,7 @@ import { parseArgs } from 'node:util'
 import { DESKTOP_HOST_PROTOCOL_VERSION } from '../src/host-protocol.ts'
 import type { DesktopRelease } from '../src/release.ts'
 import { developmentRuntimeDirectory, resolveDesktopBuildTarget } from './desktop-build-paths.mjs'
-import { prepareDevelopmentProject } from './development-project.ts'
 import { prepareDevelopmentApp } from './development-app.ts'
-import { preparePrimaryRuntime } from './prepare-primary-runtime.ts'
 
 const APP_ROOT = resolve(import.meta.dirname, '..')
 const REPOSITORY_ROOT = resolve(APP_ROOT, '..', '..')
@@ -112,6 +110,7 @@ async function main(): Promise<void> {
       { encoding: 'utf8', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } }).trim(),
     pnpmVersion,
   }
+  const { prepareDevelopmentProject } = await import('./development-project.ts')
   prepareDevelopmentProject({
     projectDir: join(DEVELOPMENT_ROOT, 'project'),
     cliDir: join(REPOSITORY_ROOT, 'apps', 'cli'),
@@ -120,6 +119,7 @@ async function main(): Promise<void> {
     release,
     target: resolveDesktopBuildTarget(),
   })
+  const { preparePrimaryRuntime } = await import('./prepare-primary-runtime.ts')
   await preparePrimaryRuntime()
   await launchElectron()
 }

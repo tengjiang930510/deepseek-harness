@@ -1,4 +1,4 @@
-import { submitLeaveForm } from '../lib/leave-open.js'
+import { submitLeaveForm } from '../src/leave-open.js'
 
 const result = await submitLeaveForm({
   leaveType: process.env.LEAVE_TYPE || 'sick',

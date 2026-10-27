@@ -187,7 +187,7 @@ macOS 和 Linux 从图形界面启动的程序只继承会话管理器提供的�
 
 开发环境应用菜单提供“刷新页面”（macOS 为 Cmd+R，其他平台为 Ctrl+R）和“重启应用与 Host”。重启会等待 Host 关闭，再重新启动 Electron 和新的 Host；这两项操作都不会重新构建源码。
 
-`dev:desktop` 会构建当前 Host、客户端 bundle、Web 前端和 Electron 壳，把已构建的 CLI 包、私有 Desktop Host 包及其 workspace 依赖投影为一次性桌面 npm 项目，然后直接启动 Electron；这条路径不从 npm 解析 dsh：
+`dev:desktop` 会先构建当前 Host、客户端 bundle、Web 前端和 Electron 壳，再加载运行时准备模块，把已构建的 CLI 包、私有 Desktop Host 包及其 workspace 依赖投影为一次性桌面 npm 项目，然后直接启动 Electron；这条路径不从 npm 解析 dsh：
 
 ```sh
 pnpm run dev:desktop

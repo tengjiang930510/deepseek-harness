@@ -419,7 +419,7 @@ if (isMain) {
     // from source exactly as `pnpm dsh web` would.
     if (options.serve) {
       spawnStage(supervisor, 'dsh web', process.execPath, [
-        '--import', 'tsx/esm', 'apps/cli/src/bin.ts', 'web', ...options.appArgs,
+        '--import', 'tsx/esm', '--import', './scripts/source-web-plugins.ts', 'apps/cli/src/bin.ts', 'web', ...options.appArgs,
       ], false)
     }
     console.log(

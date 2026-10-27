@@ -100,6 +100,12 @@ export function buildGates(
       gates.push(libraryGate(step, step.id === 'host-src' ? ['native', ...step.needs] : step.needs, env))
     }
     gates.push(pnpmGate('web', 'Web build', ['run', 'build:web'], ['client-bundle'], env))
+    gates.push({
+      id: 'custom-plugins', label: 'custom plugin dependencies and builds',
+      displayCommand: 'node --import tsx/esm scripts/custom-plugins.ts',
+      command: process.execPath, args: ['--import', 'tsx/esm', resolve(root, 'scripts/custom-plugins.ts')],
+      needs: ['web'], env,
+    })
   }
   if (scope === 'typecheck') {
     for (const step of contractSteps(root, 'all')) gates.push(libraryGate(step, step.needs, env))
