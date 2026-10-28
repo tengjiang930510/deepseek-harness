@@ -1,12 +1,12 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, realpathSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
 
 it('initializes a fresh Desktop home and registers bundles through its own profile operation', () => {
-  const directory = mkdtempSync(join(tmpdir(), 'desktop-source-plugins-'))
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), 'desktop-source-plugins-')))
   try {
     const root = join(directory, 'checkout')
     const home = join(directory, 'desktop-home')

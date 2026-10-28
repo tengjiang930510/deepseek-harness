@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,7 +15,7 @@ const driver = `
 `
 
 function fixture(context: TestContext) {
-  const directory = mkdtempSync(join(tmpdir(), 'desktop-project-env-'))
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), 'desktop-project-env-')))
   context.onTestFinished(() => { rmSync(directory, { recursive: true, force: true }) })
   const checkout = join(directory, 'repository')
   const home = join(directory, 'home')
