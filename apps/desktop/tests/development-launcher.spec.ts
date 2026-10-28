@@ -49,12 +49,16 @@ it('starts the build before loading helpers that require workspace artifacts', (
         return nextResolve(specifier, context)
       } })
     `)
-    writeFileSync(packageManager, "console.log(process.argv.slice(2).join(' ')); process.exitCode = 1\n")
+    writeFileSync(packageManager, `
+      import ${JSON.stringify(import.meta.resolve('tsx/esm'))}
+      console.log(process.argv.slice(2).join(' ')); process.exitCode = 1
+    `)
     // Windows can retain an uppercase lifecycle variable alongside a lowercase override passed to spawn.
     const inheritedEnvironment = Object.fromEntries(Object.entries(process.env)
-      .filter(([name]) => name.toLowerCase() !== 'npm_execpath'))
-    const result = spawnSync(process.execPath, ['--import', pathToFileURL(hook).href, '--import', 'tsx/esm',
-      fileURLToPath(new URL('../scripts/dev.ts', import.meta.url))], {
+      .filter(([name]) => !['npm_execpath', 'tsx_tsconfig_path'].includes(name.toLowerCase())))
+    const result = spawnSync(process.execPath, ['--import', pathToFileURL(hook).href, fileURLToPath(import.meta.resolve('tsx/cli')),
+      '--tsconfig', '../../tsconfig.json', 'scripts/dev.ts'], {
+      cwd: fileURLToPath(new URL('..', import.meta.url)),
       encoding: 'utf8', timeout: 30_000, env: { ...inheritedEnvironment, npm_execpath: packageManager },
     })
     expect(result.error).toBeUndefined()

@@ -206,7 +206,7 @@ pnpm run start:desktop
 
 Both launch commands register bundles discovered under `tsy-custom-plugins` in the selected development home's Desktop profile before opening Electron, including on first launch. New bundles activate once; user deselections and removals survive subsequent starts, and retained source links are repaired after moving the checkout. Run `pnpm run build` before `start:desktop` to prepare custom dependencies and build outputs. Registration failures stop launch with a diagnostic. This source registration does not add plugins to packaged installers.
 
-The source launchers use the repository root's TypeScript configuration to resolve shared registration scripts. The development project excludes dangling links in pnpm's virtual hoist, which can represent optional packages omitted on the current platform. Missing declared workspace dependencies still stop preparation with a `pnpm install` diagnostic.
+The source launchers use the repository root's TypeScript configuration to resolve shared registration scripts and pass its absolute path to package-script subprocesses, including when the working directory changes. The development project excludes dangling links in pnpm's virtual hoist, which can represent optional packages omitted on the current platform. Missing declared workspace dependencies still stop preparation with a `pnpm install` diagnostic.
 
 Desktop package preparation filters optional native packages by the installer target’s OS and architecture. Windows package sets omit the macOS Computer Use tarball, including when their inputs were packed on macOS.
 

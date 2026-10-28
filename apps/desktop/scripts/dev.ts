@@ -55,7 +55,10 @@ async function runPackageScript(script: string, cwd: string): Promise<void> {
   if (packageManager === undefined || packageManager === '') {
     throw new Error('desktop development: invoke this launcher through pnpm run dev:desktop or start:desktop')
   }
-  await run(process.execPath, [packageManager, 'run', script], cwd)
+  await run(process.execPath, [packageManager, 'run', script], cwd, {
+    ...process.env,
+    TSX_TSCONFIG_PATH: join(REPOSITORY_ROOT, 'tsconfig.json'),
+  })
 }
 
 async function launchElectron(): Promise<void> {
