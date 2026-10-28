@@ -1,0 +1,32 @@
+- id: llm-pi-ai
+  name: '@deepseek-ai/dsh-llm-pi-ai'
+  config:
+    providers:
+      qwen-token-plan:
+        baseURL: https://llm-7d9gw5u5aum1zav9.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+        apiKeyEnv: QWEN_TOKEN_PLAN_API_KEY
+        models:
+          - id: deepseek-v4.1-flash
+            name: deepseek-v4.1-flash
+            contextWindow: 1000000
+            maxTokens: 384000
+            input:
+              - text
+              - image
+- id: agent-default-model
+  name: '@deepseek-ai/dsh-agent-default-model'
+  config:
+    provider: qwen-token-plan
+    model: deepseek-v4.1-flash
+- id: web
+  name: '@deepseek-ai/dsh-web'
+  config:
+    searchProvider: bailian-responses
+    fetchProvider: http
+- id: web-search-bailian
+  name: '@deepseek-ai/dsh-web-search-bailian'
+  disabled: false
+  config:
+    apiKeyEnv: QWEN_TOKEN_PLAN_API_KEY
+    baseURL: https://llm-7d9gw5u5aum1zav9.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+    model: deepseek-v4.1-flash

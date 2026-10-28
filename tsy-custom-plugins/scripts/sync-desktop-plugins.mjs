@@ -12,6 +12,7 @@ const pluginsRoot = path.join(repoRoot, 'tsy-custom-plugins')
 
 /** Same order as the web profile for a predictable loader graph. */
 const PLUGIN_NAMES = [
+  't4y-model-defaults',
   't4y-review',
   't4y-bilibili-search',
   't4y-capability-hub',

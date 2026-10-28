@@ -51,6 +51,7 @@ pnpm dsh web --patch ./tsy-custom-plugins/t4y-review/cordis.yml
 | `t4y-brand/` | `t4y-brand` | 武汉地铁 logo 与侧栏名称**武汉地铁智能助手** |
 | `t4y-capability-hub/` | `t4y-capability-hub` | 设置页签**武汉地铁能力插件**（启停列表） |
 | `t4y-review/` | `t4y-review` | 办公表单与审查命令 |
+| `t4y-model-defaults/` | `t4y-model-defaults` | 默认模型和搜索设置；见[密钥与迁移说明](t4y-model-defaults/README.zh.md) |
 | `t4y-bilibili-search/` | `t4y-bilibili-search` | 工具 `bilibili_video_search`（内置 Playwright，`src/`） |
 
 ## 添加其他插件

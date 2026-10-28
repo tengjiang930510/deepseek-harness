@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write tsy-custom-plugins/t4y-model-defaults/README.md
+/:
+  en: 37c33ca9a7ffedb5
+  zh: fb263082711bbb46
+/t4y-model-defaults:
+  en: a0dadf0631c14f11
+  zh: c2dc08f2f9931d31
+/t4y-model-defaults/summary:
+  en: 02e8cb9919c97f3e
+  zh: 88acefa2fa8e4968
+/t4y-model-defaults/table-of-contents:
+  en: 23386452a66b2fbd
+  zh: abf5048a353c53da
+/t4y-model-defaults/use-this-package:
+  en: c5ff44b5a7f2d79e
+  zh: 9acfa32414c2b61e
+/t4y-model-defaults/understand-the-implementation:
+  en: 725277fec8faa1ef
+  zh: ff688e1f6075f85d
+/t4y-model-defaults/further-exploration:
+  en: e365d555a54cf903
+  zh: 0b6cf64016e57691
+/t4y-model-defaults/model-experience:
+  en: 1315d61f504e266a
+  zh: f5b04d40a71eaaac
+/t4y-model-defaults/known-limitations-and-deferred-work:
+  en: 2b0861de3ab7cda9
+  zh: 5149f1437fc3d490
+/t4y-model-defaults/dev-note:
+  en: b75c8458928b72b9
+  zh: 94aace1d30522a51

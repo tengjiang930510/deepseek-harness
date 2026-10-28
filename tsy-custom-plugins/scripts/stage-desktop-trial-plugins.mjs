@@ -10,7 +10,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const PLUGINS = ['t4y-brand', 't4y-review', 't4y-bilibili-search', 't4y-capability-hub']
+const PLUGINS = ['t4y-brand', 't4y-review', 't4y-bilibili-search', 't4y-capability-hub', 't4y-model-defaults']
 const pluginsRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const repoRoot = path.resolve(pluginsRoot, '..')
 const desktopRoot = path.join(repoRoot, 'apps/desktop')

@@ -51,6 +51,7 @@ pnpm dsh web --patch ./tsy-custom-plugins/t4y-review/cordis.yml
 | `t4y-brand/` | `t4y-brand` | Wuhan Metro logo + sidebar name **武汉地铁智能助手** |
 | `t4y-capability-hub/` | `t4y-capability-hub` | Settings tab **武汉地铁能力插件**（启停列表） |
 | `t4y-review/` | `t4y-review` | Office forms + review commands |
+| `t4y-model-defaults/` | `t4y-model-defaults` | Default model and search settings; see its [credential and migration instructions](t4y-model-defaults/README.md) |
 | `t4y-bilibili-search/` | `t4y-bilibili-search` | Tool `bilibili_video_search`（内置 Playwright，`src/`） |
 
 ## Adding another plugin
