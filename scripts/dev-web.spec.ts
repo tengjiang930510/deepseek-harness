@@ -114,6 +114,9 @@ it('samples one local environment at startup without validating watcher outputs'
     await mkdir(join(root, 'apps/web/dist'), { recursive: true })
     await mkdir(join(root, 'packages/client/example/lib'), { recursive: true })
     await writeFile(join(root, 'package.json'), JSON.stringify({ version: '1.2.3' }))
+    await mkdir(join(root, 'product-config'))
+    await writeFile(join(root, 'product-config/product.yml'), 'name: Watcher product\nlogo: ./logo.png\n')
+    await writeFile(join(root, 'product-config/logo.png'), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
     await writeFile(join(root, 'apps/web/dist/index.html'), '<main></main>')
     await writeFile(join(root, 'packages/client/example/lib/client.js'), 'module.exports = {}\n')
     writeClientBuildRecord(root, {
@@ -133,6 +136,7 @@ it('samples one local environment at startup without validating watcher outputs'
       PATH: '/bin',
       DSH_CLIENT_COMMIT_HASH: 'abc1234',
       DSH_CLIENT_EXTRA: 'launch-value',
+      DSH_CLIENT_TITLE: 'Watcher product',
       DSH_CLIENT_VERSION: '1.2.3',
     })
   } finally {

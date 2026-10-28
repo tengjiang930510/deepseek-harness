@@ -151,7 +151,7 @@ export function HeroShell({ t, renderSlot, children }: HeroShellProps) {
             })}
           </span>
           <span className={css.titleGroup}>
-            <span>{t('hero.headline')}</span>
+            <span>{renderSlot('conversation.hero.brand.name', {}, { fallback: t('hero.headline') })}</span>
           </span>
         </div>
         <div className={css.body}>

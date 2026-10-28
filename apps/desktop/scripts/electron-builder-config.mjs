@@ -1,3 +1,4 @@
+import { PRODUCT_ROOT, readProductConfig, requireProductBuild } from '../../../scripts/product-config.ts'
 import { readInstallerLocales, renderInstallerStrings } from './installer-locales.mjs'
 import { officePackageDirectories } from '../../../scripts/libreoffice-packages.mjs'
 import { X509Certificate } from 'node:crypto'
@@ -114,7 +115,7 @@ export function createElectronBuilderConfig(
       ...buildVersion === productVersion ? {} : { version: buildVersion },
       ...packaged === undefined ? {} : { dshBuildCommit: packaged.commit, dshBuildDirty: packaged.dirty },
     },
-    productName: 'DeepSeek Harness',
+    productName: readProductConfig().name,
     // The default copyright uses author.name; this line names the product instead.
     copyright: `Copyright © ${new Date().getFullYear()} \${productName}`,
     // Unsigned builds carry their own suffix so a shared file can never pass for a release artifact.
@@ -124,13 +125,16 @@ export function createElectronBuilderConfig(
     electronDist: buildPaths.electron,
     electronFuses: { runAsNode: true },
     beforeBuild: async () => {
+      requireProductBuild()
+      requireProductBuild(PRODUCT_ROOT, 'apps/desktop/lib/product')
+      requireProductBuild(PRODUCT_ROOT, 'apps/web/dist/product')
       if (resolvedPlatform !== 'win32') return true
       await promisify(execFile)('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
         fileURLToPath(new URL('./prepare-windows-installer.ps1', import.meta.url)),
-        '-OutputDirectory', join(buildPaths.root, 'installer-ui')], {
+        '-OutputDirectory', join(buildPaths.root, 'installer-ui'), '-BrandDirectory', join(PRODUCT_ROOT, '.dsh-build/product')], {
         env: scrubWindowsSigningEnvironment(env), windowsHide: true,
       })
-      await writeFile(join(buildPaths.root, 'installer-ui', 'strings.nsh'), renderInstallerStrings(readInstallerLocales()), 'utf8')
+      await writeFile(join(buildPaths.root, 'installer-ui', 'strings.nsh'), renderInstallerStrings(readInstallerLocales(), readProductConfig().name), 'utf8')
       if (windowsSigner !== undefined) {
         await windowsSigner({ path: join(buildPaths.root, 'installer-ui', 'window-frame.dll'), hash: 'sha256', isNest: false })
       }
@@ -139,6 +143,7 @@ export function createElectronBuilderConfig(
     },
     files: [
       'lib/main.js',
+      'lib/product/**/*',
       'lib/operation-report-worker.js',
       'lib/welcome/**/*',
       'lib/preload-app.cjs',
@@ -159,17 +164,17 @@ export function createElectronBuilderConfig(
       ...(env.DSH_DESKTOP_TRIAL_DEFAULTS_FILE ? [{ from: env.DSH_DESKTOP_TRIAL_DEFAULTS_FILE, to: 'trial-defaults.json' }] : []),
       ...(env.DSH_DESKTOP_TRIAL_PLUGINS_DIR ? [{ from: env.DSH_DESKTOP_TRIAL_PLUGINS_DIR, to: 'trial-plugins' }] : []),
       { from: buildPaths.runtime, to: 'runtime' },
-      { from: fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)), to: 'icon.png' },
+      { from: join(PRODUCT_ROOT, '.dsh-build/product/app-icon.png'), to: 'icon.png' },
       // Windows tray bitmaps; macOS keeps the Dock and ships no menu bar icon.
-      ...(packagesWindows ? [{ from: fileURLToPath(new URL('../resources/tray-windows.ico', import.meta.url)), to: 'tray.ico' }] : []),
+      ...(packagesWindows ? [{ from: join(PRODUCT_ROOT, '.dsh-build/product/tray.ico'), to: 'tray.ico' }] : []),
     ],
     mac: {
-      icon: fileURLToPath(new URL('../resources/icon-macos.png', import.meta.url)),
+      icon: join(PRODUCT_ROOT, '.dsh-build/product/app-icon.png'),
       category: 'public.app-category.developer-tools',
       // macOS matches the application locale against this bundle, not Electron Framework resources.
       extendInfo: {
         CFBundleLocalizations: ['en', 'zh_CN', 'ja', 'es', 'fr', 'de', 'ru', 'pt'],
-        NSMicrophoneUsageDescription: 'DeepSeek Harness uses your microphone to transcribe speech into message drafts.',
+        NSMicrophoneUsageDescription: `${readProductConfig().name} uses your microphone to transcribe speech into message drafts.`,
       },
       // Ad-hoc signing keeps the modified Electron executable runnable without a Developer ID.
       identity: unsigned ? '-' : macOSSigning?.signingIdentity,
@@ -245,7 +250,7 @@ export function createElectronBuilderConfig(
       )
     },
     win: {
-      icon: fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)),
+      icon: join(PRODUCT_ROOT, '.dsh-build/product/app-icon.png'),
       forceCodeSigning: !unsigned,
       signtoolOptions: {
         sign: windowsSigner,

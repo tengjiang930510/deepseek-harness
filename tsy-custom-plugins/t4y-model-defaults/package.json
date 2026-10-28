@@ -1,7 +1,7 @@
 {
   "name": "t4y-model-defaults",
   "version": "0.1.0",
-  "description": "Wuhan Metro default model and Bailian search configuration.",
+  "description": "Default model and Bailian web search settings.",
   "private": true,
   "type": "module",
   "license": "MIT",

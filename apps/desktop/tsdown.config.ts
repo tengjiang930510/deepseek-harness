@@ -2,7 +2,9 @@ import { defineConfig } from 'tsdown'
 import { build } from 'vite'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir, copyFile, mkdir, rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { readProductConfig, requireProductBuild } from '../../scripts/product-config.ts'
 import { repositoryClientBuildEnvironment, resolveClientBuildEnvironment } from '../../scripts/client-build-environment.ts'
 import { packagedImportsPlugin } from './scripts/desktop-bundle-imports.mjs'
 
@@ -29,8 +31,10 @@ const clientEnvironment = resolveClientBuildEnvironment(process.env.DSH_CLIENT_V
 const clientVersion = clientEnvironment.DSH_CLIENT_VERSION
 if (clientVersion === undefined) throw new Error('desktop build: the client environment carries no DSH_CLIENT_VERSION')
 
-/** Inline the one public build value the Node entry reads; every other variable stays a runtime lookup. */
-const clientVersionDefine = { 'process.env.DSH_CLIENT_VERSION': JSON.stringify(clientVersion) }
+/** Inline the product display name and client version; other environment values remain runtime lookups. */
+const product = requireProductBuild()
+const productNameDefine = { 'process.env.DSH_CLIENT_TITLE': JSON.stringify(readProductConfig().name) }
+const clientVersionDefine = { 'process.env.DSH_CLIENT_VERSION': JSON.stringify(clientVersion), ...productNameDefine }
 
 export default defineConfig([
   {
@@ -57,11 +61,17 @@ export default defineConfig([
     plugins: [packagedImportsPlugin(mainProcessImports)],
     define: clientVersionDefine,
     onSuccess: async () => {
+      const productDirectory = join(REPOSITORY_ROOT, '.dsh-build/product')
+      const destination = join(REPOSITORY_ROOT, 'apps/desktop/lib/product')
+      await rm(destination, { recursive: true, force: true })
+      await mkdir(destination, { recursive: true })
+      for (const name of await readdir(productDirectory)) await copyFile(join(productDirectory, name), join(destination, name))
       await build({
         configFile: false,
         plugins: [{
           name: 'desktop-shell-assets',
           async generateBundle() {
+            this.emitFile({ type: 'asset', fileName: 'product-logo.png', source: await readFile(join(productDirectory, product.logo)) })
             for (const name of ['design-platform.css', 'brand-font.css', 'montserrat-regular.woff2', 'montserrat-light.woff2', 'montserrat-medium.woff2', 'Montserrat-OFL.txt']) {
               this.emitFile({
                 type: 'asset',
@@ -73,7 +83,7 @@ export default defineConfig([
         }],
         root: fileURLToPath(new URL('.', import.meta.url)),
         esbuild: { jsx: 'automatic' },
-        define: { 'process.env.NODE_ENV': JSON.stringify('production') },
+        define: { 'process.env.NODE_ENV': JSON.stringify('production'), ...productNameDefine },
         build: {
           outDir: 'lib/welcome',
           emptyOutDir: true,

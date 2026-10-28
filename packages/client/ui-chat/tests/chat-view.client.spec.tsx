@@ -466,6 +466,7 @@ function makeHarness(
     if (key === 'conversation.chat.node') {
       return renderNodeSlot(key, owner as RoutedChatNodeOwner, opts as Parameters<NodeRenderer>[2])
     }
+    if (key === 'conversation.chat.running.brand.mark') return opts?.fallback ?? null
     throw new Error(`Undeclared flow child: ${key}`)
   }
   const renderUserChain: PropsRenderSlots<'conversation.chat.user.before'>['renderSlotChain'] = (key, owner, opts) => {
@@ -4660,14 +4661,8 @@ describe('ChatView', () => {
     expect([...column.children].filter(child => !child.hasAttribute('data-text-interaction-surface')).at(-1)).toBe(status)
     expect(within(status as HTMLElement).getByRole('status').textContent).toBe('智能助手处理中')
     expect(status?.lastElementChild?.textContent).toBe('智能助手处理中')
-    const image = status?.querySelector('img')
-    const icon = image?.parentElement
-    expect(icon?.getAttribute('aria-hidden')).toBe('true')
-    expect(image?.getAttribute('src')).toMatch(/^data:image\/png;base64,/u)
-    expect(image?.getAttribute('alt')).toBe('')
-    expect(image?.getAttribute('draggable')).toBe('false')
-    expect(icon?.getAttribute('style')).toBeNull()
-    expect(status?.querySelector('animate')).toBeNull()
+    expect(status?.querySelector('svg')).not.toBeNull()
+    expect(status?.querySelector('[aria-hidden="true"]')).not.toBeNull()
     // The running bit clears before the Turn closes: the status keeps its slot unseen and unannounced.
     act(() => { h.setSession({ running: false }) })
     const held = column.querySelector<HTMLElement>('[data-chat-running]')

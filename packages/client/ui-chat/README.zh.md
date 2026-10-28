@@ -24,6 +24,7 @@ kind: "package-reference"
 - [轮次过程折叠](#turn-process-folding)
 - [分组渲染](#grouped-rendering)
 - [滚动归属](#scroll-ownership)
+- [产品品牌](#product-branding)
 - [模型体验](#model-experience)
 - [已知限制与暂缓事项](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
@@ -185,6 +186,11 @@ Chat view 在标记了 `data-text-interaction-source` 的业务节点上检测�
 `ctx.uiConversation.interactions` 将有效手势分发给插件注册项，并把对应组件交给 Chat view。操作展示位置在已有 Chat 列内绝对定位，限制在 composer seat 及其 dock 上方。外层容器保留组件的外描边与阴影，内部滚动由组件负责。选区滚出该可见范围时暂时隐藏操作，滚回后恢复。Chat 负责视口可见性、定位、外部指针按下、Escape、新选区、来源失效与卸载清理；主动关闭保留浏览器选区，布局变化不会重新打开操作。[Message quotes](../../session/message-quotes/README.zh.md) 负责引用的接管条件和插入。
 
 <a id="model-experience"></a>
+<a id="product-branding"></a>
+## 产品品牌
+
+部署可通过 `conversation.chat.running.brand.mark` 替换处理中图标；内置鲸鱼作为默认显示。
+
 ## 模型体验
 
 无，因为本包在浏览器中渲染已记录的对话状态，不注册任何面向模型的内容。

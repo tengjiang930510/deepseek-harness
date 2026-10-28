@@ -261,7 +261,7 @@ function platformLoginUrl(authorizeUrl: string): string {
  * @returns absolute path of the 1024 px application icon.
  */
 function applicationIconPath(): string {
-  return app.isPackaged ? join(process.resourcesPath, 'icon.png') : join(app.getAppPath(), 'resources', 'icon-windows.png')
+  return app.isPackaged ? join(process.resourcesPath, 'icon.png') : join(app.getAppPath(), 'lib', 'product', 'app-icon.png')
 }
 
 function createWindow(preload: string, show = false, primary = false): BrowserWindow {
@@ -1044,7 +1044,7 @@ async function main(): Promise<void> {
   })
 
   app.setAboutPanelOptions({
-    applicationName: 'DeepSeek Harness',
+    applicationName: process.env.DSH_CLIENT_TITLE ?? 'DeepSeek Harness',
     applicationVersion: app.getVersion(),
     // The release has no separate build number; omit Electron's bundle version.
     version: '',
@@ -1100,7 +1100,7 @@ async function main(): Promise<void> {
     tray?.relabel()
   }
   refreshApplicationMenu()
-  const trayIconPath = development ? join(app.getAppPath(), 'resources', 'tray-windows.ico') : join(process.resourcesPath, 'tray.ico')
+  const trayIconPath = development ? join(app.getAppPath(), 'lib', 'product', 'tray.ico') : join(process.resourcesPath, 'tray.ico')
   if (process.platform === 'win32') {
     // The tray is the way back to a hidden window; without it, relaunching the application still focuses it.
     try {

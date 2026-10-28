@@ -10,6 +10,7 @@
 // theme/layout golden: aria snapshots are color-blind (lane scope: the
 // browser-e2e-lane Agent Note); the hero's waiting state gets the one golden
 // here.
+import { readProductConfig } from '../../../scripts/product-config.ts'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
@@ -54,9 +55,11 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
   const sessionEvents: SessionEvent[] = []
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold(MODE === 'record'
-      ? {}
-      : { replayFixture: FIXTURE, replayOverride: REPLAY_OVERRIDE, paceMs: REPLAY_PACE_MS })
+    scaffold = await launchWebScaffold({
+      ...(MODE === 'record' ? {} : { replayFixture: FIXTURE, replayOverride: REPLAY_OVERRIDE, paceMs: REPLAY_PACE_MS }),
+      extraOverlayPath: fileURLToPath(new URL('../../../tsy-custom-plugins/t4y-brand/cordis.patch.yml', import.meta.url)),
+      extraInstallAnchors: [fileURLToPath(new URL('../../../tsy-custom-plugins/t4y-brand/package.json', import.meta.url))],
+    })
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
@@ -315,11 +318,23 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     }
     // The blank frame renders the hero, not the resident composer: the
     // headline plus the guidance placeholder are the empty state's anchors.
-    await expect.poll(() => page.getByText('Wuhan Metro Smart Assistant', { exact: false }).count(), { timeout: 15_000 }).toBe(1)
+    await expect.poll(() => page.locator('[class*="titleGroup"]').getByText(readProductConfig().name, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
+    expect(await page.title()).toBe(readProductConfig().name)
+    const manifestName = await page.evaluate(async () => {
+      const manifest: unknown = await (await fetch('/manifest.webmanifest')).json()
+      return manifest !== null && typeof manifest === 'object' && 'name' in manifest && typeof manifest.name === 'string'
+        ? manifest.name : null
+    })
+    expect(manifestName).toBe(readProductConfig().name)
+    expect(await page.locator('link[rel="icon"]').getAttribute('href')).toMatch(/^\.\/product\/icon-32\.png\?v=/u)
+    const productMarks = page.locator('img[src*="product/logo-"]')
+    expect(await productMarks.count()).toBeGreaterThanOrEqual(2)
+    expect(await productMarks.evaluateAll(images => images.every(image =>
+      image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0))).toBe(true)
     const input = page.locator('[data-composer-input]').first()
     await input.waitFor({ timeout: 10_000 })
     if (MODE !== 'record') {
-      await page.getByText('Wuhan Metro Smart Assistant', { exact: false }).hover()
+      await page.locator('[class*="titleGroup"]').getByText(readProductConfig().name, { exact: true }).hover()
       await expect.poll(() => page.getByRole('tooltip').count()).toBe(0)
       // Golden of the hero's stable waiting state (captured before any send;
       // the conversation-region goldens belong to the other scenarios).
@@ -351,6 +366,9 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
           await expandOwningTurnProcess(page, thinking)
           await expect.poll(() => thinking.getByRole('button').getAttribute('aria-expanded')).toBe('false')
           await reasoningComplete.promise
+          const runningMark = page.locator('[data-chat-running] img[src*="product/logo-"]')
+          await expect.poll(() => runningMark.count()).toBe(1)
+          expect(await runningMark.evaluate(image => image instanceof HTMLImageElement && image.naturalWidth > 0)).toBe(true)
           expect(await thinking.getAttribute('data-preview')).toBeNull()
           expect(await thinking.getByRole('button').getAttribute('aria-expanded')).toBe('false')
           expect(await thinking.locator('[data-streaming]:not([inert] *)').isVisible()).toBe(false)

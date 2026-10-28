@@ -1,6 +1,8 @@
-# t4y-brand
+# Product brand plugin
 
-Replaces the Web client fish mark with the Wuhan Metro mark and shows **武汉地铁智能助手** in the sidebar. The conversation hero headline is set in `@deepseek-ai/dsh-client-ui-conversation` locales.
+English | [中文](README.zh.md)
+
+This bundle displays the configured product name and logo in the sidebar, new-session headline, and running status. Configure branding in [product-config](../../product-config/README.md), then run `pnpm run build`.
 
 ## Install
 
@@ -8,11 +10,4 @@ Replaces the Web client fish mark with the Wuhan Metro mark and shows **武汉�
 pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-brand
 ```
 
-Restart `pnpm dsh web`.
-
-## Assets
-
-- `assets/brand-mark.png` — trimmed 128px logo embedded into `client.js` and the Chat running-status icon
-- Source: `wuhanmetro-mark-transparent.png`
-
-To swap the logo, run `node scripts/prepare-logo.mjs <source.png>`, then `node scripts/gen-client.mjs`, then rebuild `packages/client/ui-chat` with `pnpm run bundle`.
+Source Web and Desktop launchers register this bundle automatically. The client reads generated `product/brand.json` and registers reversible slot occupants. Missing or invalid metadata fails activation visibly. The bundle adds no model input or tools.

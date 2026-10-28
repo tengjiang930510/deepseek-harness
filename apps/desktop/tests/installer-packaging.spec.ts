@@ -1,10 +1,17 @@
 import { readInstallerLocales } from '../scripts/installer-locales.mjs'
+import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { readFileSync } from 'node:fs'
 import { Arch, Platform } from 'electron-builder'
 import { AppInfo, Packager } from 'app-builder-lib'
 import { expandMacro } from 'app-builder-lib/out/util/macroExpander.js'
 import { describe, expect, it, vi } from 'vitest'
+import { readProductConfig } from '../../../scripts/product-config.ts'
+
+vi.mock('../../../scripts/product-config.ts', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../../scripts/product-config.ts')>()
+  return { ...original, requireProductBuild: (root?: string) => original.readProductConfig(root) }
+})
 
 const { execute, write } = vi.hoisted(() => ({ execute: vi.fn(async () => undefined), write: vi.fn(async () => undefined) }))
 vi.mock('node:child_process', async (importOriginal) => {
@@ -52,18 +59,18 @@ describe('installer preparation preserves application dependencies', () => {
       })
       const appInfo = new AppInfo(metadataPackager, undefined)
       expect(appInfo.companyName).toBe('Hangzhou DeepSeek Artificial Intelligence Co., Ltd.')
-      expect(appInfo.copyright).toBe(`Copyright © ${new Date().getFullYear()} DeepSeek Harness`)
+      expect(appInfo.copyright).toBe(`Copyright © ${new Date().getFullYear()} ${readProductConfig().name}`)
       if (platform === 'win32') {
-        expect(expandMacro(config.nsis.uninstallDisplayName, null, appInfo, {}, false)).toBe('DeepSeek Harness')
+        expect(expandMacro(config.nsis.uninstallDisplayName, null, appInfo, {}, false)).toBe(readProductConfig().name)
         expect(config.nsis.installerLanguages).toEqual(readInstallerLocales().map(locale => locale.id))
       }
       const aboutIcon = config.extraResources.find(resource => resource.to === 'icon.png')
       expect(aboutIcon).toBeDefined()
-      expect(readFileSync(aboutIcon!.from)).toEqual(readFileSync(new URL('../resources/icon-windows.png', import.meta.url)))
+      expect(aboutIcon!.from).toBe(fileURLToPath(new URL('../../../.dsh-build/product/app-icon.png', import.meta.url)))
       // Only the Windows package carries the tray bitmaps; macOS keeps the Dock.
       const trayIcon = config.extraResources.find(resource => resource.to === 'tray.ico')
       if (platform === 'win32') {
-        expect(readFileSync(trayIcon!.from)).toEqual(readFileSync(new URL('../resources/tray-windows.ico', import.meta.url)))
+        expect(trayIcon!.from).toBe(fileURLToPath(new URL('../../../.dsh-build/product/tray.ico', import.meta.url)))
       } else {
         expect(trayIcon).toBeUndefined()
       }

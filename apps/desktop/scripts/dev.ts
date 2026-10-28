@@ -1,5 +1,6 @@
 /** Build and launch the unpackaged Electron shell against the current workspace. */
 
+import { requireProductBuild } from '../../../scripts/product-config.ts'
 import { spawn, execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -101,6 +102,7 @@ async function main(): Promise<void> {
     await runPackageScript('build:artifacts', REPOSITORY_ROOT)
     await runPackageScript('build', APP_ROOT)
   }
+  requireProductBuild(REPOSITORY_ROOT, 'apps/desktop/lib/product')
   for (const path of [
     join(APP_ROOT, 'lib', 'main.js'),
     join(REPOSITORY_ROOT, 'apps', 'desktop-host', 'lib', 'index.js'),

@@ -1425,14 +1425,22 @@ export interface DesktopLocale {
   readonly messages: DesktopMessages
 }
 
+/** Apply the build's display name without changing the dictionary's language or shared source. */
+function productMessages(messages: DesktopMessages): DesktopMessages {
+  const name = process.env.DSH_CLIENT_TITLE
+  if (name === undefined) return messages
+  return Object.fromEntries(Object.entries(messages).map(([key, text]) =>
+    [key, text.replaceAll('DeepSeek Harness', () => name)])) as DesktopMessages
+}
+
 /** Resolve Electron's locale to one shipped Desktop dictionary. */
 export function resolveDesktopLocale(locale: string): DesktopLocale {
   const primary = locale.toLowerCase().split('-')[0]
   if (primary !== undefined && Object.hasOwn(dictionaries, primary)) {
     const id = primary as keyof typeof dictionaries
-    return { id: id === 'zh' ? 'zh-CN' : id, messages: dictionaries[id] }
+    return { id: id === 'zh' ? 'zh-CN' : id, messages: productMessages(dictionaries[id]) }
   }
-  return { id: 'en', messages: en }
+  return { id: 'en', messages: productMessages(en) }
 }
 
 /**

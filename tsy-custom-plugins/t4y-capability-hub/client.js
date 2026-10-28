@@ -5,8 +5,8 @@
       commands: ['/leave', '/travel', '/office', '/brand-review', '/brand-review-guidance'],
       title: { zh: '办公事务表单', en: 'Office forms' },
       description: {
-        zh: '武汉地铁智能助手：办公申请卡片、审查任务与审查指导（/brand-review）。可在本页启用或禁用。',
-        en: 'Wuhan Metro Smart Assistant: office request cards, review tasks, and review guidance (/brand-review). Enable or disable on this page.',
+        zh: '智能助手：办公申请卡片、审查任务与审查指导（/brand-review）。可在本页启用或禁用。',
+        en: 'Assistant: office request cards, review tasks, and review guidance (/brand-review). Enable or disable on this page.',
       },
     },
     {
@@ -33,8 +33,8 @@ window.__ModuleLoader__.load({
     /** Tab chrome only — not per-plugin product copy. */
     const hubCopy = {
       zh: {
-        tab: '武汉地铁能力插件',
-        intro: '开启或关闭武汉地铁智能助手能力插件。关闭后相关斜杠命令不再进入菜单。部分变更可能需要重启后生效。',
+        tab: '能力插件',
+        intro: '开启或关闭智能助手能力插件。关闭后相关斜杠命令不再进入菜单。部分变更可能需要重启后生效。',
         commands: '命令',
         enabled: '已开启',
         disabled: '已关闭',
@@ -49,7 +49,7 @@ window.__ModuleLoader__.load({
       },
       en: {
         tab: 'T4Y capability plugins',
-        intro: 'Turn Wuhan Metro Smart Assistant capability plugins on or off. Slash commands leave the menu when disabled. Some changes need a restart.',
+        intro: 'Turn Assistant capability plugins on or off. Slash commands leave the menu when disabled. Some changes need a restart.',
         commands: 'Commands',
         enabled: 'On',
         disabled: 'Off',

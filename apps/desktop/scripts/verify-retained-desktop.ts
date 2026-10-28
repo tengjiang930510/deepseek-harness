@@ -1,4 +1,6 @@
 /** Recheck distribution signatures on retained installers without signing credentials. */
+import { readProductConfig } from '../../../scripts/product-config.ts'
+
 import { execFileSync } from 'node:child_process'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -39,6 +41,6 @@ export async function verifyRetainedDesktopSignatures(
   const extracted = await mkdtemp(join(tmpdir(), 'desktop-publish-verify-'))
   try {
     run('/usr/bin/ditto', ['-x', '-k', zipPath, extracted])
-    verifyMacOSNotarizedApplication(join(extracted, 'DeepSeek Harness.app'), config.macOS)
+    verifyMacOSNotarizedApplication(join(extracted, `${readProductConfig().name}.app`), config.macOS)
   } finally { await rm(extracted, { recursive: true, force: true }) }
 }

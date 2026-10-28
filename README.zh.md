@@ -69,6 +69,8 @@ pnpm dsh web
 
 参见 [CONTRIBUTING.md](CONTRIBUTING.zh.md)。
 
+产品名称和图标在 [product-config](product-config/README.zh.md) 中配置。
+
 ## 开发
 
 请先阅读[开发指南](docs/development.zh.md)与[架构文档](docs/architecture.zh.md)。

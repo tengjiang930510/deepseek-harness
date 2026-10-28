@@ -19,6 +19,7 @@ kind: "package-reference"
 - [已发送用户文本](#sent-user-text)
 - [Shell 与标准 props](#shell-and-standard-props)
 - [临时 composer entry](#temporary-composer-entries)
+- [产品品牌](#product-branding)
 - [模型体验](#model-experience)
 - [已知限制与暂缓事项](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
@@ -183,6 +184,11 @@ selector 必须是 owner currency 的纯函数。非 null 返回值作为 `match
 `conversation.input.activity` 在模型选择器与发送按钮之间承载一个控件。其 `onActiveChange` 回调将控件展开至整条工具栏并隐藏普通辅助控件和上下文用量按钮，同时保留编辑器与提交按钮。关闭活动后恢复这些控件，上下文详情保持关闭。首页输入框下方没有内容时，该区域保持收起。占用者在卸载时释放展开状态，并拥有活动专属反馈。
 
 <a id="model-experience"></a>
+<a id="product-branding"></a>
+## 产品品牌
+
+部署可通过 `conversation.hero.brand.mark` 和 `conversation.hero.brand.name` 替换新会话品牌图标与标题。
+
 ## 模型体验
 
 无，因为本包渲染浏览器状态，并通过 Session Controller API 发送用户确认提交的输入，而不构造模型请求。

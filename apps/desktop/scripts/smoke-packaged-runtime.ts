@@ -1,4 +1,6 @@
 /** Validate the assembled application, including native Office conversion outside ASAR. */
+import { readProductConfig } from '../../../scripts/product-config.ts'
+
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { desktopArtifactOutput, resolveDesktopBuildTarget, resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
@@ -13,9 +15,9 @@ const target = resolveDesktopBuildTarget()
 const windows = target === 'win-x64'
 const artifacts = desktopArtifactOutput(paths, { unsigned: values.unsigned, skipNotarization: values['skip-notarization'] }).directory
 const application = windows ? join(artifacts, 'win-unpacked')
-  : join(artifacts, target === 'mac-arm64' ? 'mac-arm64' : 'mac', 'DeepSeek Harness.app', 'Contents')
+  : join(artifacts, target === 'mac-arm64' ? 'mac-arm64' : 'mac', `${readProductConfig().name}.app`, 'Contents')
 const resources = join(application, windows ? 'resources' : 'Resources')
-const executable = windows ? join(application, 'DeepSeek Harness.exe') : join(application, 'MacOS', 'DeepSeek Harness')
+const executable = windows ? join(application, `${readProductConfig().name}.exe`) : join(application, 'MacOS', readProductConfig().name)
 const descriptor = await verifyDesktopRuntime(paths.dsh, readDesktopRuntime(paths.dsh).release.version,
   resolveDesktopPackageTarget(target))
 if (windows && !values.unsigned) await verifyWindowsCode(application)

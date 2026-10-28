@@ -94,7 +94,7 @@ export const ChatFlow = memo(function ChatFlow({
   return [
     ...rows, ...leadingRows, ...openingRows,
     ...running || holding ? [<RunningStatus key="running" startTime={runningStartTime} paused={disconnected}
-      holding={holding} t={t} />] : [],
+      holding={holding} t={t} renderSlot={renderSlot} />] : [],
     ...pendingRows,
   ]
 })

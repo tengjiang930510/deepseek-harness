@@ -50,6 +50,8 @@ pnpm dsh web
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+Product names and icons are configured in [product-config](product-config/README.md).
+
 ## Development
 
 Start with the [development guide](docs/development.md) and [architecture documentation](docs/architecture.md).

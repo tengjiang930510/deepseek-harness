@@ -9,6 +9,8 @@
  * and both aggregate programs without bundling.
  */
 
+import { prepareProduct } from './prepare-product.ts'
+import { requireProductBuild } from './product-config.ts'
 import { rmSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -183,6 +185,7 @@ async function main(): Promise<number> {
     return runAggregate(name, gates, workers(gates))
   }
 
+  await prepareProduct(root)
   const repositoryEnvironment = repositoryClientBuildEnvironment(root, process.env)
   const clientEnvironment = resolveClientBuildEnvironment(repositoryEnvironment, profile ?? process.env[CLIENT_BUILD_PROFILE_SELECTOR])
   const environment = environmentOverlay(process.env, clientBuildProcessEnvironment(process.env, clientEnvironment))
@@ -190,6 +193,8 @@ async function main(): Promise<number> {
   const gates = buildGates(root, scope, environment, serial)
   const exitCode = await runAggregate(name, gates, workers(gates))
   if (exitCode !== 0) return exitCode
+  requireProductBuild(root, 'apps/web/dist/product')
+  requireProductBuild(root, 'apps/desktop/lib/product')
   const record = writeClientBuildRecord(root, clientEnvironment)
   console.log(
     `build: recorded ${String(record.artifacts.fileCount)} client artifact(s) with ${String(Object.keys(record.environment).length)} public value(s)`,

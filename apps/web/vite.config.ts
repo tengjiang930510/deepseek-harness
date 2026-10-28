@@ -1,3 +1,5 @@
+import { readdir, copyFile, mkdir, rm } from 'node:fs/promises'
+import { PRODUCT_ROOT, readProductConfig, requireProductBuild } from '../../scripts/product-config.ts'
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,7 +14,7 @@ const src = (rel: string): string => fileURLToPath(new URL(rel, import.meta.url)
 const STANDALONE_ERROR = 'apps/web is not a standalone application: bare Vite cannot inject window.__DSH_BOOT__. '
   + 'From a repository checkout, run `pnpm dsh web`; an installed package uses `dsh web`. '
   + 'For client-plugin HMR, run `pnpm run dev:web`, which starts `dsh web` and the rebuild watchers together.'
-const DEFAULT_CLIENT_TITLE = '武汉地铁智能助手'
+const DEFAULT_CLIENT_TITLE = readProductConfig().name
 
 /** Escape build-time text before placing it in the HTML title element. */
 function escapeHtmlText(value: string): string {
@@ -21,11 +23,28 @@ function escapeHtmlText(value: string): string {
 
 /** Project the public build title into the initial HTML document. */
 function clientDocumentTitle(): Plugin {
-  const title = escapeHtmlText(process.env.DSH_CLIENT_TITLE ?? DEFAULT_CLIENT_TITLE)
+  const title = escapeHtmlText(DEFAULT_CLIENT_TITLE)
+  const product = readProductConfig()
   return {
     name: 'dsh-client-document-title',
     transformIndexHtml(html) {
       return html.replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`)
+        .replace(/<link rel="icon"[^>]*>/g, '')
+        .replace('</head>', `<link rel="icon" type="image/png" href="./product/icon-32.png?v=${product.fingerprint}"></head>`)
+    },
+    async writeBundle() {
+      requireProductBuild()
+      const destination = src('./dist/product')
+      await rm(destination, { recursive: true, force: true })
+      await mkdir(destination, { recursive: true })
+      for (const name of await readdir(resolve(PRODUCT_ROOT, '.dsh-build/product'))) {
+        await copyFile(resolve(PRODUCT_ROOT, '.dsh-build/product', name), resolve(destination, name))
+      }
+      const manifest = JSON.parse(await readFile(src('./public/manifest.webmanifest'), 'utf8'))
+      manifest.name = DEFAULT_CLIENT_TITLE
+      manifest.short_name = DEFAULT_CLIENT_TITLE
+      for (const icon of manifest.icons) icon.src = `product/${icon.src}?v=${product.fingerprint}`
+      await writeFile(src('./dist/manifest.webmanifest'), JSON.stringify(manifest))
     },
   }
 }

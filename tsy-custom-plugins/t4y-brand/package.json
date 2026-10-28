@@ -1,7 +1,7 @@
 {
   "name": "t4y-brand",
   "version": "0.1.0",
-  "description": "武汉地铁智能助手品牌：侧栏与会话首屏 logo / 名称。",
+  "description": "Configurable product name and logo for the assistant interface.",
   "private": true,
   "type": "module",
   "main": "./index.js",
@@ -22,7 +22,8 @@
     "client": {
       "inject": [
         "@deepseek-ai/dsh-client-ui-sidebar",
-        "@deepseek-ai/dsh-client-ui-conversation"
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-chat"
       ],
       "platform": "web"
     }

@@ -1,3 +1,4 @@
+import { readProductConfig } from '../../../scripts/product-config.ts'
 /** Exercise notarization overlap and artifact isolation without Apple credentials or network. */
 
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
@@ -29,7 +30,7 @@ function barrier() {
 async function fixture(arch: 'arm64' | 'x64' = 'arm64') {
   const root = await mkdtemp(join(tmpdir(), 'desktop-parallel-notarization-'))
   const artifactsRoot = join(root, 'artifacts')
-  const appPath = join(artifactsRoot, arch === 'arm64' ? 'mac-arm64' : 'mac', 'DeepSeek Harness.app')
+  const appPath = join(artifactsRoot, arch === 'arm64' ? 'mac-arm64' : 'mac', `${readProductConfig().name}.app`)
   await mkdir(join(appPath, 'Contents', 'Resources'), { recursive: true })
   await writeFile(join(appPath, 'payload'), 'signed content')
   await writeMacOSAppUpdateConfig(join(appPath, 'Contents', 'Resources'), {
@@ -196,7 +197,7 @@ describe('parallel macOS artifacts', () => {
   it('passes the actual App and isolated output directory to each single-target builder', () => {
     const target = resolveDesktopPackageTarget('mac-arm64', 'darwin', 'arm64')
     for (const format of ['zip', 'dmg'] as const) {
-      const appPath = join('private build', format, 'DeepSeek Harness.app')
+      const appPath = join('private build', format, `${readProductConfig().name}.app`)
       const output = join(dirname(appPath), 'artifacts')
       expect(desktopElectronBuilderArguments(target, false, { format, appPath, output })).toEqual([
         'exec', 'electron-builder', '--config', 'electron-builder.config.mjs',

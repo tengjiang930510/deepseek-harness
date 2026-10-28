@@ -24,6 +24,7 @@ File-mention providers receive the viewed Session ID with the closing-turn owner
 - [Turn Process Folding](#turn-process-folding)
 - [Grouped rendering](#grouped-rendering)
 - [Scroll ownership](#scroll-ownership)
+- [Product branding](#product-branding)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
@@ -185,6 +186,11 @@ The Chat view detects selection and context-menu gestures on business nodes mark
 `ctx.uiConversation.interactions` dispatches eligible gestures to plugin registrations and supplies their component to the Chat view. The action surface is absolutely positioned inside the existing Chat column, above the composer seat and its dock. Its wrapper preserves the component's outer stroke and shadow; components own internal scrolling. Scrolling the selection outside that visible region temporarily hides the surface; returning restores it. Chat owns viewport visibility, placement, outside pointer presses, Escape, new selections, source invalidation, and disposal; explicit dismissal preserves browser selection and layout changes do not reopen the surface. [Message quotes](../../session/message-quotes/README.md) owns quotation eligibility and insertion.
 
 <a id="model-experience"></a>
+<a id="product-branding"></a>
+## Product branding
+
+Deployments can replace the running-status mark through `conversation.chat.running.brand.mark`; the built-in whale remains the fallback.
+
 ## Model Experience
 
 None, as this package renders logged conversation state in the browser and registers nothing model-facing.

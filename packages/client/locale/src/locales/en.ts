@@ -33,7 +33,7 @@ export const en = {
   'collapse': 'Collapse',
   'expand': 'Expand',
   'back': 'Back',
-  'brand.localBuild': 'Wuhan Metro Smart Assistant',
+  'brand.localBuild': process.env.DSH_CLIENT_TITLE ?? 'DeepSeek Harness',
   'workspace.defaultName': 'Default workspace',
   'unknown': 'Unknown',
   'none': 'None',

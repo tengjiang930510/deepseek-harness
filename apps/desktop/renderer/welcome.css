@@ -94,6 +94,7 @@ body {
 }
 
 .brand {
+  object-fit: contain;
   display: block;
   flex: none;
   width: 100%;

@@ -367,7 +367,7 @@ export interface ChatFlowOwnerProps extends Pick<ChatNodeOwnerProps,
 /** Full props of the Chat-owned flow renderer. */
 export type ChatFlowSlotProps =
   PropsRuntime<'conversation.chat.flow'>
-  & PropsRenderSlots<'conversation.chat.node'>
+  & PropsRenderSlots<'conversation.chat.node' | 'conversation.chat.running.brand.mark'>
   & PropsRenderFactories
   & PropsStore<ChatStore>
   & InjectFace<ChatFlowDataInjected>
@@ -416,6 +416,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /** Area-local text gestures and surfaces; each consumer registers its own synchronous admission. */
     'conversation.chat.text-interaction': { kind: 'keyed'; scope: 'session'; owner: TextInteractionSurface }
 
+    /** Decorative product mark beside the running status. */
+    'conversation.chat.running.brand.mark': { kind: 'single'; scope: 'root' }
     /** Ordered Chat rows and local echoes with viewport-bound visibility hooks. */
     'conversation.chat.flow': {
       kind: 'single'

@@ -1,3 +1,4 @@
+import { readProductConfig } from './product-config.ts'
 import { createHash } from 'node:crypto'
 import { execFileSync, spawnSync } from 'node:child_process'
 import {
@@ -19,7 +20,7 @@ export const CLIENT_BUILD_PROFILE_SELECTOR = 'DSH_BUILD_CLIENT_PROFILE'
 /** Public client environment required by official DSH artifacts. */
 const OFFICIAL_CLIENT_BUILD_ENVIRONMENT = {
   DSH_CLIENT_BUILD_PROFILE: 'official',
-  DSH_CLIENT_TITLE: '武汉地铁智能助手',
+  DSH_CLIENT_TITLE: 'DeepSeek Harness',
 } as const
 
 /** Public variable carrying the source commit embedded in client artifacts. */
@@ -130,6 +131,7 @@ export function repositoryClientBuildEnvironment(
     DSH_CLIENT_COMMIT_HASH: repositoryCommitHash(root, environment),
     ...(dirty === true ? { DSH_CLIENT_GIT_DIRTY: 'true' } : {}),
     DSH_CLIENT_VERSION: repositoryVersion(root),
+    DSH_CLIENT_TITLE: readProductConfig(root).name,
   }
 }
 
@@ -147,6 +149,7 @@ export function officialClientBuildEnvironment(
     DSH_CLIENT_COMMIT_HASH: repositoryCommitHash(root, environment),
     DSH_CLIENT_VERSION: repositoryVersion(root),
     ...OFFICIAL_CLIENT_BUILD_ENVIRONMENT,
+    DSH_CLIENT_TITLE: readProductConfig(root).name,
   }
 }
 
@@ -208,6 +211,7 @@ export function resolveClientBuildEnvironment(
         DSH_CLIENT_BUILD_PROFILE: 'local',
         ...(environment.DSH_CLIENT_GIT_DIRTY === 'true' ? { DSH_CLIENT_GIT_DIRTY: 'true' } : {}),
       }),
+      ...(environment.DSH_CLIENT_TITLE === undefined ? {} : { DSH_CLIENT_TITLE: environment.DSH_CLIENT_TITLE }),
     }
   }
   throw new Error(`unknown client build profile ${JSON.stringify(profile)}; expected "official" or "local"`)
