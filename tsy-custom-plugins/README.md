@@ -8,13 +8,13 @@ Each subdirectory is one installable package. Config in this tree uses **package
 
 ## Desktop profile (unpackaged + packaging)
 
-Desktop uses a separate profile from Web. After quitting Desktop, sync every `t4y-*` plugin into both `~/.dsh/profiles/desktop` and the development home profile:
+Source Desktop automatically registers these bundles in its separate development profile. From the repository root, launch with:
 
 ```sh
-node ./tsy-custom-plugins/scripts/sync-desktop-plugins.mjs
+pnpm run dev:desktop
 ```
 
-To bake the Bailian/`QWEN_TOKEN_PLAN_API_KEY` into a private Desktop installer (gitignored):
+See [Desktop development](../apps/desktop/README.md#develop) for profile paths, repeated-start behavior, and the build-free launch command. To bake the Bailian/`QWEN_TOKEN_PLAN_API_KEY` into a private Desktop installer (gitignored):
 
 ```sh
 node ./tsy-custom-plugins/scripts/seed-desktop-trial-defaults.mjs
@@ -34,7 +34,7 @@ pnpm dsh web
 
 The artifact build prepares dependencies for each bundle under this directory and runs its declared build script. Dependency lifecycle scripts are skipped; browser-backed capabilities may still require their documented browser installation. The source Web launcher registers newly discovered bundles in the active `$DSH_HOME/profiles/web` (default `~/.dsh/profiles/web`) before booting. `start:web` and `dev:web` use the same registration.
 
-Registration updates retained local links after moving the checkout, preserves disabled bundles and user removals, and leaves registry-installed copies untouched. Its `source-plugins.json` marker is local to the Web profile. To restore a deliberately removed plugin, install it with `pnpm dsh plugin --profile web add ./tsy-custom-plugins/<name>`. The published CLI and Desktop profile do not use this source-only preload.
+Registration updates retained local links after moving the checkout, preserves disabled bundles and user removals, and leaves registry-installed copies untouched. Its `source-plugins.json` marker is local to each profile. To restore a deliberately removed Web plugin, install it with `pnpm dsh plugin --profile web add ./tsy-custom-plugins/<name>`. Published installations do not use source registration.
 
 ## Dev overlay (no profile install)
 

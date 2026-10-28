@@ -3,7 +3,7 @@ import { WINDOWS_TITLEBAR_HEIGHT } from './windows-layout.ts'
 /** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
 
 import { access, readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   app,
@@ -532,6 +532,7 @@ async function main(): Promise<void> {
     const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
       hostInspectPort, {
         ...hostEnvironment,
+        DSH_DESKTOP_PROJECT_ENV_DIR: development ? resolve(app.getAppPath(), '..', '..') : undefined,
         DSH_CLIENT_VERSION: desktopClientVersion(),
         ...trialDefaults === undefined ? {} : { [trialDefaults.credentialRef]: trialDefaults.credential },
       }, onFailure,

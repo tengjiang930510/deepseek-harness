@@ -177,9 +177,12 @@ macOS 上自定义菜单保留 Electron 的标准 Window 菜单及应用隐藏�
 
 Desktop 的致命故障通过原生恢复对话框提供退出、重启、禁用第三方插件并备份 profile patch 后重启，以及获取诊断报告。触发范围、报告位置与内容、近期操作记录和退出限制见[故障恢复与诊断](docs/diagnostics/README.zh.md)。
 
+<a id="host-environment"></a>
 ### Host 环境
 
 macOS 和 Linux 从图形界面启动的程序只继承会话管理器提供的环境，不包含 shell 启动文件导出的变量。第一个 Host 启动之前，Desktop 以 `<shell> -ilc` 运行一次账户的登录 shell（取自用户数据库，不看 `$SHELL`），读取定界符之间的 `env -0` 输出，使 `~/.zprofile` 和 `~/.zshrc`（或该 shell 的对应文件）对 Host、agent shell、终端和 profile 配置生效。读取与 profile 准备并行进行。读取进程没有终端输入，并设置 `DISABLE_AUTO_UPDATE=true`、`ZSH_TMUX_AUTOSTARTED=true` 和 `ZSH_TMUX_AUTOSTART=false`，避免 oh-my-zsh 和 tmux 插件阻塞。shell 的值覆盖继承的值，但 `PWD`、`OLDPWD`、`SHLVL`、`_`、上述读取变量以及启动方自有的 `DSH_*` 和 `ELECTRON_*` 除外；Desktop 在读取之前已按 `DSH_HOME` 等变量解析路径，因此 Host 保持相同的值。读取在结束定界符出现时完成，因此启动文件启动的后台进程可以继续运行，其输出被丢弃。候选 shell 无法启动、以非零状态退出、没有输出定界内容或超过 `DSH_DESKTOP_LOGIN_SHELL_TIMEOUT_MS`（1000 到 2147483647 的整数毫秒，默认 `10000`；超时会结束其进程组）时，Desktop 记录一条警告，并依次尝试 `/bin/zsh`、`/bin/bash` 和 `/bin/sh`；全部失败时 Host 使用继承的环境。读取命令使用 POSIX 语法，因此 csh、tcsh 或 nushell 等账户 shell 会失败，Host 改为获得第一个系统 shell 的启动文件所设置的环境。读取期间退出 Desktop 会结束正在运行的读取进程组。每个应用进程只读取一次，因此修改 shell 启动文件后需要退出并重新打开 Desktop。Windows 从图形界面启动的程序已经从注册表继承用户和系统环境变量，因此 Windows 跳过这一步。
+
+源码 Desktop 启动时由 Host 进程读取仓库根目录可选的 `.env`，即使其工作目录位于 Desktop profile 中。环境回退的优先级依次为继承的变量、仓库 `.env`、Harness home 的 `.env`；已保存凭据保持原有优先级。共享 dotenv 校验会拒绝改变进程启动行为的变量。修改文件后，使用 Restart App and Host 重新加载。打包后的 Desktop 仍读取自身 profile 目录的 `.env` 和 Harness home 的回退配置。
 
 <a id="develop"></a>
 
@@ -200,6 +203,10 @@ pnpm run dev:desktop
 ```sh
 pnpm run start:desktop
 ```
+
+两个启动命令都会在打开 Electron 前，将 `tsy-custom-plugins` 下发现的 bundle 注册到所选开发 home 的 Desktop profile，首次启动也会执行。新 bundle 只自动启用一次；之后启动保留用户的取消启用和移除操作，移动仓库后会修复保留的源码链接。使用 `start:desktop` 前执行 `pnpm run build`，以准备自定义插件依赖和构建产物。注册失败会中止启动并输出诊断。此源码注册机制不会将插件加入打包安装器。
+
+源码启动器使用仓库根目录的 TypeScript 配置来解析共享注册脚本。开发项目排除 pnpm 虚拟提升目录中的失效链接；这些链接可能对应当前平台未安装的可选包。缺少已声明的工作区依赖仍会中止准备过程，并提示执行 `pnpm install`。
 
 桌面包准备过程按安装包目标的操作系统和架构筛选可选原生包。Windows 的包集合不包含 macOS Computer Use tarball，即使输入包是在 macOS 上打包的。
 

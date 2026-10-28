@@ -1,4 +1,4 @@
-/** Prepare checkout-owned plugin bundles and register them in the source Web profile. */
+/** Prepare checkout-owned plugin bundles and register them in source application profiles. */
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
@@ -114,7 +114,7 @@ export async function registerCustomPlugins(root: string, options: CustomPluginR
       if (previous !== undefined && !/^(?:link|file):/.test(previous)) continue
       for (const dependency of Object.keys(plugin.dependencies)) {
         if (!existsSync(join(plugin.directory, 'node_modules', dependency, 'package.json'))) {
-          throw new Error(`custom plugins: ${plugin.name} needs ${dependency}; run pnpm run build before pnpm dsh web`)
+          throw new Error(`custom plugins: ${plugin.name} needs ${dependency}; run pnpm run build before starting Web or Desktop`)
         }
       }
       const target = join(options.profileDir, 'node_modules', plugin.name)

@@ -4,11 +4,11 @@ import { join } from 'node:path'
 import { describe, expect, it, type TestContext } from 'vitest'
 import { discoverCustomPlugins, registerCustomPlugins } from './custom-plugins.ts'
 
-async function fixture(context: TestContext) {
+async function fixture(context: TestContext, profileName: string) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-source-plugins-'))
   context.onTestFinished(() => rm(root, { recursive: true, force: true }))
   const checkout = join(root, 'checkout')
-  const profileDir = join(root, 'home', 'profiles', 'web')
+  const profileDir = join(root, 'home', 'profiles', profileName)
   const directory = join(checkout, 'tsy-custom-plugins', 'custom-a')
   await mkdir(directory, { recursive: true })
   await mkdir(profileDir, { recursive: true })
@@ -36,9 +36,9 @@ async function fixture(context: TestContext) {
   return { root, checkout, profileDir, directory, packageFile, manifest, profileFile, profile, installs, install }
 }
 
-describe('source custom plugin registration', () => {
+describe.each(['web', 'desktop'])('source %s custom plugin registration', (profileName) => {
   it('registers a new bundle once across concurrent and repeated starts', async (context) => {
-    const f = await fixture(context)
+    const f = await fixture(context, profileName)
     const options = { profileDir: f.profileDir, install: f.install }
     await Promise.all([registerCustomPlugins(f.checkout, options), registerCustomPlugins(f.checkout, options)])
     await registerCustomPlugins(f.checkout, options)
@@ -49,7 +49,7 @@ describe('source custom plugin registration', () => {
   })
 
   it('preserves bundle deselection and explicit removal', async (context) => {
-    const f = await fixture(context)
+    const f = await fixture(context, profileName)
     const options = { profileDir: f.profileDir, install: f.install }
     await registerCustomPlugins(f.checkout, options)
     f.profile.dsh.profile.bundles = ['base', 'web']
@@ -65,7 +65,7 @@ describe('source custom plugin registration', () => {
   })
 
   it('repairs a moved checkout link while retaining bundle deselection', async (context) => {
-    const f = await fixture(context)
+    const f = await fixture(context, profileName)
     const options = { profileDir: f.profileDir, install: f.install }
     await registerCustomPlugins(f.checkout, options)
     f.profile.dsh.profile.bundles = ['base', 'web']
@@ -83,7 +83,7 @@ describe('source custom plugin registration', () => {
   })
 
   it('leaves registry-installed packages under user management', async (context) => {
-    const f = await fixture(context)
+    const f = await fixture(context, profileName)
     f.profile.dependencies['custom-a'] = '^1.0.0'
     await writeFile(f.profileFile, JSON.stringify(f.profile))
     await registerCustomPlugins(f.checkout, { profileDir: f.profileDir, install: f.install })
@@ -91,7 +91,7 @@ describe('source custom plugin registration', () => {
   })
 
   it('retries failed registration without recording the plugin as removed', async (context) => {
-    const f = await fixture(context)
+    const f = await fixture(context, profileName)
     await expect(registerCustomPlugins(f.checkout, {
       profileDir: f.profileDir,
       install: async () => { throw new Error('installation failed') },
@@ -101,7 +101,7 @@ describe('source custom plugin registration', () => {
   })
 
   it('reports missing prepared dependencies before installing a profile link', async (context) => {
-    const f = await fixture(context)
+    const f = await fixture(context, profileName)
     await writeFile(f.packageFile, JSON.stringify({ ...f.manifest, dependencies: { playwright: '*' } }))
     await expect(registerCustomPlugins(f.checkout, { profileDir: f.profileDir, install: f.install }))
       .rejects.toThrow('run pnpm run build')
@@ -109,7 +109,7 @@ describe('source custom plugin registration', () => {
   })
 
   it('rejects duplicate package names and missing declared patches', async (context) => {
-    const f = await fixture(context)
+    const f = await fixture(context, profileName)
     const duplicate = join(f.checkout, 'tsy-custom-plugins', 'custom-b')
     await mkdir(duplicate)
     await writeFile(join(duplicate, 'package.json'), JSON.stringify(f.manifest))

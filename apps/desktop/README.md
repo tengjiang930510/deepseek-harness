@@ -177,9 +177,12 @@ The [Web plugin UI](../../packages/client/ui-plugin-manager/README.md) owns the 
 
 Desktop fatal failures use native recovery with Exit, Restart, Disable third-party plugins, back up profile patch, and restart, and Get diagnostic report. See [recovery and diagnostics](docs/diagnostics/README.md) for triggers, report locations and contents, recent operation records, and shutdown limits.
 
+<a id="host-environment"></a>
 ### Host environment
 
 macOS and Linux GUI launches inherit only the session manager's environment, without variables exported by shell startup files. Before the first Host starts, Desktop runs the account's login shell (from the user database, not `$SHELL`) once as `<shell> -ilc` and reads its `env -0` output between delimiters, so `~/.zprofile` and `~/.zshrc` (or the shell's equivalents) take effect for the Host, agent shells, terminals, and profile configuration. Reading runs in parallel with profile preparation. The probe has no terminal input and sets `DISABLE_AUTO_UPDATE=true`, `ZSH_TMUX_AUTOSTARTED=true`, and `ZSH_TMUX_AUTOSTART=false` to keep oh-my-zsh and tmux plugins from blocking. Shell values replace inherited values except `PWD`, `OLDPWD`, `SHLVL`, `_`, those probe variables, and launcher-owned `DSH_*` and `ELECTRON_*` names; Desktop resolves paths such as `DSH_HOME` before the read, so the Host keeps the same values. The read completes at the closing delimiter, so background processes started by startup files may keep running with their output discarded. A candidate that fails to start, exits nonzero, prints no delimited output, or exceeds `DSH_DESKTOP_LOGIN_SHELL_TIMEOUT_MS` (integer milliseconds from 1000 through 2147483647, default `10000`; its process group is killed) is logged as a warning, and Desktop tries `/bin/zsh`, `/bin/bash`, and `/bin/sh` in turn; when all fail the Host uses the inherited environment. The dump command uses POSIX syntax, so an account shell such as csh, tcsh, or nushell fails and the Host receives the environment from the first system shell's startup files instead. Quitting Desktop during the read kills the running probe's process group. The result is read once per application process, so changes to shell startup files apply after quitting and reopening Desktop. Windows GUI launches already inherit the user and system environment variables from the registry, so Windows skips this step.
+
+Source Desktop launches read the repository root's optional `.env` in the Host process, even though its working directory is the Desktop profile. Environment fallback precedence is inherited values, repository `.env`, then the Harness home's `.env`; saved credentials retain their existing precedence. The shared dotenv validation rejects variables that alter process bootstrap. Restart App and Host to reload file changes. Packaged Desktop keeps reading its profile directory's `.env` and the Harness-home fallback.
 
 <a id="develop"></a>
 
@@ -200,6 +203,10 @@ After an explicit build, `start:desktop` reconstructs the disposable project and
 ```sh
 pnpm run start:desktop
 ```
+
+Both launch commands register bundles discovered under `tsy-custom-plugins` in the selected development home's Desktop profile before opening Electron, including on first launch. New bundles activate once; user deselections and removals survive subsequent starts, and retained source links are repaired after moving the checkout. Run `pnpm run build` before `start:desktop` to prepare custom dependencies and build outputs. Registration failures stop launch with a diagnostic. This source registration does not add plugins to packaged installers.
+
+The source launchers use the repository root's TypeScript configuration to resolve shared registration scripts. The development project excludes dangling links in pnpm's virtual hoist, which can represent optional packages omitted on the current platform. Missing declared workspace dependencies still stop preparation with a `pnpm install` diagnostic.
 
 Desktop package preparation filters optional native packages by the installer target’s OS and architecture. Windows package sets omit the macOS Computer Use tarball, including when their inputs were packed on macOS.
 

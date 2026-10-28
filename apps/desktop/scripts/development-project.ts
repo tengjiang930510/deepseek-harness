@@ -69,22 +69,38 @@ function linkDirectory(source: string, destination: string): void {
   symlinkSync(realpathSync(source), destination, process.platform === 'win32' ? 'junction' : 'dir')
 }
 
+/** pnpm's virtual hoist can retain links for optional packages omitted on this platform. */
+function installedHoistDirectory(path: string): string | undefined {
+  try {
+    return realpathSync(path)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT' && lstatSync(path).isSymbolicLink()) return undefined
+    throw error
+  }
+}
+
 function mirrorDependencyLinks(sourceRoot: string, destinationRoot: string): string[] {
   const names: string[] = []
   for (const entry of readdirSync(sourceRoot, { withFileTypes: true })) {
     if (entry.name === '.bin') continue
     const source = join(sourceRoot, entry.name)
     if (entry.name.startsWith('@') && (entry.isDirectory() || entry.isSymbolicLink())) {
+      const scope = installedHoistDirectory(source)
+      if (scope === undefined) continue
       mkdirSync(join(destinationRoot, entry.name), { recursive: true })
-      for (const scoped of readdirSync(source, { withFileTypes: true })) {
+      for (const scoped of readdirSync(scope, { withFileTypes: true })) {
         if (!scoped.isDirectory() && !scoped.isSymbolicLink()) continue
-        linkDirectory(join(source, scoped.name), join(destinationRoot, entry.name, scoped.name))
+        const installed = installedHoistDirectory(join(scope, scoped.name))
+        if (installed === undefined) continue
+        linkDirectory(installed, join(destinationRoot, entry.name, scoped.name))
         names.push(`${entry.name}/${scoped.name}`)
       }
       continue
     }
     if (entry.isDirectory() || entry.isSymbolicLink()) {
-      linkDirectory(source, join(destinationRoot, entry.name))
+      const installed = installedHoistDirectory(source)
+      if (installed === undefined) continue
+      linkDirectory(installed, join(destinationRoot, entry.name))
       names.push(entry.name)
     }
   }

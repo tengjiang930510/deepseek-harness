@@ -8,13 +8,13 @@
 
 ## Desktop profile（未打包运行与打包）
 
-Desktop 与 Web 使用独立的 profile。退出 Desktop 后，将所有 `t4y-*` 插件同步到 `~/.dsh/profiles/desktop` 和开发环境的 home profile：
+源码 Desktop 会自动将这些 bundle 注册到自身独立的开发 profile。在仓库根目录启动：
 
 ```sh
-node ./tsy-custom-plugins/scripts/sync-desktop-plugins.mjs
+pnpm run dev:desktop
 ```
 
-如需将百炼的 `QWEN_TOKEN_PLAN_API_KEY` 写入私有 Desktop 安装包（相关文件已被 Git 忽略）：
+profile 路径、重复启动行为和跳过构建的启动命令见 [Desktop 开发](../apps/desktop/README.zh.md#develop)。如需将百炼的 `QWEN_TOKEN_PLAN_API_KEY` 写入私有 Desktop 安装包（相关文件已被 Git 忽略）：
 
 ```sh
 node ./tsy-custom-plugins/scripts/seed-desktop-trial-defaults.mjs
@@ -34,7 +34,7 @@ pnpm dsh web
 
 产物构建会为此目录下的每个 bundle 准备依赖，并执行其声明的构建脚本。依赖的生命周期脚本不会执行；使用浏览器的能力可能仍需要按各插件文档安装浏览器。源码 Web 启动器在启动前，将新发现的 bundle 注册到当前 `$DSH_HOME/profiles/web`（默认为 `~/.dsh/profiles/web`）。`start:web` 和 `dev:web` 使用相同的注册流程。
 
-注册流程在仓库移动后更新保留的本地链接，保留用户禁用和移除插件的选择，并且不修改从注册表安装的副本。`source-plugins.json` 标记文件保存在本机 Web profile 中。要恢复主动移除的插件，可执行 `pnpm dsh plugin --profile web add ./tsy-custom-plugins/<name>`。发布的 CLI 和 Desktop profile 不使用此源码专用预加载脚本。
+注册流程在仓库移动后更新保留的本地链接，保留用户禁用和移除插件的选择，并且不修改从注册表安装的副本。`source-plugins.json` 标记文件分别保存在各 profile 中。要恢复主动移除的 Web 插件，可执行 `pnpm dsh plugin --profile web add ./tsy-custom-plugins/<name>`。发布后的安装不使用源码注册机制。
 
 ## 开发 overlay（不安装到 profile）
 

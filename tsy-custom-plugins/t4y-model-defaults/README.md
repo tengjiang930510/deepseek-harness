@@ -25,7 +25,7 @@ This bundle selects `qwen-token-plan / deepseek-v4.1-flash` as the default model
 
 From the repository root, copy `.env.example` to the ignored `.env` and fill in `QWEN_TOKEN_PLAN_API_KEY`. Start Web with `pnpm dsh web` after `pnpm install` and `pnpm run build`. The key is required for model calls and Bailian search; a blank value does not authenticate either service.
 
-Transfer `.env` separately when moving by Git, or retain it when copying a private project directory. Source Web reads the invoking directory's `.env`. Desktop needs the same variable in its launch environment or a credential saved in its own Harness home; copying the repository `.env` alone does not configure Desktop. Packaged trial builds may use the existing private trial-defaults resource.
+Transfer `.env` separately when moving by Git, or retain it when copying a private project directory. Source Web reads the invoking directory's `.env`, and source Desktop reads the repository root's `.env`; see [Desktop Host environment](../../../apps/desktop/README.md#host-environment). Packaged Desktop needs the same variable in its launch environment or a credential saved in its own Harness home. Packaged trial builds may use the existing private trial-defaults resource.
 
 The endpoint and model capacities are stored in [cordis.patch.yml](cordis.patch.yml). A profile's own patch overrides this bundle, so existing local selections remain authoritative. Disable the bundle on the Plugins page to stop applying these defaults.
 

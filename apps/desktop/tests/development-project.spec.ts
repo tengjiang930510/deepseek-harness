@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -31,6 +31,58 @@ afterEach(() => {
 })
 
 describe('desktop development project', () => {
+  it('omits dangling optional hoist links while retaining installed packages', () => {
+    const root = temporaryRoot()
+    const cli = join(root, 'cli')
+    const host = join(root, 'host')
+    const hoisted = join(root, 'hoisted')
+    mkdirSync(cli)
+    mkdirSync(join(host, 'lib'), { recursive: true })
+    mkdirSync(join(hoisted, '@scope'), { recursive: true })
+    mkdirSync(join(hoisted, 'installed'))
+    writeFileSync(join(cli, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh', version: '1.2.3' }))
+    writeFileSync(join(host, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh-desktop-host', version: '1.2.3' }))
+    writeFileSync(join(host, 'lib/index.js'), '')
+    writeFileSync(join(hoisted, 'installed/package.json'), JSON.stringify({ name: 'installed', version: '2.0.0' }))
+    const linkType = process.platform === 'win32' ? 'junction' : 'dir'
+    symlinkSync(join(root, 'missing-platform-package'), join(hoisted, '@scope', 'optional-platform'), linkType)
+    symlinkSync(join(root, 'missing-plain-package'), join(hoisted, 'optional-plain'), linkType)
+    symlinkSync(join(root, 'missing-scope'), join(hoisted, '@missing'), linkType)
+    const project = prepareDevelopmentProject({
+      projectDir: join(root, 'runtime'), cliDir: cli, hostDir: host, dependencyDir: hoisted,
+      release: release(), target: 'win-x64',
+    })
+    expect(realpathSync(join(project, 'node_modules/installed'))).toBe(realpathSync(join(hoisted, 'installed')))
+    expect(existsSync(join(project, 'node_modules/@scope/optional-platform'))).toBe(false)
+    expect(existsSync(join(project, 'node_modules/optional-plain'))).toBe(false)
+    const descriptor = JSON.parse(readFileSync(join(project, 'desktop-runtime.json'), 'utf8')) as {
+      sharedPackages: { name: string }[]
+    }
+    expect(descriptor.sharedPackages.map(item => item.name)).toEqual([
+      'installed', '@deepseek-ai/dsh', '@deepseek-ai/dsh-desktop-host',
+    ])
+  })
+
+  it('reports a missing declared workspace dependency even when the hoist contains its dangling link', () => {
+    const root = temporaryRoot()
+    const cli = join(root, 'cli')
+    const host = join(root, 'host')
+    const hoisted = join(root, 'hoisted')
+    mkdirSync(join(cli, 'node_modules'), { recursive: true })
+    mkdirSync(join(host, 'lib'), { recursive: true })
+    mkdirSync(hoisted)
+    writeFileSync(join(cli, 'package.json'), JSON.stringify({
+      name: '@deepseek-ai/dsh', version: '1.2.3', dependencies: { required: 'workspace:*' },
+    }))
+    writeFileSync(join(host, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh-desktop-host', version: '1.2.3' }))
+    writeFileSync(join(host, 'lib/index.js'), '')
+    symlinkSync(join(root, 'missing-required'), join(hoisted, 'required'), process.platform === 'win32' ? 'junction' : 'dir')
+    expect(() => prepareDevelopmentProject({
+      projectDir: join(root, 'runtime'), cliDir: cli, hostDir: host, dependencyDir: hoisted,
+      release: release(), target: 'win-x64',
+    })).toThrow('required is missing')
+  })
+
   it('includes declared workspace packages missing from the hoist directory in the runtime inventory', () => {
     const root = temporaryRoot()
     const cli = join(root, 'cli')
