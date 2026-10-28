@@ -5,7 +5,7 @@ cd F:\projects\deepseek-harness
 # 1. 把官方最新历史拉到本机（不改你正在编辑的文件）
 git fetch upstream
 # 2. 把官方 master 叠到你当前分支上，百炼那次 commit 会跟在后面
-git rebase upstream/master
+git merge upstream/master
 # 3. 若有冲突：打开 git 标出的文件，改完后
 #    git add <那些文件>
 #    git rebase --continue
