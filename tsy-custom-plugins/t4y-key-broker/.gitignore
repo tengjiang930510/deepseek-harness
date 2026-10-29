@@ -1,0 +1,5 @@
+.env
+data/
+*.bak.*
+*.log
+overview.json

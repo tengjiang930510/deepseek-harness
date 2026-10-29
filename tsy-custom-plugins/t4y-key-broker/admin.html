@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Key Broker 管理台</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a222c;
+      --panel-2: #222c38;
+      --line: #2e3a48;
+      --text: #e8eef4;
+      --muted: #8b9aab;
+      --accent: #3d9cfd;
+      --accent-dim: #1e4f7a;
+      --ok: #3ecf8e;
+      --warn: #e6b35a;
+      --danger: #e85d5d;
+      --mono: "SF Mono", "Menlo", "Consolas", monospace;
+      --sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--sans);
+      background:
+        radial-gradient(1200px 600px at 10% -10%, #1a3a55 0%, transparent 55%),
+        radial-gradient(900px 500px at 100% 0%, #1f2a22 0%, transparent 50%),
+        var(--bg);
+      color: var(--text);
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 20px 64px; }
+    header {
+      display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;
+      margin-bottom: 28px; flex-wrap: wrap;
+    }
+    header h1 { margin: 0; font-size: 1.45rem; font-weight: 650; letter-spacing: 0.02em; }
+    header p { margin: 6px 0 0; color: var(--muted); font-size: 0.9rem; }
+    .actions { display: flex; gap: 8px; align-items: center; }
+    button, .btn {
+      appearance: none; border: 1px solid var(--line); background: var(--panel-2);
+      color: var(--text); border-radius: 8px; padding: 8px 14px; font: inherit;
+      font-size: 0.875rem; cursor: pointer;
+    }
+    button:hover, .btn:hover { border-color: var(--accent-dim); }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #041018; font-weight: 600; }
+    button.danger { border-color: #7a3030; color: #ffb4b4; background: #2a1818; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .gate, .panel {
+      background: color-mix(in srgb, var(--panel) 92%, transparent);
+      border: 1px solid var(--line); border-radius: 14px; padding: 22px;
+      backdrop-filter: blur(8px);
+    }
+    .gate { max-width: 420px; margin: 12vh auto 0; }
+    .gate label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 6px; }
+    .gate input {
+      width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line);
+      background: #0c1015; color: var(--text); font-family: var(--mono); font-size: 0.85rem;
+    }
+    .gate .row { margin-top: 16px; display: flex; gap: 10px; align-items: center; }
+    .err { color: var(--danger); font-size: 0.85rem; margin-top: 10px; min-height: 1.2em; }
+    .stats {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px;
+    }
+    @media (max-width: 640px) { .stats { grid-template-columns: 1fr; } }
+    .stat {
+      background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px;
+    }
+    .stat .k { color: var(--muted); font-size: 0.78rem; }
+    .stat .v { font-size: 1.55rem; font-weight: 650; margin-top: 4px; font-variant-numeric: tabular-nums; }
+    .project {
+      border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+      margin-bottom: 14px; overflow: hidden;
+    }
+    .project-head {
+      display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 16px 18px;
+      align-items: start; cursor: pointer; user-select: none;
+    }
+    .project-head:hover { background: color-mix(in srgb, var(--panel-2) 60%, transparent); }
+    .project-title { font-size: 1.05rem; font-weight: 650; }
+    .project-meta {
+      margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px 14px;
+      font-size: 0.8rem; color: var(--muted); font-family: var(--mono);
+    }
+    .chip {
+      display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px;
+      border-radius: 999px; border: 1px solid var(--line); background: #121820;
+      font-family: var(--sans); font-size: 0.75rem; color: var(--text);
+    }
+    .chip.ok { border-color: #255a42; color: var(--ok); }
+    .chip.warn { border-color: #5a4a25; color: var(--warn); }
+    .project-body { border-top: 1px solid var(--line); padding: 0; display: none; }
+    .project.open .project-body { display: block; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 500; font-size: 0.75rem; background: #141b23; }
+    tr:last-child td { border-bottom: 0; }
+    .mono { font-family: var(--mono); font-size: 0.78rem; word-break: break-all; }
+    .empty { padding: 28px; text-align: center; color: var(--muted); }
+    .name { font-weight: 600; }
+    .sub { color: var(--muted); font-size: 0.78rem; margin-top: 2px; }
+    .foot { margin-top: 18px; color: var(--muted); font-size: 0.78rem; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div id="gate" class="gate">
+      <h1 style="margin:0 0 6px;font-size:1.25rem">Key Broker 管理台</h1>
+      <p style="margin:0 0 18px;color:var(--muted);font-size:0.9rem">按项目查看签发会话。输入管理员 Token 进入。</p>
+      <label for="token">BROKER_ADMIN_TOKEN</label>
+      <input id="token" type="password" autocomplete="current-password" placeholder="粘贴管理员 Token" />
+      <div class="row">
+        <button class="primary" id="loginBtn" type="button">进入</button>
+      </div>
+      <div class="err" id="gateErr"></div>
+    </div>
+
+    <div id="app" class="hidden">
+      <header>
+        <div>
+          <h1>Key Broker 管理台</h1>
+          <p>项目账户 · 成员会话 · 一键吊销（不影响 New API 项目开户）</p>
+        </div>
+        <div class="actions">
+          <button type="button" id="refreshBtn">刷新</button>
+          <button type="button" id="logoutBtn">退出</button>
+        </div>
+      </header>
+      <div class="stats">
+        <div class="stat"><div class="k">项目数</div><div class="v" id="statProjects">—</div></div>
+        <div class="stat"><div class="k">活跃会话</div><div class="v" id="statActive">—</div></div>
+        <div class="stat"><div class="k">已过期会话</div><div class="v" id="statExpired">—</div></div>
+      </div>
+      <div id="list"></div>
+      <p class="foot" id="updated"></p>
+    </div>
+  </div>
+  <script>
+    const TOKEN_KEY = "t4y.broker.adminToken";
+    const gate = document.getElementById("gate");
+    const app = document.getElementById("app");
+    const gateErr = document.getElementById("gateErr");
+    const tokenInput = document.getElementById("token");
+
+    function adminToken() {
+      return sessionStorage.getItem(TOKEN_KEY) || "";
+    }
+
+    function setToken(value) {
+      if (value) sessionStorage.setItem(TOKEN_KEY, value);
+      else sessionStorage.removeItem(TOKEN_KEY);
+    }
+
+    async function api(path, options = {}) {
+      const headers = Object.assign(
+        { Authorization: "Bearer " + adminToken(), Accept: "application/json" },
+        options.headers || {}
+      );
+      if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+      const res = await fetch(path, Object.assign({}, options, { headers }));
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const err = new Error(data.message || data.error || ("HTTP " + res.status));
+        err.status = res.status;
+        throw err;
+      }
+      return data;
+    }
+
+    function fmtTime(ms) {
+      if (!ms) return "—";
+      try {
+        return new Date(ms).toLocaleString("zh-CN", { hour12: false });
+      } catch {
+        return String(ms);
+      }
+    }
+
+    function showApp(show) {
+      gate.classList.toggle("hidden", show);
+      app.classList.toggle("hidden", !show);
+    }
+
+    function render(data) {
+      const projects = data.projects || [];
+      let active = 0;
+      let expired = 0;
+      for (const p of projects) {
+        for (const s of p.sessions || []) {
+          if (s.active) active += 1;
+          else expired += 1;
+        }
+      }
+      document.getElementById("statProjects").textContent = String(projects.length);
+      document.getElementById("statActive").textContent = String(active);
+      document.getElementById("statExpired").textContent = String(expired);
+      document.getElementById("updated").textContent =
+        "更新于 " + new Date().toLocaleString("zh-CN", { hour12: false }) +
+        (data.serverTime ? " · 服务端 " + fmtTime(data.serverTime * 1000) : "");
+
+      const list = document.getElementById("list");
+      if (!projects.length) {
+        list.innerHTML = '<div class="panel empty">还没有项目账户。客户端选项目并登录签发后会出现在这里。</div>';
+        return;
+      }
+
+      list.innerHTML = projects.map((p, idx) => {
+        const sessions = p.sessions || [];
+        const activeCount = sessions.filter((s) => s.active).length;
+        const rows = sessions.length
+          ? sessions.map((s) => `
+              <tr>
+                <td>
+                  <div class="name">${escapeHtml(s.nickName || s.userName || "未知用户")}</div>
+                  <div class="sub mono">${escapeHtml(s.externalUserId || "")}</div>
+                </td>
+                <td>
+                  <div>${escapeHtml(s.tenantName || "—")}</div>
+                  <div class="sub mono">${escapeHtml(s.tenantId || "")}</div>
+                </td>
+                <td class="mono">${escapeHtml(s.tokenName || "")}</td>
+                <td>
+                  <span class="chip ${s.active ? "ok" : "warn"}">${s.active ? "有效" : "已过期"}</span>
+                  <div class="sub">${fmtTime(s.expiresAt)}</div>
+                </td>
+                <td>
+                  <button type="button" class="danger" data-revoke="${escapeAttr(s.id)}">吊销</button>
+                </td>
+              </tr>`).join("")
+          : `<tr><td colspan="5" class="empty">暂无签发会话</td></tr>`;
+
+        return `
+          <section class="project ${idx === 0 ? "open" : ""}" data-module="${escapeAttr(p.moduleId)}">
+            <div class="project-head" data-toggle>
+              <div>
+                <div class="project-title">${escapeHtml(p.moduleName || p.moduleId)}</div>
+                <div class="project-meta">
+                  <span class="chip ok">${activeCount} 活跃</span>
+                  <span>moduleId ${escapeHtml(p.moduleId)}</span>
+                  <span>New API #${escapeHtml(String(p.newApiUserId))} · ${escapeHtml(p.username || "")}</span>
+                </div>
+              </div>
+              <div class="actions" onclick="event.stopPropagation()">
+                <button type="button" class="danger" data-revoke-project="${escapeAttr(p.moduleId)}" ${sessions.length ? "" : "disabled"}>清空会话</button>
+              </div>
+            </div>
+            <div class="project-body">
+              <table>
+                <thead>
+                  <tr>
+                    <th>成员</th>
+                    <th>所属企业</th>
+                    <th>Token 名</th>
+                    <th>到期</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+              </table>
+            </div>
+          </section>`;
+      }).join("");
+
+      list.querySelectorAll("[data-toggle]").forEach((el) => {
+        el.addEventListener("click", () => el.closest(".project").classList.toggle("open"));
+      });
+      list.querySelectorAll("[data-revoke]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          if (!confirm("吊销该成员在此项目下的推理 Key？")) return;
+          btn.disabled = true;
+          try {
+            await api("/v1/admin/session/revoke", {
+              method: "POST",
+              body: JSON.stringify({ sessionId: btn.getAttribute("data-revoke") }),
+            });
+            await load();
+          } catch (e) {
+            alert(e.message);
+            btn.disabled = false;
+          }
+        });
+      });
+      list.querySelectorAll("[data-revoke-project]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          if (!confirm("吊销该项目下全部签发会话？项目开户会保留。")) return;
+          btn.disabled = true;
+          try {
+            await api("/v1/admin/project/revoke-sessions", {
+              method: "POST",
+              body: JSON.stringify({ moduleId: btn.getAttribute("data-revoke-project") }),
+            });
+            await load();
+          } catch (e) {
+            alert(e.message);
+            btn.disabled = false;
+          }
+        });
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/'/g, "&#39;");
+    }
+
+    async function load() {
+      const data = await api("/v1/admin/overview");
+      render(data);
+    }
+
+    async function enter() {
+      gateErr.textContent = "";
+      const value = tokenInput.value.trim();
+      if (!value) {
+        gateErr.textContent = "请输入 Token";
+        return;
+      }
+      setToken(value);
+      try {
+        await load();
+        showApp(true);
+      } catch (e) {
+        setToken("");
+        showApp(false);
+        gateErr.textContent = e.status === 401 ? "Token 无效" : e.message;
+      }
+    }
+
+    document.getElementById("loginBtn").addEventListener("click", enter);
+    tokenInput.addEventListener("keydown", (e) => { if (e.key === "Enter") enter(); });
+    document.getElementById("refreshBtn").addEventListener("click", () => load().catch((e) => alert(e.message)));
+    document.getElementById("logoutBtn").addEventListener("click", () => {
+      setToken("");
+      tokenInput.value = "";
+      showApp(false);
+    });
+
+    if (adminToken()) {
+      load().then(() => showApp(true)).catch(() => {
+        setToken("");
+        showApp(false);
+      });
+    }
+  </script>
+</body>
+</html>
