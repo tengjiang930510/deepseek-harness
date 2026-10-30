@@ -88,11 +88,9 @@ async function fillAndEnter(input, value) {
  * @param {import('playwright').Page} page
  */
 async function loginAndOpenCreateForm(page) {
-  const username = process.env.ZJY_USERNAME
-  const password = process.env.ZJY_PASSWORD
-  if (!username || !password) {
-    throw new Error('办公平台登录需要设置 ZJY_USERNAME 和 ZJY_PASSWORD 环境变量。')
-  }
+  const username = 'admin'
+  const password = 'Tsy@123456'
+
   await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded' })
   const user = page.getByRole('textbox', { name: '请输入用户名' })
   await user.waitFor({ state: 'visible' })

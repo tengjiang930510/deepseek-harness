@@ -43,6 +43,26 @@ afterEach(() => {
 })
 
 describe('desktop external plugin profile', () => {
+  it('seeds installer dotenv defaults once and preserves the user file across launches', async () => {
+    const { root, manager } = setup()
+    const resource = join(root, 'runtime-defaults.env')
+    writeFileSync(resource, 'DESKTOP_MODEL_TEST_KEY=installer-key\n')
+    const installed = new DesktopProjectManager(manager.paths, manager.runtime, undefined, undefined, resource)
+    await installed.applyRelease()
+    const dotenv = join(manager.paths.profile, '.env')
+    expect(readFileSync(dotenv, 'utf8')).toBe('DESKTOP_MODEL_TEST_KEY=installer-key\n')
+    writeFileSync(dotenv, 'DESKTOP_MODEL_TEST_KEY=user-key\n')
+    await installed.applyRelease()
+    expect(readFileSync(dotenv, 'utf8')).toBe('DESKTOP_MODEL_TEST_KEY=user-key\n')
+  })
+
+  it('allows an installer without bundled dotenv defaults', async () => {
+    const { root, manager } = setup()
+    const installed = new DesktopProjectManager(manager.paths, manager.runtime, undefined, undefined, join(root, 'absent.env'))
+    await installed.applyRelease()
+    expect(existsSync(join(manager.paths.profile, '.env'))).toBe(false)
+  })
+
   it('uses trial defaults only for a profile without a patch', async () => {
     const { manager } = setup()
     const trial = new DesktopProjectManager(manager.paths, manager.runtime, '- id: agent-default-model\n  config: { model: trial }\n')

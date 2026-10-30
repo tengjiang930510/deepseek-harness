@@ -208,7 +208,7 @@ pnpm run start:desktop
 
 源码启动器使用仓库根目录的 TypeScript 配置来解析共享注册脚本，并向包脚本子进程传递其绝对路径，即使工作目录发生变化也保持有效。开发项目排除 pnpm 虚拟提升目录中的失效链接；这些链接可能对应当前平台未安装的可选包。缺少已声明的工作区依赖仍会中止准备过程，并提示执行 `pnpm install`。
 
-桌面包准备过程按安装包目标的操作系统和架构筛选可选原生包。Windows 的包集合不包含 macOS Computer Use tarball，即使输入包是在 macOS 上打包的。
+桌面包准备过程按安装包目标的操作系统和架构筛选可选原生包。Windows 的包集合不包含 macOS Computer Use tarball，即使输入包是在 macOS 上打包的。Electron 归档使用所选 Electron npm 包内的校验值进行验证。
 
 Web 侧的对应命令是 `pnpm run dev:web` 与 `pnpm run start:web`，见[开发指南](../../docs/development.zh.md)。Workspace 开发使用 Electron RunAsNode 运行当前 CLI 与私有 Desktop Host 包，插件管理和恢复使用 `$DSH_HOME/profiles/desktop`，与一次性工作区运行时分离。Host 在开发与打包构建中都使用 runtime 模块解析，不创建官方包的 fallback 链接；开发者安装的包（包括链接）保留原生优先级。需要验证 Electron RunAsNode、内置 pnpm、内置 dsh 资源、插件安装和修复时，应运行未封装安装器的应用目录。
 
@@ -258,6 +258,12 @@ Desktop 在 Host 启动后、打开工作区前检查模型 API Key 引用是否
 ## Windows 安装界面
 
 Windows 安装程序使用原生 NSIS 页面，提供亮暗配色、系统阴影、可编辑的安装目录，以及默认勾选立即启动的完成页。安装仅面向当前用户。点击安装或按 Enter 均校验当前路径；路径规范化后仍拒绝磁盘根目录，包括带重复末尾分隔符的写法。新安装位置必须为空，非空位置必须是已登记的安装目录。受影响安装路径中的程序运行时显示系统提示，并保持应用运行；其他目录中的同名应用不阻止安装。静默更新最多等待受影响应用退出十秒，若仍在运行则以退出码 2 结束。
+
+未提供 `.env.windows` 或选择机器预设时，`pnpm run package:desktop:win:x64:unsigned` 使用本地默认值，不配置签名和更新服务。已有的 Windows 配置文件或已选预设仍按发布配置校验；签名构建仍须提供该配置。仓库根目录的 `.env` 独立于这些打包设置，用于提供应用默认值。
+
+Windows 打包会在构建后准备 `tsy-custom-plugins` 下发现的每个 bundle，包含其声明的发布文件和生产依赖。除非 `DSH_DESKTOP_TRIAL_PLUGINS_DIR` 指定其他目录，否则这些包会成为下文所述的安装器内置插件。仓库根目录可选的 `.env` 通过共享 dotenv 规则校验后，以 `runtime-defaults.env` 随包携带；首次启动仅在 Desktop profile 没有 `.env` 时复制，之后启动保留用户文件。生成的私有资源保存在已忽略的 `.desktop-build/source-resources` 目录。安装包中的凭据仍可提取。插件包以外的浏览器缓存不会包含在内，浏览器工具仍需按文档配置 Chromium 或系统浏览器。
+
+额外的 npm bundle 在 `packaged-plugins.json` 中选择。每次 Windows 构建都会查询它们的 npm `latest` 版本，并在全新的隔离目录中下载这些确切版本，不执行生命周期脚本或自动安装 peer 依赖。默认列表包含 `dsh-wechat-plugin`；它及其生产依赖会一起复制，并通过与本地 bundle 相同的首次启动机制启用。查询或下载失败会中止打包，不会使用之前安装的旧副本。实际版本记录在 `.desktop-build/source-resources/packaged-plugins.json` 和构建输出中。已安装应用会保留随包版本，直到执行更新。安装后，仍需在插件设置中单独绑定微信账号。
 
 可选的私有试用构建可在目标的已忽略 `.env.windows` 或 `.env.macos` 中设置 `DSH_DESKTOP_TRIAL_DEFAULTS_FILE`，指向包含 `patch`（完整的 profile patch YAML 字符串）、`credentialRef`（该 patch 引用的键名）和 `credential`（API 密钥）的本地 JSON 文件。打包会把该文件复制进应用归档。首次启动时，仅当 Desktop profile 尚无 patch 才会写入该 patch，并把凭据交给 Host；之后启动会保留用户对 profile 的修改。任何拿到安装包或已安装应用的人都能提取该凭据，因此应使用独立的、额度受限的密钥，并在试用结束后撤销。该 JSON 源文件和组装后的应用不得提交到仓库，也不得作为正式发行发布。
 

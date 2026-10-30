@@ -14,13 +14,7 @@ Source Desktop automatically registers these bundles in its separate development
 pnpm run dev:desktop
 ```
 
-See [Desktop development](../apps/desktop/README.md#develop) for profile paths, repeated-start behavior, and the build-free launch command. To bake the Bailian/`QWEN_TOKEN_PLAN_API_KEY` into a private Desktop installer (gitignored):
-
-```sh
-node ./tsy-custom-plugins/scripts/seed-desktop-trial-defaults.mjs
-```
-
-This writes `apps/desktop/.desktop-build/trial-defaults.json` and sets `DSH_DESKTOP_TRIAL_DEFAULTS_FILE` in `apps/desktop/.env.windows`. Then package with `pnpm run package:desktop:win:x64:unsigned` (fill the rest of `.env.windows` from `.env.windows.example` first). The key is extractable from the installer — use only a limited key.
+See [Desktop development](../apps/desktop/README.md#develop) for profile paths, repeated-start behavior, and the build-free launch command. Windows packaging automatically carries these bundles and the repository root's optional `.env`; see [Windows installer resources](../apps/desktop/README.md#windows-installer-interface) for first-launch defaults, explicit resource overrides, browser requirements, and unsigned local packaging without `.env.windows`. Embedded credentials can be extracted from the installer.
 
 ## Source Web startup
 

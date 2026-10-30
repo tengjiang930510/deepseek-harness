@@ -14,6 +14,12 @@ const state = vi.hoisted(() => ({
   preparePrimary: vi.fn(),
   extractElectron: vi.fn(),
   commandLink: vi.fn(),
+  downloadElectron: vi.fn<(options: {
+    version: string
+    platform: string
+    arch: string
+    checksums: Record<string, string>
+  }) => Promise<string>>(),
 }))
 vi.mock('../scripts/desktop-build-paths.mjs', async importOriginal => ({
   ...await importOriginal<typeof import('../scripts/desktop-build-paths.mjs')>(),
@@ -22,7 +28,7 @@ vi.mock('../scripts/desktop-build-paths.mjs', async importOriginal => ({
     runtime: join(state.root, 'runtime'), electron: join(state.root, 'electron'), downloads: join(state.root, 'downloads'),
   }),
 }))
-vi.mock('@electron/get', () => ({ downloadArtifact: async () => 'electron.zip' }))
+vi.mock('@electron/get', () => ({ downloadArtifact: state.downloadElectron }))
 vi.mock('extract-zip', () => ({ default: state.extractElectron }))
 vi.mock('node:child_process', async importOriginal => ({
   ...await importOriginal<typeof import('node:child_process')>(),
@@ -51,6 +57,7 @@ beforeEach(() => {
   state.target = 'mac-arm64'
   state.pnpm = '11.7.0'
   state.failure = undefined
+  state.downloadElectron.mockResolvedValue('electron.zip')
   process.argv = [process.execPath, 'prepare-runtime.ts']
   vi.stubEnv('DSH_DESKTOP_PACKAGING_RUN_DIR', undefined)
   state.extractElectron.mockImplementation(async () => {
@@ -83,6 +90,9 @@ it.each(['mac-arm64', 'mac-x64', 'win-x64'] as const)('prepares %s with one pnpm
   const runtime = join(state.root, 'runtime')
   mkdirSync(join(runtime, 'pnpm'), { recursive: true })
   await import('../scripts/prepare-runtime.ts')
+  const download = state.downloadElectron.mock.calls[0]![0]
+  expect(download.checksums[`electron-v${download.version}-${download.platform}-${download.arch}.zip`])
+    .toMatch(/^[a-f0-9]{64}$/u)
   expect(existsSync(join(runtime, 'pnpm'))).toBe(false)
   expect(existsSync(join(runtime, 'primary-runtime', 'dependencies', 'pnpm', 'bin', 'pnpm.mjs'))).toBe(true)
   expect(existsSync(join(runtime, 'bin', 'node'))).toBe(true)

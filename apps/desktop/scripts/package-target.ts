@@ -351,6 +351,9 @@ async function main(): Promise<void> {
     : loadDesktopPackageEnvironment(target.platform, process.env, APP_ROOT, {
       unsigned: invocation.unsigned, prepareOnly: invocation.prepareOnly,
     })
+  if (environment.DSH_DESKTOP_LOCAL_PACKAGE === '1') {
+    console.log('desktop package: local unsigned Windows build; update-service configuration is disabled')
+  }
   const productVersion = packageVersion(join(APP_ROOT, 'package.json'), 'desktop package')
   // Release settings come from the selected configuration files, so the version this run publishes is an
   // argument; the environment variable below only carries it to the child processes that build.
@@ -481,6 +484,9 @@ export async function packageTarget(
     })
   }
   await execute(invocation.unsigned ? ['run', 'build', '--profile', 'local'] : ['run', 'build:official'], buildEnv, REPOSITORY_ROOT)
+  if (target.platform === 'win32') {
+    await execute(['exec', 'tsx', '--tsconfig', 'tsconfig.json', 'apps/desktop/scripts/source-resources.ts'], buildEnv, REPOSITORY_ROOT)
+  }
   let preparationFailure: { error: unknown } | undefined
   const executePreparation = async (args: readonly string[], env: NodeJS.ProcessEnv, cwd?: string): Promise<void> => {
     if (preparationFailure !== undefined) throw preparationFailure.error

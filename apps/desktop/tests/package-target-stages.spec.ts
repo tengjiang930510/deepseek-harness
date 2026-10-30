@@ -152,6 +152,9 @@ it('requires one signing preflight before building, then records only the comple
   const { run, stages } = supervisor()
   await packageTarget(parseDesktopPackageInvocation(['win-x64'], 'win32', 'x64'), environment, run)
   expect(stages.slice(0, 2)).toEqual(['preflight:windows-signing', 'run build:official'])
+  const sourceResources = 'exec tsx --tsconfig tsconfig.json apps/desktop/scripts/source-resources.ts'
+  expect(stages.indexOf(sourceResources)).toBeGreaterThan(stages.indexOf('run build:official'))
+  expect(stages.indexOf(sourceResources)).toBeLessThan(stages.findIndex(stage => stage.startsWith('run release:pack')))
   expect(stages.filter(stage => stage === 'preflight:windows-signing')).toHaveLength(1)
   expect(vi.mocked(withWindowsSigningStage).mock.calls.map(([options]) => options.stage))
     .toEqual(['preflight', 'artifacts'])
@@ -171,6 +174,14 @@ it('requires one signing preflight before building, then records only the comple
   expect(writeFileSync).toHaveBeenCalledOnce()
   const record = JSON.parse(vi.mocked(writeFileSync).mock.calls[0]![1] as string) as { publicUrl: string }
   expect(record.publicUrl).toBe('https://updates.example.com/dsh-desk/0123456789abcdef0123456789abcdef/feeds/win-x64/')
+})
+
+it('stops before producing an installer when custom resource staging fails', async () => {
+  const { run, stages } = supervisor('exec tsx --tsconfig tsconfig.json apps/desktop/scripts/source-resources.ts')
+  await expect(packageTarget(parseDesktopPackageInvocation(['win-x64'], 'win32', 'x64'), environment, run))
+    .rejects.toThrow('stage refused')
+  expect(stages.some(stage => stage.startsWith('exec electron-builder'))).toBe(false)
+  expect(writeFileSync).not.toHaveBeenCalled()
 })
 
 it('initializes shared storage only after acquiring the preflight stage lock', async () => {

@@ -2,7 +2,7 @@ import { PRODUCT_ROOT, readProductConfig, requireProductBuild } from '../../../s
 import { readInstallerLocales, renderInstallerStrings } from './installer-locales.mjs'
 import { officePackageDirectories } from '../../../scripts/libreoffice-packages.mjs'
 import { X509Certificate } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -67,7 +67,12 @@ export function createElectronBuilderConfig(
   if (skipNotarization && (unsigned || resolvedPlatform !== 'darwin')) throw new Error('Skipping notarization requires a signed macOS build')
   const packagesMacOS = targetPlatform === 'darwin' || (targetPlatform === undefined && hostPlatform === 'darwin')
   const packagesWindows = resolvedPlatform === 'win32'
-  const policy = packagesMacOS && unsigned ? undefined : resolveDesktopPolicyEnvironment(env)
+  const sourceResources = join(PRODUCT_ROOT, 'apps/desktop/.desktop-build/source-resources')
+  const sourcePlugins = join(sourceResources, 'plugins')
+  const trialPlugins = env.DSH_DESKTOP_TRIAL_PLUGINS_DIR
+    ?? (packagesWindows && existsSync(sourcePlugins) ? sourcePlugins : undefined)
+  const localUnsigned = unsigned && (packagesMacOS || (packagesWindows && env.DSH_DESKTOP_LOCAL_PACKAGE === '1'))
+  const policy = localUnsigned ? undefined : resolveDesktopPolicyEnvironment(env)
   if (resolvedPlatform === 'win32') installWindowsDirectoryInstaller()
   const macOSSigning = packagesMacOS && !unsigned ? resolveMacOSSigningEnvironment(env) : undefined
   if (packagesMacOS && !unsigned && !skipNotarization) resolveMacOSNotarizationEnvironment(env)
@@ -162,7 +167,9 @@ export function createElectronBuilderConfig(
     asarUnpack: unpack,
     extraResources: [
       ...(env.DSH_DESKTOP_TRIAL_DEFAULTS_FILE ? [{ from: env.DSH_DESKTOP_TRIAL_DEFAULTS_FILE, to: 'trial-defaults.json' }] : []),
-      ...(env.DSH_DESKTOP_TRIAL_PLUGINS_DIR ? [{ from: env.DSH_DESKTOP_TRIAL_PLUGINS_DIR, to: 'trial-plugins' }] : []),
+      ...(trialPlugins ? [{ from: trialPlugins, to: 'trial-plugins' }] : []),
+      ...(packagesWindows && existsSync(join(sourceResources, 'runtime-defaults.env'))
+        ? [{ from: join(sourceResources, 'runtime-defaults.env'), to: 'runtime-defaults.env' }] : []),
       { from: buildPaths.runtime, to: 'runtime' },
       { from: join(PRODUCT_ROOT, '.dsh-build/product/app-icon.png'), to: 'icon.png' },
       // Windows tray bitmaps; macOS keeps the Dock and ships no menu bar icon.

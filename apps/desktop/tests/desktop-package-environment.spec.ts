@@ -23,6 +23,30 @@ async function withDirectory(action: (directory: string) => Promise<void>): Prom
 }
 
 describe('Desktop local packaging configuration', () => {
+  it('uses local unsigned Windows defaults only when the release file and preset are absent', async () => {
+    await withDirectory(async (directory) => {
+      const parent = { ...RELEASE, DSH_DESKTOP_WINDOWS_TOKEN_PIN: 'fixture-pin' }
+      const selected = loadDesktopPackageEnvironment('win32', parent, directory, { unsigned: true })
+      expect(selected.DSH_DESKTOP_APP_ID).toBe('com.deepseek.harness')
+      expect(selected.DSH_DESKTOP_LOCAL_PACKAGE).toBe('1')
+      expect(selected).not.toHaveProperty('DSH_DESKTOP_WINDOWS_TOKEN_PIN')
+      expect(selected).not.toHaveProperty('DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN')
+      expect(() => { validateDesktopPackageEnvironment(selected, WINDOWS, { unsigned: true }) }).not.toThrow()
+      expect(loadDesktopPackageEnvironment('win32', { PACKAGE_WINDOWS_COMPRESSION_LEVEL: '7' }, directory,
+        { unsigned: true }).DSH_DESKTOP_WINDOWS_COMPRESSION_LEVEL).toBe('7')
+      expect(() => { validateDesktopPackageEnvironment(selected, WINDOWS) }).toThrow('require an unsigned Windows build')
+      expect(() => loadDesktopPackageEnvironment('win32', {}, directory)).toThrow('cannot read')
+      expect(() => loadDesktopPackageEnvironment('win32', {
+        DSH_PACKAGING_PRESET: 'test', DSH_PACKAGING_CONFIG_DIR: directory,
+      }, directory, { unsigned: true })).toThrow('cannot read')
+      await writeFile(join(directory, '.env.windows'), '')
+      const explicit = loadDesktopPackageEnvironment('win32', { DSH_DESKTOP_LOCAL_PACKAGE: '1' }, directory, { unsigned: true })
+      expect(explicit).not.toHaveProperty('DSH_DESKTOP_LOCAL_PACKAGE')
+      expect(() => { validateDesktopPackageEnvironment({ ...explicit, DSH_DESKTOP_APP_ID: 'com.example.test' }, WINDOWS,
+        { unsigned: true }) }).toThrow('DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN')
+    })
+  })
+
   it('loads file-owned compression and defaults to fast Windows archive compression', async () => {
     expect(resolveWindowsPackageSettings({}).compressionLevel).toBe(3)
     await withDirectory(async (directory) => {

@@ -8,7 +8,14 @@
 export function localMacOSPackageEnvironment(environment?: NodeJS.ProcessEnv): NodeJS.ProcessEnv
 
 /**
- * Read a machine preset when selected, otherwise the target's required dotenv; no ambient release fallback.
+ * Select local unsigned Windows defaults without signing or update-service settings.
+ * @param environment Parent environment retained for build tools and networking.
+ * @returns Unsigned environment used when no Windows release file or preset is selected.
+ */
+export function localWindowsPackageEnvironment(environment?: NodeJS.ProcessEnv): NodeJS.ProcessEnv
+
+/**
+ * Read a machine preset or platform dotenv; unsigned Windows without either uses local defaults.
  * PACKAGE_TEST_RELEASE_ID overrides the test preset only; blank retains its configured ID.
  * PACKAGE_MACOS_ZIP_COMPRESSION_LEVEL overrides the Mac file setting with 3 or 7; an empty value is invalid.
  * Any defined Mac ZIP override rejects Windows, including an empty value; nonempty Windows overrides reject macOS.

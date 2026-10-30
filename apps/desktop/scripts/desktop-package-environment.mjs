@@ -1,6 +1,6 @@
 /** Select local test defaults or platform release settings without changing the caller's environment. */
 
-import { accessSync, constants, readdirSync, readFileSync, statSync } from 'node:fs'
+import { accessSync, constants, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseEnv } from 'node:util'
@@ -18,7 +18,7 @@ const APP_ROOT = fileURLToPath(new URL('..', import.meta.url))
 const SHARED_SETTING = /^(?:DSH_DESKTOP_(?:APP_ID|AUTO_UPDATE_ENV|NPM_REGISTRY|TRIAL_DEFAULTS_FILE|TRIAL_PLUGINS_DIR|MANDATORY_UPDATE_(?:CONFIG|(?:TEST|PROD)_ORIGIN))|DOWNLOAD_TEST_RELEASE_ID|DOWNLOAD_PROD_EO_ZONE_ID|DOWNLOAD_(?:TEST|PROD)_(?:ORIGIN|COS_BUCKET|COS_SECRET_ID|COS_SECRET_KEY))$/u
 const WINDOWS_SETTING = /^DSH_DESKTOP_WINDOWS_(?:CER_FILE|SIGNTOOL|KEY_CONTAINER|TOKEN_PIN|SIGNATURE_CACHE_DIR|SIGNATURE_CACHE_CONCURRENCY|PACK_CONCURRENCY|COMPRESSION_LEVEL)$/u
 const MACOS_SETTING = /^(?:DSH_DESKTOP_MACOS_(?:SIGNING_IDENTITY|TEAM_ID|SIGNATURE_CACHE_DIR|PACK_CONCURRENCY|ZIP_COMPRESSION_LEVEL|DOWNLOAD_PROXY|NOTARIZATION_PROXY)|APPLE_(?:API_KEY|API_KEY_ID|API_ISSUER|ID|APP_SPECIFIC_PASSWORD|TEAM_ID|KEYCHAIN|KEYCHAIN_PROFILE)|CSC_(?:LINK|KEY_PASSWORD))$/u
-const AMBIENT_RELEASE_SETTING = /^(?:DSH_DESKTOP_(?:APP_ID|AUTO_UPDATE_ENV|MANDATORY_UPDATE_.*|WINDOWS_.*|MACOS_.*)|APPLE_.*|(?:WIN_)?CSC_.*|DOWNLOAD_(?:TEST|PROD)_.*)$/iu
+const AMBIENT_RELEASE_SETTING = /^(?:DSH_DESKTOP_(?:APP_ID|AUTO_UPDATE_ENV|LOCAL_PACKAGE|MANDATORY_UPDATE_.*|WINDOWS_.*|MACOS_.*)|APPLE_.*|(?:WIN_)?CSC_.*|DOWNLOAD_(?:TEST|PROD)_.*)$/iu
 const FILE_SETTINGS = ['DSH_DESKTOP_WINDOWS_CER_FILE', 'DSH_DESKTOP_WINDOWS_SIGNTOOL', 'DSH_DESKTOP_TRIAL_DEFAULTS_FILE', 'DSH_DESKTOP_TRIAL_PLUGINS_DIR', 'APPLE_API_KEY', 'APPLE_KEYCHAIN', 'CSC_LINK']
 
 /**
@@ -35,7 +35,16 @@ export function localMacOSPackageEnvironment(environment = process.env) {
 }
 
 /**
- * Read a machine preset when selected, otherwise the target's required dotenv; no ambient release fallback.
+ * Select unsigned Windows defaults when neither a local release file nor a machine preset is selected.
+ * @param {NodeJS.ProcessEnv} environment Parent environment retained for build tools and networking.
+ * @returns {NodeJS.ProcessEnv} Local unsigned environment without signing or update-service settings.
+ */
+export function localWindowsPackageEnvironment(environment = process.env) {
+  return { ...localMacOSPackageEnvironment(environment), DSH_DESKTOP_LOCAL_PACKAGE: '1' }
+}
+
+/**
+ * Read a machine preset or platform dotenv; unsigned Windows without either uses local defaults.
  * PACKAGE_MACOS_ZIP_COMPRESSION_LEVEL overrides the Mac file setting with 3 or 7; an empty value is invalid.
  * Any defined Mac ZIP override rejects Windows, including an empty value; nonempty Windows overrides reject macOS.
  * PACKAGE_TEST_RELEASE_ID overrides the test preset only; blank retains its configured ID.
@@ -65,6 +74,11 @@ export function loadDesktopPackageEnvironment(platform, environment = process.en
     const root = environment.DSH_PACKAGING_CONFIG_DIR
     if (!root || !isAbsolute(root)) throw new Error('desktop package: DSH_PACKAGING_CONFIG_DIR must be an absolute directory')
     path = join(root, 'presets', `${preset}.env`)
+  }
+  if (platform === 'win32' && options.unsigned && preset === undefined && !existsSync(path)) {
+    const local = localWindowsPackageEnvironment(environment)
+    if (compression !== undefined && compression !== '') local.DSH_DESKTOP_WINDOWS_COMPRESSION_LEVEL = compression
+    return local
   }
   const platformSetting = platform === 'win32' ? WINDOWS_SETTING : MACOS_SETTING
   const publicPlatformSetting = platform === 'win32'
@@ -196,7 +210,11 @@ export function validateDesktopPackageEnvironment(environment, target, options =
   if (environment.DSH_DESKTOP_TRIAL_PLUGINS_DIR) validateTrialPluginsDirectory(environment.DSH_DESKTOP_TRIAL_PLUGINS_DIR)
   resolveDesktopAppId(environment)
   resolveNpmRegistry(environment)
-  if (target.platform !== 'darwin' || !options.unsigned) resolveDesktopPolicyEnvironment(environment)
+  const localWindows = environment.DSH_DESKTOP_LOCAL_PACKAGE === '1'
+  if (localWindows && (target.platform !== 'win32' || !options.unsigned)) {
+    throw new Error('desktop package: local Windows defaults require an unsigned Windows build')
+  }
+  if (!localWindows && (target.platform !== 'darwin' || !options.unsigned)) resolveDesktopPolicyEnvironment(environment)
   if (target.platform === 'darwin') resolveMacOSPackageSettings(environment)
   else resolveWindowsPackageSettings(environment)
   if (options.unsigned) return

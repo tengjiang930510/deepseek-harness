@@ -389,7 +389,8 @@ async function main(): Promise<void> {
     : join(process.resourcesPath, 'runtime', 'primary-runtime')
   const activeProject = paths.profile
   const manager = new DesktopProjectManager(paths, resources, trialDefaults?.patch,
-    app.isPackaged ? join(process.resourcesPath, 'trial-plugins') : undefined)
+    app.isPackaged ? join(process.resourcesPath, 'trial-plugins') : undefined,
+    app.isPackaged ? join(process.resourcesPath, 'runtime-defaults.env') : undefined)
   // Dock and Finder launches inherit only launchd's environment; every Host shares one login-shell read.
   const loginShellRead = new AbortController()
   // The probe runs in its own process group, which outlives Desktop unless the read is aborted.

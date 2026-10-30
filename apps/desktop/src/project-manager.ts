@@ -23,6 +23,7 @@ import type { DesktopPaths } from './paths.ts'
 import type { DesktopRelease } from './release.ts'
 import { readDesktopRuntime } from './runtime-tree.ts'
 import { seedTrialPlugins } from './trial-plugins.ts'
+import { seedDesktopEnvironment } from './environment-defaults.ts'
 import { initProfile, removeLinkProjections, sanitizeProfile } from '@deepseek-ai/dsh-app-boot'
 import { PROFILE_TEMPLATES, type ProfileTemplate } from '@deepseek-ai/dsh-official-bundles'
 
@@ -64,12 +65,14 @@ export class DesktopProjectManager {
    * @param runtime - location of the bundled application runtime.
    * @param initialPatch - optional first-launch profile patch from a trial installer.
    * @param trialPluginsDir - optional installer resource directory of plugins seeded by {@link seedTrialPlugins}.
+   * @param environmentDefaults - optional private installer dotenv copied only when the profile has no dotenv file.
    */
   constructor(
     readonly paths: DesktopPaths,
     readonly runtime: { readonly dsh: string },
     private readonly initialPatch?: string,
     private readonly trialPluginsDir?: string,
+    private readonly environmentDefaults?: string,
   ) {}
 
   /**
@@ -90,6 +93,7 @@ export class DesktopProjectManager {
       readDesktopRuntime(this.runtime.dsh)
       migrateProfileSettings(this.paths.profile)
       createPluginProfile(this.paths.profile, this.initialPatch)
+      if (this.environmentDefaults !== undefined) seedDesktopEnvironment(this.paths.profile, this.environmentDefaults)
       if (this.trialPluginsDir !== undefined) seedTrialPlugins(this.paths.profile, this.trialPluginsDir)
       removeLinkProjections(this.paths.profile)
     })

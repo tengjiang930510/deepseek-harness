@@ -14,13 +14,7 @@
 pnpm run dev:desktop
 ```
 
-profile 路径、重复启动行为和跳过构建的启动命令见 [Desktop 开发](../apps/desktop/README.zh.md#develop)。如需将百炼的 `QWEN_TOKEN_PLAN_API_KEY` 写入私有 Desktop 安装包（相关文件已被 Git 忽略）：
-
-```sh
-node ./tsy-custom-plugins/scripts/seed-desktop-trial-defaults.mjs
-```
-
-这会写入 `apps/desktop/.desktop-build/trial-defaults.json`，并在 `apps/desktop/.env.windows` 中设置 `DSH_DESKTOP_TRIAL_DEFAULTS_FILE`。随后执行 `pnpm run package:desktop:win:x64:unsigned` 打包（先根据 `.env.windows.example` 补全 `.env.windows` 的其他配置）。密钥可以从安装包提取，因此只能使用受限密钥。
+profile 路径、重复启动行为和跳过构建的启动命令见 [Desktop 开发](../apps/desktop/README.zh.md#develop)。Windows 打包会自动携带这些 bundle 和仓库根目录可选的 `.env`；首次启动默认值、显式资源覆盖、浏览器要求，以及无需 `.env.windows` 的未签名本地打包见 [Windows 安装器资源](../apps/desktop/README.zh.md#windows-installer-interface)。内嵌凭据可以从安装包中提取。
 
 ## 源码 Web 启动
 
