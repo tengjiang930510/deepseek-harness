@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, type TestContext } from 'vitest'
-import { discoverCustomPlugins, registerCustomPlugins } from './custom-plugins.ts'
+import { discoverCustomPlugins, readDefaultNpmPlugins, registerCustomPlugins } from './custom-plugins.ts'
 
 async function fixture(context: TestContext, profileName: string) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-source-plugins-'))
@@ -37,6 +37,57 @@ async function fixture(context: TestContext, profileName: string) {
 }
 
 describe.each(['web', 'desktop'])('source %s custom plugin registration', (profileName) => {
+  it('installs default npm bundles once without local bundles and preserves versions, deselection, and removal', async (context) => {
+    const f = await fixture(context, profileName)
+    await rm(join(f.checkout, 'tsy-custom-plugins'), { recursive: true })
+    const configuration = join(f.checkout, 'apps', 'desktop')
+    await mkdir(configuration, { recursive: true })
+    await writeFile(join(configuration, 'packaged-plugins.json'), JSON.stringify({ packages: ['dsh-wechat-plugin'] }))
+    const installs: string[][] = []
+    const options = {
+      profileDir: f.profileDir,
+      async install(specs: readonly string[]) {
+        installs.push([...specs])
+        f.profile.dependencies['dsh-wechat-plugin'] = '^1.0.0'
+        f.profile.dsh.profile.bundles.push('dsh-wechat-plugin')
+        await writeFile(f.profileFile, JSON.stringify(f.profile))
+      },
+    }
+    await expect(registerCustomPlugins(f.checkout, {
+      ...options, install: async () => { throw new Error('offline') },
+    })).rejects.toThrow('offline')
+    await Promise.all([registerCustomPlugins(f.checkout, options), registerCustomPlugins(f.checkout, options)])
+    expect(installs).toEqual([['dsh-wechat-plugin@latest']])
+    expect(f.profile.dsh.profile.bundles).toContain('dsh-wechat-plugin')
+    f.profile.dsh.profile.bundles = ['base', 'web']
+    await writeFile(f.profileFile, JSON.stringify(f.profile))
+    await registerCustomPlugins(f.checkout, options)
+    expect(JSON.parse(await readFile(f.profileFile, 'utf8'))).toMatchObject({
+      dependencies: { 'dsh-wechat-plugin': '^1.0.0' }, dsh: { profile: { bundles: ['base', 'web'] } },
+    })
+    delete f.profile.dependencies['dsh-wechat-plugin']
+    await writeFile(f.profileFile, JSON.stringify(f.profile))
+    await registerCustomPlugins(f.checkout, options)
+    expect(installs).toHaveLength(1)
+    expect(JSON.parse(await readFile(join(f.profileDir, 'source-plugins.json'), 'utf8')))
+      .toEqual({ packages: ['dsh-wechat-plugin'] })
+  })
+
+  it('rejects invalid default npm names, repeated names, and collisions with local bundles', async (context) => {
+    const f = await fixture(context, profileName)
+    const configuration = join(f.checkout, 'apps', 'desktop')
+    await mkdir(configuration, { recursive: true })
+    const file = join(configuration, 'packaged-plugins.json')
+    await writeFile(file, JSON.stringify({ packages: ['../unsafe'] }))
+    expect(() => readDefaultNpmPlugins(f.checkout)).toThrow()
+    await writeFile(file, JSON.stringify({ packages: ['dsh-wechat-plugin', 'dsh-wechat-plugin'] }))
+    expect(() => readDefaultNpmPlugins(f.checkout)).toThrow('duplicate npm package')
+    await writeFile(file, JSON.stringify({ packages: ['custom-a'] }))
+    await expect(registerCustomPlugins(f.checkout, { profileDir: f.profileDir, install: f.install }))
+      .rejects.toThrow('duplicate local and npm package custom-a')
+    expect(f.installs).toEqual([])
+  })
+
   it('registers a new bundle once across concurrent and repeated starts', async (context) => {
     const f = await fixture(context, profileName)
     const options = { profileDir: f.profileDir, install: f.install }

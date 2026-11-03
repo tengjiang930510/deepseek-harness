@@ -30,6 +30,8 @@ pnpm dsh web
 
 注册流程在仓库移动后更新保留的本地链接，保留用户禁用和移除插件的选择，并且不修改从注册表安装的副本。`source-plugins.json` 标记文件分别保存在各 profile 中。要恢复主动移除的 Web 插件，可执行 `pnpm dsh plugin --profile web add ./tsy-custom-plugins/<name>`。发布后的安装不使用源码注册机制。
 
+源码 Web 和 Desktop 还会读取 [`apps/desktop/packaged-plugins.json`](../apps/desktop/packaged-plugins.json) 中的默认 npm bundle，其中包含 `dsh-wechat-plugin`。各 profile 在启动前，以 `@latest` 安装尚未注册过的缺失 bundle；首次安装需要访问注册表。后续启动保留已安装版本、禁用状态和主动移除的选择。安装失败会阻止启动，下次启动时重试。Windows 打包使用同一清单，并在每次构建时单独解析最新版本。
+
 ## 开发 overlay（不安装到 profile）
 
 ```sh

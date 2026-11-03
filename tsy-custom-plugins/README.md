@@ -30,6 +30,8 @@ The artifact build prepares dependencies for each bundle under this directory an
 
 Registration updates retained local links after moving the checkout, preserves disabled bundles and user removals, and leaves registry-installed copies untouched. Its `source-plugins.json` marker is local to each profile. To restore a deliberately removed Web plugin, install it with `pnpm dsh plugin --profile web add ./tsy-custom-plugins/<name>`. Published installations do not use source registration.
 
+Source Web and Desktop also read the default npm bundles from [`apps/desktop/packaged-plugins.json`](../apps/desktop/packaged-plugins.json), which includes `dsh-wechat-plugin`. Each profile installs missing, previously unregistered bundles with `@latest` before startup; the first installation needs registry access. Later starts preserve installed versions, disabled bundles, and deliberate removals. A failed installation stops startup and is retried on the next launch. Windows packaging uses the same list and resolves latest separately for each build.
+
 ## Dev overlay (no profile install)
 
 ```sh

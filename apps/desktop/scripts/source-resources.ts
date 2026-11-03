@@ -6,7 +6,7 @@ import { parseArgs } from 'node:util'
 import { valid } from 'semver'
 import { z } from 'zod'
 import { loadLayeredEnv } from '@deepseek-ai/dsh-app-boot'
-import { discoverCustomPlugins } from '../../../scripts/custom-plugins.ts'
+import { discoverCustomPlugins, readDefaultNpmPlugins } from '../../../scripts/custom-plugins.ts'
 import { pnpmInvocation } from '../../../scripts/pnpm-invocation.ts'
 
 const manifestSchema = z.object({
@@ -15,18 +15,10 @@ const manifestSchema = z.object({
   optionalDependencies: z.record(z.string(), z.string()).optional(),
 }).passthrough()
 
-const packageName = z.string().regex(/^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/u)
-
-function configuredPackages(root: string): string[] {
-  const file = join(root, 'apps', 'desktop', 'packaged-plugins.json')
-  if (!existsSync(file)) return []
-  return z.object({ packages: z.array(packageName) }).parse(JSON.parse(readFileSync(file, 'utf8'))).packages
-}
-
 function packagedPlugins(root: string, installedDirectory: string) {
   const plugins = discoverCustomPlugins(root).map(plugin => ({ ...plugin, installed: false }))
   const names = new Set(plugins.map(plugin => plugin.name))
-  for (const name of configuredPackages(root)) {
+  for (const name of readDefaultNpmPlugins(root)) {
     if (names.has(name)) throw new Error(`desktop source resources: duplicate packaged bundle ${name}`)
     const candidate = join(installedDirectory, 'node_modules', name)
     if (!existsSync(join(candidate, 'package.json'))) throw new Error(`desktop source resources: packaged bundle ${name} is missing after download`)
@@ -49,7 +41,7 @@ function packagedPlugins(root: string, installedDirectory: string) {
  * @throws When npm resolution or installation fails; the caller must not produce an installer.
  */
 export function prepareLatestPackagedPlugins(root: string): { directory: string; dispose(): void } {
-  const packages = configuredPackages(root)
+  const packages = readDefaultNpmPlugins(root)
   const parent = join(root, 'apps/desktop/.desktop-build/packaged-plugin-downloads')
   mkdirSync(parent, { recursive: true })
   const directory = mkdtempSync(join(parent, 'build-'))
@@ -181,7 +173,7 @@ if (import.meta.main) {
   const installation = prepareLatestPackagedPlugins(root)
   try {
     const plugins = stageDesktopSourceResources(root, installation.directory)
-    for (const name of configuredPackages(root)) {
+    for (const name of readDefaultNpmPlugins(root)) {
       const manifest = manifestSchema.parse(JSON.parse(readFileSync(join(installation.directory, 'node_modules', name, 'package.json'), 'utf8')))
       console.log(`desktop source resources: resolved ${name}@${manifest.version}`)
     }

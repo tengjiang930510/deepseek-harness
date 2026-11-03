@@ -1,4 +1,4 @@
-/** Prepare checkout-owned plugin bundles and register them in source application profiles. */
+/** Prepare checkout bundles and register local and default npm bundles in source application profiles. */
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
@@ -16,6 +16,21 @@ const manifestSchema = z.object({
   dsh: z.object({ bundle: z.object({ patch: z.union([z.string(), z.array(z.string())]) }).optional() }).optional(),
 })
 const markerSchema = z.object({ packages: z.array(z.string()) })
+
+/**
+ * Read the npm bundle list shared by source Web, source Desktop, and Windows packaging.
+ * @param root - Checkout root; an absent list contributes no npm bundles.
+ * @returns Unique npm package names; invalid names and duplicates are rejected.
+ */
+export function readDefaultNpmPlugins(root: string): string[] {
+  const file = join(root, 'apps', 'desktop', 'packaged-plugins.json')
+  if (!existsSync(file)) return []
+  const { packages } = z.object({
+    packages: z.array(z.string().regex(/^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/u)),
+  }).parse(JSON.parse(readFileSync(file, 'utf8')))
+  if (new Set(packages).size !== packages.length) throw new Error(`custom plugins: duplicate npm package in ${file}`)
+  return packages
+}
 
 /** One local package contributing a Cordis bundle. */
 export interface CustomPlugin {
@@ -84,13 +99,13 @@ export function prepareCustomPlugins(root: string): void {
 /** Registration inputs; isolated callers can supply their own profile and package operation. */
 export interface CustomPluginRegistration {
   readonly profileDir: string
-  /** Adds link specs through the profile's ordinary package manager; rejects on failure. */
+  /** Adds local links and npm specs through the profile's ordinary package manager; rejects on failure. */
   readonly install: (specs: readonly string[]) => Promise<void>
 }
 
 /**
- * Register new source bundles once and repair retained links after relocation.
- * User deselections and removals survive subsequent starts. Registry-installed copies remain user-owned.
+ * Register local bundles and default npm bundles once, repairing retained links after relocation.
+ * New npm bundles resolve latest on first registration. Existing versions, deselections, and removals remain user-owned.
  * @param root - Checkout root supplying bundle packages.
  * @param options - Profile directory and installation operation.
  * @returns After installation and the registration marker have been saved under a per-profile lock.
@@ -98,7 +113,11 @@ export interface CustomPluginRegistration {
  */
 export async function registerCustomPlugins(root: string, options: CustomPluginRegistration): Promise<void> {
   const plugins = discoverCustomPlugins(root)
-  if (plugins.length === 0) return
+  const npmPlugins = readDefaultNpmPlugins(root)
+  for (const name of npmPlugins) {
+    if (plugins.some(plugin => plugin.name === name)) throw new Error(`custom plugins: duplicate local and npm package ${name}`)
+  }
+  if (plugins.length === 0 && npmPlugins.length === 0) return
   await mkdir(options.profileDir, { recursive: true })
   const marker = join(options.profileDir, 'source-plugins.json')
   await withFileLock(marker, async () => {
@@ -108,6 +127,10 @@ export async function registerCustomPlugins(root: string, options: CustomPluginR
       ? z.object({ dependencies: z.record(z.string(), z.string()).optional() }).parse(JSON.parse(readFileSync(profileFile, 'utf8')))
       : { dependencies: {} }
     const specs: string[] = []
+    for (const name of npmPlugins) {
+      if (profile.dependencies?.[name] !== undefined || seen.has(name)) continue
+      specs.push(`${name}@latest`)
+    }
     for (const plugin of plugins) {
       const previous = profile.dependencies?.[plugin.name]
       if (previous === undefined && seen.has(plugin.name)) continue
@@ -126,6 +149,7 @@ export async function registerCustomPlugins(root: string, options: CustomPluginR
       seen.add(plugin.name)
     }
     if (specs.length > 0) await options.install(specs)
+    for (const name of npmPlugins) seen.add(name)
     await writeFileAtomic(marker, `${JSON.stringify({ packages: [...seen].sort() }, null, 2)}\n`, { mode: 0o600 })
   }, { waitMs: 120000 })
 }
