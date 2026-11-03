@@ -1,49 +1,51 @@
 # t4y-key-broker
 
-职责、调用流程、状态和边界见 [企业插件实现与边界](../PLUGIN-REFERENCE.md#t4y-key-broker)。
+English | [中文](README.zh.md)
 
-开发流程见 [DEVELOPING.md](./DEVELOPING.md)。源码在本仓库 `tsy-custom-plugins/t4y-key-broker/`；当前评测部署在 `192.10.51.138:4010`。
+See [Enterprise plugin implementation and boundaries](../PLUGIN-REFERENCE.md#t4y-key-broker) for responsibilities, calls, state, and limitations.
 
-登录后的 **New API 推理 Key** 签发服务。总账户登录仍由 `t4y-identity` 完成；Broker 用 access token 调 `getInfo` 校验身份。
+See [DEVELOPING.md](./DEVELOPING.md) for development. Source is in `tsy-custom-plugins/t4y-key-broker/`; the current evaluation deployment is at `192.10.51.138:4010`.
 
-## 产品模型（与 identity 对齐）
+Issues a **New API inference Key** after login. `t4y-identity` performs account login; Broker verifies identity by calling `getInfo` with the access token.
 
-| 概念 | 含义 |
+## Product model (aligned with identity)
+
+| Concept | Meaning |
 |---|---|
-| `tenantId` | **整个系统**的 id（登录 `enterprise.id`）；暂时只会有这一个 |
-| `moduleId` | **企业** id（分账 / 工作区）；普通人一个，管理员可切换多个 |
-| 模型 Key | 按企业用户 `userId` 一人一把 |
-| `homeModuleId` | 首次签发时的 `moduleId`（企业）→ New API `mod_<hash>` 户 |
+| `tenantId` | **System-wide** id (login `enterprise.id`); currently there is only one |
+| `moduleId` | **Enterprise** id for billing and workspace; regular users have one, administrators can switch between several |
+| Model Key | One per enterprise user `userId` |
+| `homeModuleId` | `moduleId` at first issuance → New API `mod_<hash>` account |
 
-### 管理员怎么用
+### Administrator workflow
 
-1. 登录后选**当前要干活的企业**（`moduleId`）→ 首次签发，Key 与 New API 用量挂在该企业下。
-2. 再切到其它企业 → 只换工作区/菜单，**同一把 Key**，分账仍记在步骤 1 的 home。
-3. 若要把费用改记到另一企业：在客户端**退出登录**（revoke），再登录并选目标企业重新签发。
+1. After login select the **enterprise for current work** (`moduleId`) → first issuance assigns the Key and New API usage to that enterprise.
+2. Switch to another enterprise → only workspace / menus change; the **same Key** keeps billing at the home from step 1.
+3. To bill another enterprise, **log out** in the client (revoke), log in again and select the target enterprise for issuance.
 
-## 行为
+## Behavior
 
-- 首次签发：确保该企业 `moduleId` 有 New API User，创建 `usr_<userHash>` Token；账本一行/用户，`module_id` = home 企业。
-- 同一用户再 issue（未过期）：返回同一把 Key 与原始到期时间，**不续期、不重新 reveal**；响应带 `homeModuleId`。
-- Token 到期来自 `expiresIn`（**秒**，最大 30 天）。未过期不静默续期；**过期后**重新登录再 issue：写入新的 `expiresAt`，账本仍有 Key 材料时不重新 reveal。
+- First issuance: ensure a New API User exists for enterprise `moduleId`, then create the `usr_<userHash>` Token; the ledger has one row per user with `module_id` set to the home enterprise.
+- A later issue for the same user before expiry returns the same Key and original expiration, **without renewal or another reveal**; the response includes `homeModuleId`.
+- Token expiry comes from `expiresIn` (**seconds**, up to 30 days). Unexpired tokens are not silently renewed; login and issue **after expiry** write a new `expiresAt` without another reveal when the ledger retains Key material.
 
-## 规模与并发（万级用户）
+## Scale and concurrency (tens of thousands of users)
 
-SQLite WAL（`BROKER_SQLITE_PATH`，默认 `broker.db`）；启动幂等 upsert 旧 `state.json`。
+SQLite WAL uses `BROKER_SQLITE_PATH`, defaulting to `broker.db`; startup idempotently upserts the old `state.json`.
 
-| 路径 | 行为 |
+| Path | Behavior |
 |---|---|
-| 重复 issue / status | 按用户 O(1)；`getInfo` 缓存默认 45s |
-| 首次签发 | 仅对该用户串行 |
-| 管理台 | 按 Key 的 home `moduleId`（企业）归组 |
+| Repeated issue / status | O(1) per user; `getInfo` cache defaults to 45s |
+| First issuance | Serialized only for that user |
+| Admin console | Group by Key home `moduleId` (enterprise) |
 
-多机前换共享库；瓶颈通常在 New API 管理面与企业 `getInfo`。
+Use a shared database before running on multiple machines; New API administration and enterprise `getInfo` are typical bottlenecks.
 
-## 运行
+## Run
 
-复制 `.env.example` → 受限权限环境文件；跑 `server.py`（`server.mjs` 为旧原型，勿用于规模部署）。
+Copy `.env.example` to an environment file with restricted permissions and run `server.py` (`server.mjs` is an old prototype and is not for scaled deployment).
 
-**管理面：** `sk-` 不能调管理 API；Broker 缓存 root JWT，用 `New-Api-User` 代管。
+**Management API:** `sk-` cannot call it; Broker caches a root JWT and uses `New-Api-User` for delegated management.
 
 ```http
 POST /v1/session/issue
@@ -53,16 +55,16 @@ Content-Type: application/json
 {"expiresIn": 2592000, "moduleId": "<enterprise-module-id>", "moduleName": "武汉地铁"}
 ```
 
-返回 `apiKey`、`expiresAt`、`homeModuleId`、`userId`、`tenantId`。Key 缓存在 SQLite；管理台 overview **不**返回完整 `sk-`。
+Returns `apiKey`, `expiresAt`, `homeModuleId`, `userId` and `tenantId`. Keys are cached in SQLite; admin overview does **not** return a complete `sk-`.
 
-- `POST /v1/session/status`：按用户查账本（`moduleId` 可选，兼容旧客户端）。
-- `POST /v1/session/revoke`：删除该用户唯一 Key（`moduleId` 忽略）。
+- `POST /v1/session/status`: query the ledger by user (`moduleId` is optional for older clients).
+- `POST /v1/session/revoke`: delete the user’s single Key (`moduleId` is ignored).
 
-## 管理台
+## Admin console
 
-按 **home 企业（module）** 列出成员 Key，可吊销单用户或整企业 home 下的会话。
+Lists member Keys by **home enterprise (module)** and can revoke sessions for one user or an entire enterprise home.
 
-1. 设 `BROKER_ADMIN_TOKEN`；打开 `http://<host>:<port>/admin`。
-2. API：`GET /v1/admin/overview`、`POST /v1/admin/session/revoke`、`POST /v1/admin/project/revoke-sessions`。
+1. Set `BROKER_ADMIN_TOKEN`; open `http://<host>:<port>/admin`.
+2. APIs: `GET /v1/admin/overview`, `POST /v1/admin/session/revoke`, `POST /v1/admin/project/revoke-sessions`.
 
-Docker 建议 `--network host`。公网须 HTTPS + 来源限制。
+Docker recommends `--network host`. Public access requires HTTPS and source restrictions.

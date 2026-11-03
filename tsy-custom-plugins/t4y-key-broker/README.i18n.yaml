@@ -1,0 +1,25 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write tsy-custom-plugins/t4y-key-broker/README.md
+/t4y-key-broker:
+  en: 4ff45376fee292b6
+  zh: 439e323dc28768b3
+/t4y-key-broker/product-model-aligned-with-identity:
+  en: 3c59281633a51054
+  zh: 76538a3e7a8d97f6
+/t4y-key-broker/product-model-aligned-with-identity/administrator-workflow:
+  en: e5ac134a303a23ee
+  zh: fddb3b1992e49818
+/t4y-key-broker/behavior:
+  en: 57534e9fc11b3d0b
+  zh: 2e15d655309313e0
+/t4y-key-broker/scale-and-concurrency-tens-of-thousands-of-users:
+  en: 9526674dbb5bf1f9
+  zh: 316b5e170176f045
+/t4y-key-broker/run:
+  en: 463ca5371ea9d8b7
+  zh: 261e77dbc473f9c7
+/t4y-key-broker/admin-console:
+  en: 3982b608a8675af4
+  zh: f97f400fc410dd4a

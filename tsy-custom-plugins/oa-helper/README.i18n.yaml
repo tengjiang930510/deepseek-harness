@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write tsy-custom-plugins/oa-helper/README.md
+/oa-helper:
+  en: c8af681e9c4dee95
+  zh: d42bc11913c73218
+/oa-helper/install:
+  en: a0522da0e2002633
+  zh: 69b208c500bc3875
+/oa-helper/office-platform-leave-submission:
+  en: 7a5e1b8f0482751e
+  zh: b1191c4841dc5ba6
+/oa-helper/dev-overlay:
+  en: 095278cd0c92f385
+  zh: fa16ec8ced7222f5

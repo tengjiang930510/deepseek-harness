@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write prototype/versions/v1.1-tenant-identity/README.md
+/v1-1-tenant-login-and-capability-rollback-html-prototype:
+  en: e5500462fd2da398
+  zh: 26ee0ccef47246e6
+/v1-1-tenant-login-and-capability-rollback-html-prototype/open:
+  en: ad3ed18ec420a599
+  zh: 27883a23c4fa76da
+/v1-1-tenant-login-and-capability-rollback-html-prototype/scope:
+  en: 8ba96024cd3a7f11
+  zh: 95e2e90edc81bdac
+/v1-1-tenant-login-and-capability-rollback-html-prototype/demo-accounts:
+  en: 994763b083925e87
+  zh: e6be9f4517b16b92
+/v1-1-tenant-login-and-capability-rollback-html-prototype/platforms:
+  en: 40404f5073b3f608
+  zh: 3508b59b8d5050f3
+/v1-1-tenant-login-and-capability-rollback-html-prototype/legend:
+  en: b67f127cdb296186
+  zh: 795b5a1cb0d75e58

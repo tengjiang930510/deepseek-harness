@@ -1,0 +1,10 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write tsy-custom-plugins/t4y-trial-runtime/README.md
+/t4y-trial-runtime:
+  en: 4893c13fc0703eb3
+  zh: d6ee423ea026e785
+/t4y-trial-runtime/install:
+  en: 93cc29aed527ec85
+  zh: 4890c443d6741c90

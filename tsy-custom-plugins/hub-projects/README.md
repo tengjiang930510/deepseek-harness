@@ -1,6 +1,8 @@
-# Hub 项目样板
+# Hub project examples
 
-对照 Gitee `tsy-dsh-plugins-hub` 的项目布局：
+English | [中文](README.zh.md)
+
+The examples follow the Gitee `tsy-dsh-plugins-hub` project layout:
 
 ```text
 <projectName>/catalog.json
@@ -8,4 +10,4 @@
 <projectName>/plugins/<name>/v<version>/
 ```
 
-正式内容在 Gitee；本目录仅本地联调样板。
+The authoritative content lives in Gitee; this directory contains local integration examples only.

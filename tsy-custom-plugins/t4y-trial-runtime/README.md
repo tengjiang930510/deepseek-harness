@@ -1,10 +1,12 @@
 # t4y-trial-runtime
 
-职责、调用流程、状态和边界见 [企业插件实现与边界](../PLUGIN-REFERENCE.md#t4y-trial-runtime)。
+English | [中文](README.zh.md)
 
-武汉地铁智能助手内置运行时：为试用 / Desktop 安装包提供 Qwen 模型相关默认、联网搜索（flash），并把 LLM / 搜索的凭据引用对齐到 `T4Y_NEW_API_KEY`。
+See [Enterprise plugin implementation and boundaries](../PLUGIN-REFERENCE.md#t4y-trial-runtime) for responsibilities, calls, state, and limitations.
 
-登录与 **New API Key** 签发由 [`t4y-identity`](../t4y-identity/) + Key Broker 完成；本包只消费同一凭据槽，不提供登录 UI，也不自造 Key。
+The Wuhan Metro assistant runtime supplies Qwen model defaults and flash web search for trial and Desktop packages, using the `T4Y_NEW_API_KEY` credential reference for both LLM and search.
+
+[`t4y-identity`](../t4y-identity/) and Key Broker handle login and **New API Key** issuance. This package only consumes the credential slot; it does not provide login UI or create keys.
 
 ## Install
 
@@ -12,4 +14,4 @@
 pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-trial-runtime
 ```
 
-开发与打包步骤见 [DEVELOPING.md](./DEVELOPING.md)。
+See [DEVELOPING.md](./DEVELOPING.md) for development and packaging.
