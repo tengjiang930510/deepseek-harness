@@ -513,8 +513,57 @@ describe('HttpFetchProvider invalid URLs and abort', () => {
 
   it('maps a connection failure to WEB_PROVIDER_ERROR', async () => {
     // Port 1 on loopback is not listening: a real connection failure (not abort).
+    // The message must include the cause chain (ECONNREFUSED), not only undici's
+    // bare `TypeError: fetch failed`.
     await expect(provider().fetch({ url: 'http://127.0.0.1:1/' }))
-      .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_ERROR' }))
+      .rejects.toThrow(expect.objectContaining({
+        code: 'WEB_PROVIDER_ERROR',
+        message: expect.stringMatching(/web fetch failed:[\s\S]*(ECONNREFUSED|fetch failed)/),
+      }))
+  })
+
+  it.each([
+    [
+      'cause chain',
+      Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('connect'), { code: 'ECONNREFUSED' }) }),
+      /web fetch failed: fetch failed: connect/,
+    ],
+    [
+      'empty Error message falls back to name',
+      new Error(''),
+      /web fetch failed: Error$/,
+    ],
+    [
+      'non-Error throw',
+      'plain-string-failure',
+      /web fetch failed: plain-string-failure/,
+    ],
+    [
+      'AggregateError members',
+      new AggregateError([new Error('a'), new Error('b')], 'multi'),
+      /web fetch failed: multi \[a; b\]/,
+    ],
+    [
+      'circular cause',
+      (() => {
+        const err = new Error('loop')
+        err.cause = err
+        return err
+      })(),
+      /web fetch failed: loop: <circular cause>/,
+    ],
+    [
+      'cause message identical to parent',
+      Object.assign(new Error('same'), { cause: new Error('same') }),
+      /web fetch failed: same$/,
+    ],
+  ] as const)('surfaces %s in WEB_PROVIDER_ERROR', async (_label, thrown, pattern) => {
+    vi.spyOn(publicHttpNetwork, 'request').mockRejectedValue(thrown)
+    await expect(provider().fetch({ url: 'http://127.0.0.1:9/' }))
+      .rejects.toThrow(expect.objectContaining({
+        code: 'WEB_PROVIDER_ERROR',
+        message: expect.stringMatching(pattern),
+      }))
   })
 
 })

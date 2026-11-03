@@ -254,6 +254,33 @@ function resolveRedirect(location: string, base: URL): URL {
 }
 
 /**
+ * Render a thrown value with its `cause` chain so undici's bare
+ * `TypeError: fetch failed` still surfaces ECONNREFUSED / CERT / reset details.
+ */
+function errorChain(value: unknown): string {
+  const path = new Set<unknown>()
+  const render = (current: unknown): string => {
+    if (path.has(current)) return '<circular cause>'
+    path.add(current)
+    try {
+      if (!(current instanceof Error)) return String(current)
+      const message = current.message === '' ? current.name : current.message
+      const members = current instanceof AggregateError && current.errors.length > 0
+        ? ` [${current.errors.map(render).join('; ')}]`
+        : ''
+      const cause = current.cause
+      if (cause === undefined || cause === null) return `${message}${members}`
+      const nested = render(cause)
+      if (nested === message) return `${message}${members}`
+      return `${message}${members}: ${nested}`
+    } finally {
+      path.delete(current)
+    }
+  }
+  return render(value)
+}
+
+/**
  * Translate a thrown fetch/stream error into a `WebError`, classified by the
  * deadline signal rather than the thrown value (which differs by phase: the
  * request-phase `fetch` rejects with the abort reason, while the read-phase
@@ -267,5 +294,5 @@ function translateAbortOrNetwork(error: unknown, signal: AbortSignal): WebError 
   const timeout = timeoutOf(signal, 'WEB_FETCH_TIMEOUT')
   if (timeout !== undefined) return new WebError('web fetch timed out', 'WEB_FETCH_TIMEOUT', { cause: timeout })
   if (signal.aborted) return new WebError('web fetch aborted', 'WEB_ABORTED', { cause: error })
-  return new WebError(`web fetch failed: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
+  return new WebError(`web fetch failed: ${errorChain(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
 }

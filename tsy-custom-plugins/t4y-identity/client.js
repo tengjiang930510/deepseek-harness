@@ -820,15 +820,26 @@ window.__ModuleLoader__.load({
       /** Reused across opens so insert does not rebind listeners every time. */
       let switchItem = null
       let trigger = null
+      let activeMenu = null
       let frame = null
       let revealFrame = 0
       let readyTimer = 0
       let attempts = 0
       let disposed = false
-      let syncQueued = false
+      /** True after the open cycle finished patching; skips body-observer re-entry. */
+      let patchedOpen = false
 
       const clearMenuReady = () => {
+        patchedOpen = false
         trigger?.removeAttribute('data-t4y-menu-ready')
+        if (activeMenu instanceof HTMLElement) {
+          activeMenu.removeAttribute('data-t4y-menu-pending')
+          activeMenu = null
+        }
+        // Any leftover account menus from a remount stay hidden until re-patched.
+        for (const menu of document.querySelectorAll('[role="menu"][data-t4y-menu-pending]')) {
+          menu.removeAttribute('data-t4y-menu-pending')
+        }
         if (revealFrame !== 0) {
           window.cancelAnimationFrame(revealFrame)
           revealFrame = 0
@@ -839,17 +850,78 @@ window.__ModuleLoader__.load({
         }
       }
 
-      const revealMenu = () => {
-        // Two frames: Host Menu remeasures after we inject「切换项目」, then show once.
-        if (revealFrame !== 0) window.cancelAnimationFrame(revealFrame)
-        revealFrame = window.requestAnimationFrame(() => {
+      /** Hide before paint. MutationObserver runs before the next frame. */
+      const concealMenu = (menu) => {
+        if (!(menu instanceof HTMLElement)) return
+        activeMenu = menu
+        menu.setAttribute('data-t4y-account-menu', 'true')
+        // Always pending until revealMenu — do not key off trigger ready (stale across opens).
+        menu.setAttribute('data-t4y-menu-pending', 'true')
+        trigger?.removeAttribute('data-t4y-menu-ready')
+      }
+
+      const collectAddedMenus = (records) => {
+        const menus = []
+        for (const record of records) {
+          if (record.type !== 'childList') continue
+          for (const node of record.addedNodes) {
+            if (!(node instanceof HTMLElement)) continue
+            if (node.getAttribute('role') === 'menu') menus.push(node)
+            else menus.push(...node.querySelectorAll('[role="menu"]'))
+          }
+        }
+        return menus
+      }
+
+      const finishReveal = (menu) => {
+        if (trigger?.getAttribute('aria-expanded') !== 'true') return
+        // Host Menu uses `transition: all`; revealing mid-remeasure animates a
+        // top jump (e.g. 674→634). Freeze transitions for one frame.
+        if (menu instanceof HTMLElement) {
+          menu.style.transition = 'none'
+          menu.removeAttribute('data-t4y-menu-pending')
+        }
+        trigger.setAttribute('data-t4y-menu-ready', 'true')
+        patchedOpen = true
+        if (menu instanceof HTMLElement) {
           revealFrame = window.requestAnimationFrame(() => {
             revealFrame = 0
-            if (trigger?.getAttribute('aria-expanded') === 'true') {
-              trigger.setAttribute('data-t4y-menu-ready', 'true')
-            }
+            if (menu.style.transition === 'none') menu.style.transition = ''
           })
-        })
+        }
+      }
+
+      const revealMenu = () => {
+        // Wait until portal top/height stop moving after we inject「切换项目」.
+        if (revealFrame !== 0) window.cancelAnimationFrame(revealFrame)
+        const menu = activeMenu
+        if (!(menu instanceof HTMLElement)) {
+          finishReveal(null)
+          return
+        }
+        let lastTop = menu.style.top
+        let lastHeight = Math.round(menu.getBoundingClientRect().height)
+        let stable = 0
+        let frames = 0
+        const tick = () => {
+          revealFrame = 0
+          if (disposed || trigger?.getAttribute('aria-expanded') !== 'true') return
+          frames += 1
+          const top = menu.style.top
+          const height = Math.round(menu.getBoundingClientRect().height)
+          if (top === lastTop && height === lastHeight) stable += 1
+          else {
+            stable = 0
+            lastTop = top
+            lastHeight = height
+          }
+          if ((stable >= 2 && frames >= 2) || frames >= 10) {
+            finishReveal(menu)
+            return
+          }
+          revealFrame = window.requestAnimationFrame(tick)
+        }
+        revealFrame = window.requestAnimationFrame(tick)
       }
 
       const armReadyFailsafe = () => {
@@ -857,9 +929,13 @@ window.__ModuleLoader__.load({
         readyTimer = window.setTimeout(() => {
           readyTimer = 0
           if (trigger?.getAttribute('aria-expanded') === 'true') {
-            trigger.setAttribute('data-t4y-menu-ready', 'true')
+            if (revealFrame !== 0) {
+              window.cancelAnimationFrame(revealFrame)
+              revealFrame = 0
+            }
+            finishReveal(activeMenu)
           }
-        }, 120)
+        }, 160)
       }
 
       const syncTriggerChrome = () => {
@@ -869,6 +945,16 @@ window.__ModuleLoader__.load({
           replaceAccountTriggerLabel(trigger, session.displayName)
           setLeadingIcon(trigger, ICON_USER, 'user')
           trigger.setAttribute('data-signed-out', 'false')
+        }
+      }
+
+      const hideFeedbackRows = (items) => {
+        for (const item of items) {
+          if (!menuItemMatches(item, ['意见反馈', 'Feedback', 'Send feedback'])) continue
+          const wrap = item.parentElement
+          if (wrap instanceof HTMLElement && wrap.style.display !== 'none') {
+            wrap.style.display = 'none'
+          }
         }
       }
 
@@ -883,12 +969,27 @@ window.__ModuleLoader__.load({
         const menu = findAccountMenuList()
         if (menu === null) return
 
+        // Same open cycle already patched this menu node — ignore observer noise.
+        if (
+          patchedOpen
+          && menu === activeMenu
+          && menu.getAttribute('data-t4y-menu-pending') !== 'true'
+          && (switchItem === null || switchItem.isConnected)
+        ) {
+          return
+        }
+
+        if (menu.getAttribute('data-t4y-menu-pending') !== 'true') concealMenu(menu)
+        else {
+          activeMenu = menu
+          menu.setAttribute('data-t4y-account-menu', 'true')
+        }
+
         const items = [...menu.querySelectorAll('[role="menuitem"]')]
           .filter((item) => item instanceof HTMLElement)
-        // 「意见反馈」is hidden by CSS; avoid style writes that force a second layout.
+        hideFeedbackRows(items)
         const hostAuthLabels = ['登录', 'Sign in', '退出登录', 'Sign out']
         const session = readSession()
-        syncTriggerChrome()
 
         const label = session === null ? t('accountLogin') : t('logout')
         const authLabels = [...hostAuthLabels, t('accountLogin'), t('logout')]
@@ -907,7 +1008,8 @@ window.__ModuleLoader__.load({
 
         const canSwitch = Boolean(session && (session.modules || []).length > 1)
         if (canSwitch) {
-          if (switchItem === null) {
+          if (switchItem === null || !switchItem.isConnected) {
+            if (switchItem !== null && !switchItem.isConnected) switchItem = null
             switchItem = authItem.cloneNode(true)
             switchItem.dataset.t4ySwitchModule = 'true'
             switchItem.dataset.t4yIdentityBound = 'true'
@@ -944,26 +1046,51 @@ window.__ModuleLoader__.load({
         }
 
         if (trigger.getAttribute('data-t4y-menu-ready') !== 'true') revealMenu()
+        else {
+          menu.removeAttribute('data-t4y-menu-pending')
+          patchedOpen = true
+        }
       }
 
-      const scheduleSync = () => {
-        if (syncQueued || disposed) return
-        syncQueued = true
-        queueMicrotask(() => {
-          syncQueued = false
-          syncMenu()
-        })
+      /** Keep the opacity gate armed before React flips aria-expanded. */
+      const onTriggerPointerDown = () => {
+        if (trigger?.getAttribute('aria-expanded') === 'true') return
+        clearMenuReady()
       }
 
-      const onTriggerExpanded = () => {
-        if (trigger?.getAttribute('aria-expanded') !== 'true') clearMenuReady()
-        scheduleSync()
+      const onTriggerKeyDown = (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+        if (trigger?.getAttribute('aria-expanded') === 'true') return
+        clearMenuReady()
       }
 
-      const observer = new MutationObserver(() => {
-        if (disposed) return
-        if (trigger?.getAttribute('aria-expanded') === 'true') scheduleSync()
-        else clearMenuReady()
+      const observer = new MutationObserver((records) => {
+        if (disposed || trigger === null) return
+
+        // Conceal as soon as the account menu portal mounts — even before aria-expanded flips.
+        for (const menu of collectAddedMenus(records)) {
+          if (!(menu instanceof HTMLElement)) continue
+          const looksAccount = [...menu.querySelectorAll('[role="menuitem"]')]
+            .some((item) => menuItemMatches(item, ['设置', 'Settings']))
+          if (looksAccount) concealMenu(menu)
+        }
+
+        const expandedChanged = records.some((record) => (
+          record.type === 'attributes' && record.target === trigger
+        ))
+        if (trigger.getAttribute('aria-expanded') !== 'true') {
+          // Keep a just-mounted pending menu hidden until expanded flips; drop detached nodes.
+          if (!activeMenu?.isConnected) clearMenuReady()
+          return
+        }
+        if (expandedChanged) {
+          trigger.removeAttribute('data-t4y-menu-ready')
+          patchedOpen = false
+        }
+        const menu = findAccountMenuList()
+        if (menu === null) return
+        if (menu.getAttribute('data-t4y-menu-pending') !== 'true') concealMenu(menu)
+        if (!patchedOpen || !switchItem?.isConnected || menu !== activeMenu) syncMenu()
       })
 
       const bindTrigger = () => {
@@ -971,12 +1098,12 @@ window.__ModuleLoader__.load({
         const candidate = document.querySelector('[aria-label="账号菜单"], [aria-label="Account menu"]')
         if (candidate instanceof HTMLElement) {
           trigger = candidate
-          trigger.addEventListener('click', onTriggerExpanded)
-          trigger.addEventListener('keydown', onTriggerExpanded)
+          trigger.addEventListener('pointerdown', onTriggerPointerDown, true)
+          trigger.addEventListener('keydown', onTriggerKeyDown, true)
           observer.observe(document.body, { childList: true, subtree: true })
           observer.observe(trigger, { attributes: true, attributeFilter: ['aria-expanded'] })
           syncTriggerChrome()
-          scheduleSync()
+          if (trigger.getAttribute('aria-expanded') === 'true') syncMenu()
           return
         }
         attempts += 1
@@ -984,7 +1111,8 @@ window.__ModuleLoader__.load({
       }
       const onSession = () => {
         syncTriggerChrome()
-        scheduleSync()
+        patchedOpen = false
+        if (trigger?.getAttribute('aria-expanded') === 'true') syncMenu()
       }
       bindTrigger()
       window.addEventListener(EVENT_NAME, onSession)
@@ -993,8 +1121,8 @@ window.__ModuleLoader__.load({
         clearMenuReady()
         observer.disconnect()
         if (frame !== null) window.cancelAnimationFrame(frame)
-        trigger?.removeEventListener('click', onTriggerExpanded)
-        trigger?.removeEventListener('keydown', onTriggerExpanded)
+        trigger?.removeEventListener('pointerdown', onTriggerPointerDown, true)
+        trigger?.removeEventListener('keydown', onTriggerKeyDown, true)
         window.removeEventListener(EVENT_NAME, onSession)
         switchItem?.remove()
         switchItem = null
@@ -1542,9 +1670,21 @@ window.__ModuleLoader__.load({
             backdrop-filter: var(--dsw-mask-blur, blur(8px));
             background: var(--dsw-alias-bg-mask-1, rgba(15, 23, 42, 0.28));
           }
+          /* Hide host「意见反馈」while the account menu is open. */
           body:has([aria-label="账号菜单"][aria-expanded="true"]) [role="menu"] > [role="presentation"] > div:nth-child(2),
           body:has([aria-label="Account menu"][aria-expanded="true"]) [role="menu"] > [role="presentation"] > div:nth-child(2) {
-            display: none;
+            display: none !important;
+          }
+          /* Pending mark is set synchronously when the menu mounts (before paint). */
+          [role="menu"][data-t4y-menu-pending="true"] {
+            opacity: 0 !important;
+            pointer-events: none !important;
+          }
+          /* Fallback if the portal paints before our observer marks it. */
+          body:has([aria-label="账号菜单"][aria-expanded="true"]:not([data-t4y-menu-ready="true"])) [role="menu"],
+          body:has([aria-label="Account menu"][aria-expanded="true"]:not([data-t4y-menu-ready="true"])) [role="menu"] {
+            opacity: 0 !important;
+            pointer-events: none !important;
           }
           .t4y-identity-stage {
             position: relative;
