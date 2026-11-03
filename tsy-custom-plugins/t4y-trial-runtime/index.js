@@ -15,7 +15,7 @@ export const name = 't4y-trial-runtime'
 export const inject = ['web']
 
 /** Drop profile rows that would reselect DeepSeek search or override this bundle's web pin. */
-const PROFILE_OWNED_IDS = new Set(['web', 'web-search-deepseek', 'web-search-bailian'])
+const PROFILE_OWNED_IDS = new Set(['web', 'web-search-deepseek'])
 
 function record(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? value : undefined
