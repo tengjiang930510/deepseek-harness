@@ -49,7 +49,10 @@ export function findRepositoryReferences(
     if (organizationUrl.test(canonicalReferenceText(line).replace(kitRepositoryUrl, ''))) {
       references.push({ file, line: index + 1, kind: 'organization-url' })
     }
-    if ([...line.matchAll(commitCandidate)].some(match => commits.has(match[0].toLowerCase()))) {
+    const candidates = file.endsWith('/uv.lock') || file === 'uv.lock'
+      ? line.replace(/\bsize\s*=\s*\d+\b/g, 'size = <bytes>')
+      : line
+    if ([...candidates.matchAll(commitCandidate)].some(match => commits.has(match[0].toLowerCase()))) {
       references.push({ file, line: index + 1, kind: 'commit-hash' })
     }
   }
