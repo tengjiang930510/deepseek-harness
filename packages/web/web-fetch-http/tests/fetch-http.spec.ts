@@ -515,11 +515,13 @@ describe('HttpFetchProvider invalid URLs and abort', () => {
     // Port 1 on loopback is not listening: a real connection failure (not abort).
     // The message must include the cause chain (ECONNREFUSED), not only undici's
     // bare `TypeError: fetch failed`.
-    await expect(provider().fetch({ url: 'http://127.0.0.1:1/' }))
-      .rejects.toThrow(expect.objectContaining({
-        code: 'WEB_PROVIDER_ERROR',
-        message: expect.stringMatching(/web fetch failed:[\s\S]*(ECONNREFUSED|fetch failed)/),
-      }))
+    const error = await provider().fetch({ url: 'http://127.0.0.1:1/' }).then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    )
+    expect(error).toEqual(expect.objectContaining({ code: 'WEB_PROVIDER_ERROR' }))
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toMatch(/web fetch failed:[\s\S]*(ECONNREFUSED|fetch failed)/)
   })
 
   it.each([
@@ -559,11 +561,13 @@ describe('HttpFetchProvider invalid URLs and abort', () => {
     ],
   ] as const)('surfaces %s in WEB_PROVIDER_ERROR', async (_label, thrown, pattern) => {
     vi.spyOn(publicHttpNetwork, 'request').mockRejectedValue(thrown)
-    await expect(provider().fetch({ url: 'http://127.0.0.1:9/' }))
-      .rejects.toThrow(expect.objectContaining({
-        code: 'WEB_PROVIDER_ERROR',
-        message: expect.stringMatching(pattern),
-      }))
+    const error = await provider().fetch({ url: 'http://127.0.0.1:9/' }).then(
+      () => undefined,
+      (rejection: unknown) => rejection,
+    )
+    expect(error).toEqual(expect.objectContaining({ code: 'WEB_PROVIDER_ERROR' }))
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toMatch(pattern)
   })
 
 })
