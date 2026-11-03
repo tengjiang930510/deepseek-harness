@@ -1,5 +1,7 @@
 # t4y-tenant
 
+职责、调用流程、状态和边界见 [企业插件实现与边界](../PLUGIN-REFERENCE.md#t4y-tenant)。
+
 开发流程见 [DEVELOPING.md](./DEVELOPING.md)。
 
 维护当前「系统租户 + 企业（module）」上下文。

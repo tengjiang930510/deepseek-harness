@@ -1,5 +1,7 @@
 # oa-helper
 
+职责、调用流程、状态和边界见 [企业插件实现与边界](../PLUGIN-REFERENCE.md#oa-helper)。
+
 开发流程见 [DEVELOPING.md](./DEVELOPING.md)。
 
 武汉地铁智能助手：单一斜杠入口 `/oa-helper`（请假 / 出差 / 办公），以及办公平台请假提交（Playwright）。
@@ -25,6 +27,8 @@ npx playwright install chromium
 ## 办公平台请假提交
 
 工具 `zjy_leave_submit` 与 `/oa-helper submit {…}`：登录 → 请假申请 → 新增 → 填假别/日期/事由 → 发起流程。
+
+当前仓库缺少运行提交所需的 `lib/leave-open.js`，因此该提交通道会报告模块不可用；卡片生成和本地确认不代表远端流程已提交。
 
 会话请假卡片点「确认并提交到办公平台」会调用 `/oa-helper submit`（无头浏览器）。斜杠菜单只暴露 `/oa-helper` 一项。
 

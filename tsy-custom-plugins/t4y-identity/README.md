@@ -1,5 +1,7 @@
 # t4y-identity
 
+职责、调用流程、状态和边界见 [企业插件实现与边界](../PLUGIN-REFERENCE.md#t4y-identity)。
+
 开发流程见 [DEVELOPING.md](./DEVELOPING.md)。
 
 对接既有后端登录：`publicKey → RSA(PKCS1) 加密密码 → login → Authorization → getInfo / getRouters`。未登录时全屏门禁，登录后账号菜单展示 `user.nickName`。
@@ -60,7 +62,7 @@
 | `POST /api/t4y-identity/session-status` | 每分钟 / 回前台：本机槽 + Broker 用户账本 |
 | `POST /api/t4y-identity/revoke-model-key` | 退出：Broker 删 Token + 清本机槽 |
 | `POST /api/t4y-identity/set-context` | 切企业：写 Host `t4yTenant`（`tenantId` + `moduleId`；不换 Key） |
-| `POST /api/t4y-identity/project-workspace` | `$DSH_HOME/t4y-projects/<moduleId>` 独享侧栏 Workspace |
+| `POST /api/t4y-identity/project-workspace` | 工作区相关接口；项目切换时保留当前工作区和已有会话 |
 
 **过期 / 换 Key（不做静默续期）：**
 
@@ -68,7 +70,7 @@
 |---|---|
 | 同一用户再 issue（未过期） | 同一把 Key 与原始 `expiresAt`，不续期 |
 | 模型 Key 已过期后再登录 issue | Broker 写入新的 `expiresAt`（有旧 Key 材料则不重新 reveal） |
-| 切换企业（含管理员） | **不**重签 Key；只换工作区 / 品牌 / 授权插件；分账仍在 `keyHomeModuleId` |
+| 切换企业（含管理员） | **不**重签 Key；更新品牌和授权插件，保留当前工作区及会话；分账仍在 `keyHomeModuleId` |
 | 管理员改分账企业 | 退出（revoke）→ 再登录 → 选目标企业签发 |
 | 登录后首次选企业（尚无 Key） | 签发一次，`keyHomeModuleId` = 该企业 |
 | Token 或模型 Key 到期 / status `active: false` | 回登录门禁 |

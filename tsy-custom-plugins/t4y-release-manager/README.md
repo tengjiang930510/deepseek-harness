@@ -1,5 +1,7 @@
 # T4Y Release Manager
 
+职责、调用流程、状态和边界见 [企业插件实现与边界](../PLUGIN-REFERENCE.md#t4y-release-manager)。
+
 开发流程见 [DEVELOPING.md](./DEVELOPING.md)。
 
 Owns the installed immutable release collection for plugins published by the T4Y Gitee Hub. It provides the `t4yReleaseManager` Host service so the plugin UI can be delivered and upgraded independently of Desktop.

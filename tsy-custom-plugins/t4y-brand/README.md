@@ -1,5 +1,7 @@
 # t4y-brand
 
+职责、调用流程、状态和边界见 [企业插件实现与边界](../PLUGIN-REFERENCE.md#t4y-brand)。
+
 开发流程见 [DEVELOPING.md](./DEVELOPING.md)。
 
 侧栏与会话首屏品牌：默认占位 logo /「智能助手」；登录后由 `t4y-identity` 会话驱动。

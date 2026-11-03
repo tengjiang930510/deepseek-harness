@@ -1,8 +1,10 @@
 # t4y-capability-hub
 
+职责、调用流程、状态和边界见 [企业插件实现与边界](../PLUGIN-REFERENCE.md#t4y-capability-hub)。
+
 开发流程见 [DEVELOPING.md](./DEVELOPING.md)。
 
-Owns the Settings → **授权插件** page (and, with this package's cordis patch, disables the sidebar Plugin Manager and the Settings inventory tab so system packages are not listed or toggled). It asks the Host to read the signed-in user's current project menu, then reads `插件名`, `项目名`, `插件种类`, and `插件图标` records from visible form leaves. Each record resolves its own Gitee `latest.json`; there is no tenant capability catalog.
+Owns the Settings → **授权插件** page, shortcut buttons and grouped command suggestions. It asks the Host to read the signed-in user's current project menu, then reads `插件名`, `项目名`, `插件种类`, and `插件图标` records from visible form leaves. Each record resolves its own Gitee `latest.json`; the release manager filters enterprise-managed packages from the generic plugin list.
 
 The Host repeats the menu and form query before install, so changing browser state or directly calling the local install endpoint cannot grant a plugin that the enterprise system did not return. User-facing copy belongs in `hubCopy` in [`client.js`](./client.js).
 
