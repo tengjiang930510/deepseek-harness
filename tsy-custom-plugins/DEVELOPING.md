@@ -2,6 +2,19 @@
 
 本目录是武汉地铁（及同类企业）DeepSeek Harness **树外定制插件与打包素材**，不属于 `packages/*/*` 工作区。产品行为说明见各包 `README.md`；本文只讲**怎么改、怎么验、怎么打进安装包**。
 
+各插件的调用逻辑、状态、边界及失败情形见 [企业插件实现与边界](./PLUGIN-REFERENCE.md)。
+
+## 开发规范
+
+1. 新增企业或业务行为时，先确定负责的插件和依赖服务；优先在 `tsy-custom-plugins/` 中使用 DSH 的 Cordis 服务、事件、命令、工具、配置补丁和客户端槽位，不直接修改 DSH 原生代码。
+2. 配置、业务权限、模型凭据、展示资料各有独立来源。插件界面只能展示当前服务端授权结果；缓存不替代授权，账号或项目变化时不能沿用旧授权。
+3. 每项插件行为写明入口、输入输出、可见副作用、存储位置、权限来源、异常处理、卸载清理和能力限制；在 [插件参考](./PLUGIN-REFERENCE.md) 更新责任边界，在所属包说明维护配置及具体契约。
+4. 注册监听器、UI 插槽和对其他服务的适配时管理生命周期，插件卸载后撤销自身效果；异步操作应防止已切换账号或项目的旧响应覆盖当前状态。
+5. 无现成扩展点时，先记录需求、宿主限制、插件和部署方案，并评估升级与回滚；只有用户明确授权后才可修改 DSH 原生代码。当前桌面窗口、安装种子、打包和子进程仍有原生改动，详见插件参考，不能将现状描述为完全插件化。
+6. 修改前确认现有行为和影响面；修改后运行所属自动化测试、相关构建检查，并在 Web 实际验证登录、权限或 UI 变化。影响桌面版时还要验证桌面应用和实际安装包；未运行、跳过或失败的检查单独报告。
+7. 测试使用隔离账号、配置和数据。请假等真实提交、权限更改及其他业务副作用必须有明确授权；无授权时只验证到提交前。绝不把密码、access token、模型 Key、本地密钥配置或真实用户截图提交到仓库。
+8. 发布前检查用户、项目、授权、缓存与失败恢复；版本或种子更新要验证新安装和已有安装的升级路径。推送前遵循仓库的检查规则，不把未签名测试包当作正式发布包。
+
 ## 读者起点
 
 - 已能在本仓库根目录执行 `pnpm install`、`pnpm dsh web`。
@@ -50,7 +63,7 @@ pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-trial-runtime
 
 ### UI 约束：禁止出现在「已安装插件」
 
-左上角 **插件 → 已安装插件** 只给用户自行安装的第三方包。`t4y-*`（及旧包 `@deepseek-ai/dsh-t4y-enterprise`）是部署/试用 seed，**不得**出现在该分组；Hub 能力走 **设置 → 授权插件**。Client 侧由 `isDeploymentOwnedEnterprisePlugin` 过滤；profile 的 `bundles` 勿残留无对应 `dependencies` 的包名。
+左上角 **插件 → 已安装插件** 用于普通第三方包；企业平台包和表单管理的插件由 `t4y-release-manager` 在 Host 侧过滤，表单管理的插件通过 **设置 → 授权插件** 操作。profile 的 `bundles` 勿残留无对应 `dependencies` 的包名；过滤范围以该插件的实际包集合和发布状态为准。
 
 ## 打试用安装包（Mac unsigned）
 
@@ -75,10 +88,12 @@ pnpm run package:desktop:mac:arm64:unsigned
 
 Windows unsigned：`pnpm run package:desktop:win:x64:unsigned`（先填 `apps/desktop/.env.windows`）。
 
+Desktop CI 也可通过 `DSH_PACKAGING_CONFIG_DIR` 和 `DSH_PACKAGING_PRESET` 读取机器目录下的公开预设及独立签名密钥文件；公开预设不接受签名 PIN 或对象存储密钥。无签名或仅准备模式如何读取签名文件，以 [加载器](../apps/desktop/scripts/desktop-package-environment.mjs) 为准，密钥不得提交到仓库。
+
 ## Hub / 授权插件发布
 
 1. 在 Gitee Hub 按 `{projectName}/plugins/{name}/` 放不可变版本与 `latest.json`。
-2. 企业后台菜单叶子表单字段标题为 `name`、`projectName`。
+2. 企业后台菜单叶子表单的必填字段标题为 `插件名`、`项目名`；展示分类和图标使用可选字段 `插件种类`、`插件图标`。
 3. 客户端「授权插件」只装 `latest.json` 指向的当前版；`releases` / 历史 commit **只增不改**。
 
 本地对照：`hub-projects/`（见其开发指南）。

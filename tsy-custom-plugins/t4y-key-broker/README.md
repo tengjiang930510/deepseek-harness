@@ -1,5 +1,7 @@
 # t4y-key-broker
 
+职责、调用流程、状态和边界见 [企业插件实现与边界](../PLUGIN-REFERENCE.md#t4y-key-broker)。
+
 开发流程见 [DEVELOPING.md](./DEVELOPING.md)。源码在本仓库 `tsy-custom-plugins/t4y-key-broker/`；当前评测部署在 `192.10.51.138:4010`。
 
 登录后的 **New API 推理 Key** 签发服务。总账户登录仍由 `t4y-identity` 完成；Broker 用 access token 调 `getInfo` 校验身份。

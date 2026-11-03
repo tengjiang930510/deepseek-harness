@@ -2,9 +2,9 @@
 
 Out-of-tree custom plugins for this fork. Not part of the harness `packages/*/*` workspace.
 
-Each subdirectory is one installable package. Config in this tree uses **package names** or **paths relative to the patch file** — never machine-specific absolute paths — so a checkout works on another machine after a one-time profile install.
+Plugin packages, the independent Key Broker service, and Hub publishing material live in this tree. Config uses **package names** or **paths relative to the patch file** — never machine-specific absolute paths — so a checkout works on another machine after a one-time profile install.
 
-**开发指南（改代码 / 联调 / 打包）：** 见 [DEVELOPING.md](./DEVELOPING.md)；各包另有 `DEVELOPING.md`。产品契约仍以各包 `README.md` 为准。
+**开发规范、联调与打包：** 见 [DEVELOPING.md](./DEVELOPING.md)。各插件的职责、流程、状态和边界见 [PLUGIN-REFERENCE.md](./PLUGIN-REFERENCE.md)，各包配置以包内 `README.md` 和源码为准。
 
 ## Desktop profile (unpackaged + packaging)
 
