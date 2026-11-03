@@ -1,7 +1,7 @@
 /** Load platform-local release settings without changing the caller's process environment. */
 
 import { accessSync, constants, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseEnv } from 'node:util'
 import { resolveDesktopAppId, resolveMacOSNotarizationEnvironment, resolveMacOSSigningEnvironment, resolveNpmRegistry } from './desktop-release-environment.mjs'
@@ -39,9 +39,51 @@ export function localMacOSPackageEnvironment(environment = process.env) {
  * @param {'win32' | 'darwin'} platform Target platform.
  * @param {NodeJS.ProcessEnv} environment Parent environment, retained only for unrelated build tools.
  * @param {string} appRoot Desktop application directory; relative credential paths resolve here.
+ * @param {{ unsigned?: boolean, prepareOnly?: boolean }} options Packaging mode for machine presets.
  * @returns {NodeJS.ProcessEnv} Isolated environment with file-owned release settings.
  */
-export function loadDesktopPackageEnvironment(platform, environment = process.env, appRoot = APP_ROOT) {
+export function loadDesktopPackageEnvironment(platform, environment = process.env, appRoot = APP_ROOT, options = {}) {
+  const value = name => environment[name] ?? Object.entries(environment).find(([key]) => key.toUpperCase() === name)?.[1]
+  const preset = value('DSH_PACKAGING_PRESET')
+  const configDir = value('DSH_PACKAGING_CONFIG_DIR')
+  if (preset !== undefined || configDir !== undefined) {
+    if (!configDir || !isAbsolute(configDir)) throw new Error('desktop package: DSH_PACKAGING_CONFIG_DIR must be an absolute path')
+    if (preset !== 'test' && preset !== 'production') throw new Error('desktop package: preset must be test or production')
+    const publicPath = join(configDir, 'presets', `${preset}.env`)
+    const secretPath = join(configDir, 'secrets', platform === 'win32' ? 'windows-signing.env' : 'macos-signing.env')
+    const publicAllowed = /^(?:DSH_DESKTOP_(?:APP_ID|AUTO_UPDATE_ENV|NPM_REGISTRY|TRIAL_DEFAULTS_FILE|TRIAL_PLUGINS_DIR|MANDATORY_UPDATE_.*|WINDOWS_SIGNATURE_CACHE_.*|MACOS_(?:PACK_CONCURRENCY|SIGNATURE_CACHE_DIR|DOWNLOAD_PROXY|NOTARIZATION_PROXY))|DOWNLOAD_(?:(?:TEST|PROD)_(?:ORIGIN|COS_BUCKET)|TEST_RELEASE_ID))$/u
+    const secretAllowed = /^(?:DSH_DESKTOP_WINDOWS_(?:CER_FILE|SIGNTOOL|KEY_CONTAINER|TOKEN_PIN)|DSH_DESKTOP_MACOS_(?:SIGNING_IDENTITY|TEAM_ID)|DOWNLOAD_(?:TEST|PROD)_COS_SECRET_(?:ID|KEY)|APPLE_(?:API_KEY|API_KEY_ID|API_ISSUER|ID|APP_SPECIFIC_PASSWORD|TEAM_ID|KEYCHAIN|KEYCHAIN_PROFILE)|CSC_(?:LINK|KEY_PASSWORD))$/u
+    const readSettings = (path, allowed) => {
+      let settings
+      try { settings = parseEnv(readFileSync(path, 'utf8').replace(/^\uFEFF/u, '')) }
+      catch { throw new Error(`desktop package: cannot read or parse ${path}`) }
+      for (const [name, setting] of Object.entries(settings)) {
+        if (!allowed.test(name)) throw new Error(`desktop package: unsupported setting ${name} in ${path}`)
+        if (setting.includes('\0')) throw new Error(`desktop package: ${name} cannot contain a NUL character`)
+        if (FILE_SETTINGS.includes(name) && setting.trim()) settings[name] = resolve(dirname(path), setting.trim())
+      }
+      return settings
+    }
+    const publicSettings = readSettings(publicPath, publicAllowed)
+    if (publicSettings.DSH_DESKTOP_AUTO_UPDATE_ENV && publicSettings.DSH_DESKTOP_AUTO_UPDATE_ENV !== preset) {
+      throw new Error('desktop package: update environment must match preset')
+    }
+    const releaseId = value('PACKAGE_TEST_RELEASE_ID')?.trim()
+    if (releaseId) {
+      if (preset !== 'test') throw new Error('desktop package: PACKAGE_TEST_RELEASE_ID requires the test preset')
+      if (!/^[a-f0-9]{32}$/u.test(releaseId)) throw new Error('desktop package: PACKAGE_TEST_RELEASE_ID must be 32 lowercase hexadecimal characters')
+      publicSettings.DOWNLOAD_TEST_RELEASE_ID = releaseId
+    }
+    const skipSecrets = options.unsigned || (platform === 'win32' && options.prepareOnly)
+    const secrets = skipSecrets ? {} : readSettings(secretPath, secretAllowed)
+    return {
+      ...Object.fromEntries(Object.entries(environment).filter(([name]) => !AMBIENT_RELEASE_SETTING.test(name))),
+      ...publicSettings,
+      ...secrets,
+      DSH_PACKAGING_CONFIG_DIR: configDir,
+      DSH_PACKAGING_PRESET: preset,
+    }
+  }
   const path = join(appRoot, platform === 'win32' ? '.env.windows' : '.env.macos')
   let contents
   try {
@@ -123,7 +165,7 @@ function validateTrialPluginsDirectory(directory) {
  * Validate release configuration before preparation without invoking a token or Apple's services.
  * @param {NodeJS.ProcessEnv} environment File-owned release settings.
  * @param {{ platform: 'win32' | 'darwin', arch: string }} target Selected release target.
- * @param {{ unsigned?: boolean, prepareOnly?: boolean }} options Explicit packaging mode.
+ * @param {{ unsigned?: boolean, prepareOnly?: boolean, skipNotarization?: boolean }} options Explicit packaging mode.
  * @returns {void}
  */
 export function validateDesktopPackageEnvironment(environment, target, options = {}) {
@@ -169,9 +211,11 @@ export function validateDesktopPackageEnvironment(environment, target, options =
     if (strategies.filter(names => names.some(name => environment[name] !== undefined)).length > 1) {
       throw new Error('desktop package: configure exactly one macOS notarization strategy; comment out the other strategies')
     }
-    const credentials = resolveMacOSNotarizationEnvironment(environment)
-    if ('appleApiKey' in credentials) requireReadableFile(environment, 'APPLE_API_KEY')
-    if ('keychain' in credentials) requireReadableFile(environment, 'APPLE_KEYCHAIN')
+    if (!options.skipNotarization) {
+      const credentials = resolveMacOSNotarizationEnvironment(environment)
+      if ('appleApiKey' in credentials) requireReadableFile(environment, 'APPLE_API_KEY')
+      if ('keychain' in credentials) requireReadableFile(environment, 'APPLE_KEYCHAIN')
+    }
     requireReadableFile(environment, 'CSC_LINK')
     if (environment.CSC_KEY_PASSWORD === undefined) {
       throw new Error('desktop package: CSC_KEY_PASSWORD must be set to the p12 export password (use an explicit empty value for an unencrypted p12)')

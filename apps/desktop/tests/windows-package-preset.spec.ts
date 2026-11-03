@@ -71,6 +71,9 @@ it('rejects missing presets, traversal, deployment mismatches and secrets in pub
     await writeFile(join(root, 'presets/test.env'), 'DSH_DESKTOP_WINDOWS_TOKEN_PIN=private-value\n')
     expect(() => load()).toThrow(/unsupported setting DSH_DESKTOP_WINDOWS_TOKEN_PIN/u)
     expect(() => load()).not.toThrow(/private-value/u)
+    await writeFile(join(root, 'presets/test.env'), 'DOWNLOAD_TEST_COS_SECRET_KEY=private-value\n')
+    expect(() => load()).toThrow(/unsupported setting DOWNLOAD_TEST_COS_SECRET_KEY/u)
+    expect(() => load()).not.toThrow(/private-value/u)
   })
 })
 
