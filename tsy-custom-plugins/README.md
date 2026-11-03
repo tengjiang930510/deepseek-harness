@@ -1,10 +1,12 @@
 # tsy-custom-plugins
 
+English | [中文](README.zh.md)
+
 Out-of-tree custom plugins for this fork. Not part of the harness `packages/*/*` workspace.
 
 Plugin packages, the independent Key Broker service, and Hub publishing material live in this tree. Config uses **package names** or **paths relative to the patch file** — never machine-specific absolute paths — so a checkout works on another machine after a one-time profile install.
 
-**开发规范、联调与打包：** 见 [DEVELOPING.md](./DEVELOPING.md)。各插件的职责、流程、状态和边界见 [PLUGIN-REFERENCE.md](./PLUGIN-REFERENCE.md)，各包配置以包内 `README.md` 和源码为准。
+**Development, integration and packaging:** see [DEVELOPING.md](./DEVELOPING.md). Plugin responsibilities, flows, state and limits are in [PLUGIN-REFERENCE.md](./PLUGIN-REFERENCE.md); package configuration is defined in each `README.md` and source.
 
 ## Desktop profile (unpackaged + packaging)
 
@@ -20,7 +22,7 @@ To bake the Bailian/`QWEN_TOKEN_PLAN_API_KEY` into a private Desktop installer (
 node ./tsy-custom-plugins/scripts/seed-desktop-trial-defaults.mjs
 ```
 
-This writes under `apps/desktop/.desktop-build/` (e.g. `t4y-trial-defaults.json`). For **unsigned mac** packaging, export absolute `DSH_DESKTOP_TRIAL_PLUGINS_DIR` / `DSH_DESKTOP_TRIAL_DEFAULTS_FILE` in the shell (unsigned mac does not load `.env.macos` for those). Windows：填 `apps/desktop/.env.windows` 后 `pnpm run package:desktop:win:x64:unsigned`。完整步骤见 [DEVELOPING.md](./DEVELOPING.md)。The key is extractable from the installer — use only a limited key.
+This writes under `apps/desktop/.desktop-build/` (e.g. `t4y-trial-defaults.json`). For **unsigned mac** packaging, export absolute `DSH_DESKTOP_TRIAL_PLUGINS_DIR` / `DSH_DESKTOP_TRIAL_DEFAULTS_FILE` in the shell (unsigned mac does not load `.env.macos` for those). On Windows, fill in `apps/desktop/.env.windows` and run `pnpm run package:desktop:win:x64:unsigned`. See [DEVELOPING.md](./DEVELOPING.md) for all steps. The key is extractable from the installer — use only a limited key.
 
 For enterprise-login builds that do not embed a model key, set `DSH_DESKTOP_TRIAL_DEFAULTS_FILE` to the absolute path of `tsy-custom-plugins/desktop-enterprise-defaults.json`. This non-secret marker selects the existing Desktop trial startup path so the enterprise plugin owns the login screen; it is not a model credential. The build must also include and enable `t4y-identity`.
 
@@ -62,19 +64,19 @@ This starts the Host halves directly from the checkout. Web Client halves are di
 
 ## Plugins
 
-| Directory | Package | Role | 开发指南 |
+| Directory | Package | Role | Development guide |
 |---|---|---|---|
-| `t4y-tenant/` | `t4y-tenant` | 系统 `tenantId` + 企业 `moduleId` 上下文 | [DEVELOPING](./t4y-tenant/DEVELOPING.md) |
-| `t4y-identity/` | `t4y-identity` | 强制登录门禁；会话 `tenantId`（系统）+ `moduleId`（企业） | [DEVELOPING](./t4y-identity/DEVELOPING.md) |
-| `t4y-brand/` | `t4y-brand` | 侧栏 / 首屏品牌 | [DEVELOPING](./t4y-brand/DEVELOPING.md) |
-| `t4y-trial-runtime/` | `t4y-trial-runtime` | 试用内置模型与联网搜索默认 | [DEVELOPING](./t4y-trial-runtime/DEVELOPING.md) |
-| `t4y-capability-hub/` | `t4y-capability-hub` | 设置页 **授权插件** | [DEVELOPING](./t4y-capability-hub/DEVELOPING.md) |
-| `t4y-release-manager/` | `t4y-release-manager` | 按授权 + `latest.json` 安装不可变版本 | [DEVELOPING](./t4y-release-manager/DEVELOPING.md) |
-| `oa-helper/` | `oa-helper` | 办公表单（Hub：oa-helper） | [DEVELOPING](./oa-helper/DEVELOPING.md) |
-| `t4y-key-broker/` | — | 独立 Key Broker 服务 | [DEVELOPING](./t4y-key-broker/DEVELOPING.md) |
-| `hub-projects/` | — | Hub catalog / latest 本地样板 | [DEVELOPING](./hub-projects/DEVELOPING.md) |
+| `t4y-tenant/` | `t4y-tenant` | System `tenantId` and enterprise `moduleId` context | [DEVELOPING](./t4y-tenant/DEVELOPING.md) |
+| `t4y-identity/` | `t4y-identity` | Required login; session `tenantId` (system) and `moduleId` (enterprise) | [DEVELOPING](./t4y-identity/DEVELOPING.md) |
+| `t4y-brand/` | `t4y-brand` | Sidebar and landing-page branding | [DEVELOPING](./t4y-brand/DEVELOPING.md) |
+| `t4y-trial-runtime/` | `t4y-trial-runtime` | Trial model and web-search defaults | [DEVELOPING](./t4y-trial-runtime/DEVELOPING.md) |
+| `t4y-capability-hub/` | `t4y-capability-hub` | Settings **授权插件** page | [DEVELOPING](./t4y-capability-hub/DEVELOPING.md) |
+| `t4y-release-manager/` | `t4y-release-manager` | Install immutable releases using authorization and `latest.json` | [DEVELOPING](./t4y-release-manager/DEVELOPING.md) |
+| `oa-helper/` | `oa-helper` | Office forms (Hub: oa-helper) | [DEVELOPING](./oa-helper/DEVELOPING.md) |
+| `t4y-key-broker/` | — | Independent Key Broker service | [DEVELOPING](./t4y-key-broker/DEVELOPING.md) |
+| `hub-projects/` | — | Local Hub catalog / latest examples | [DEVELOPING](./hub-projects/DEVELOPING.md) |
 
-## HTML 原型
+## HTML prototype
 
 `prototype/versions/v1.1-tenant-identity/pages/index.html`
 
@@ -83,4 +85,4 @@ This starts the Host halves directly from the checkout. Web Client halves are di
 1. Create `tsy-custom-plugins/<name>/` with `package.json` (`dsh.bundle.patch`), `cordis.patch.yml` (`name: <package-name>`), and the plugin entry.
 2. Optional: `cordis.yml` with `name: ./index.js` for `--patch` iteration.
 3. Install with `pnpm dsh plugin --profile web add ./tsy-custom-plugins/<name>`.
-4. 能力类插件追加到 Hub 对应租户的 `catalog.json`（`releases` 只增不改），不要再改 capability-hub 硬编码列表。
+4. Add capability plugins to the corresponding tenant’s Hub `catalog.json` (`releases` is append-only); do not add hardcoded capability-hub entries.

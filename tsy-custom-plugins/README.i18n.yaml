@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write tsy-custom-plugins/README.md
+/tsy-custom-plugins:
+  en: 46ca7f4038602da5
+  zh: d46e12088614bf18
+/tsy-custom-plugins/desktop-profile-unpackaged-packaging:
+  en: 6e1d4ae1bf08c5fd
+  zh: 55d383424b43a33a
+/tsy-custom-plugins/install-into-the-web-profile-preferred:
+  en: ca3cc5d62e417750
+  zh: 6013fbbd2309a830
+/tsy-custom-plugins/inspect-a-plugin-form-through-the-enterprise-api:
+  en: 7687be4ff3b2c830
+  zh: f0809b72652fbe03
+/tsy-custom-plugins/host-only-overlay-iteration:
+  en: 03979475122a7fb0
+  zh: ab2d9c15af1115b4
+/tsy-custom-plugins/plugins:
+  en: fd85150eee352c45
+  zh: 767b947e2feab192
+/tsy-custom-plugins/html-prototype:
+  en: da9322bfaee899f0
+  zh: 14e98e70d5570503
+/tsy-custom-plugins/adding-another-plugin:
+  en: e56101baf94d96af
+  zh: 92d060abb9175f08

@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write tsy-custom-plugins/t4y-identity/README.md
+/t4y-identity:
+  en: 572df5f0519c417c
+  zh: e34ad18178b9e55c
+/t4y-identity/domain-ids:
+  en: 80258c344dfb3cce
+  zh: d487c2e1fc529e21
+/t4y-identity/login-flow:
+  en: 15206b8131ae1d99
+  zh: 977a5e5df825e2b4
+/t4y-identity/ui:
+  en: d63741527e83d2b9
+  zh: ff4f3bca23a8f5bd
+/t4y-identity/configuration-cordis-patch:
+  en: adf5e1f47beb8f16
+  zh: db7b1babe9239e4c
+/t4y-identity/configuration-cordis-patch/model-key-new-api-required:
+  en: 81cdf78522a7821f
+  zh: d62b18a33330228f
+/t4y-identity/client-conventions:
+  en: ecc8fa40320f6efe
+  zh: 98f9951f74d67db1
+/t4y-identity/integration:
+  en: 3484711ea1bb0fd1
+  zh: 43a9830c5d6d852c
