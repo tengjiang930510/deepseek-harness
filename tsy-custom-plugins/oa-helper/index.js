@@ -1,6 +1,6 @@
-import { readFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 
-export const name = 't4y-review'
+export const name = 'oa-helper'
 export const inject = ['commands', 'tools']
 
 /** Lazy-load Playwright submit so the plugin still boots when lib/leave-open.js is absent. */
@@ -15,17 +15,6 @@ async function submitLeaveForm(options) {
 }
 
 const defineTool = (tool) => tool
-
-const guidanceFile = new URL('./guidance.md', import.meta.url)
-
-async function loadGuidance(rawInput = '') {
-  const guidance = (await readFile(guidanceFile, 'utf8')).trim()
-  const focus = rawInput.trim()
-  return {
-    kind: 'success',
-    text: focus ? `${guidance}\n\n本次补充：${focus}` : guidance
-  }
-}
 
 const OFFICE_KINDS = new Set(['leave', 'travel', 'office'])
 
@@ -69,8 +58,9 @@ export function officeWorkflowTool() {
       render: (_args, value) => [{ type: 'text', text: value.message }]
     },
     presentCall: args => ({ card: 'generic', kind: 'write', title: '创建办公申请', rawInput: args }),
-    async execute(args) {
+    async execute(args, exec) {
       if (!OFFICE_KINDS.has(args.kind)) throw new Error('不支持的办公申请类型。')
+      exec.concludeTurn()
       return {
         kind: args.kind,
         message: '已创建办公申请卡片。请停止回复并等待用户在卡片中补全、确认后提交；本轮不要再输出任何文字或调用工具。',
@@ -175,71 +165,73 @@ function parseLeaveSubmitPayload(rawInput) {
   return { leaveType, startDate, endDate, reason }
 }
 
+/** @param {string} rawInput */
+export function parseOaHelperInvocation(rawInput = '') {
+  const trimmed = rawInput.trim()
+  if (trimmed === '') return { action: 'leave', rest: '' }
+  const submit = trimmed.match(/^submit(?:\s+([\s\S]+))?$/i)
+  if (submit) return { action: 'submit', rest: (submit[1] ?? '').trim() }
+  const matched = trimmed.match(/^(\S+)(?:\s+([\s\S]*))?$/)
+  const head = (matched?.[1] ?? '').toLowerCase()
+  const rest = (matched?.[2] ?? '').trim()
+  const actions = new Map([
+    ['leave', 'leave'], ['请假', 'leave'],
+    ['travel', 'travel'], ['出差', 'travel'],
+    ['office', 'office'], ['办公', 'office'],
+  ])
+  const action = actions.get(head)
+  if (action !== undefined) return { action, rest }
+  // Bare free text defaults to leave (same as former `/leave …`).
+  return { action: 'leave', rest: trimmed }
+}
+
+async function runLeaveSubmit(rawInput, signal) {
+  try {
+    const payload = parseLeaveSubmitPayload(rawInput)
+    if (signal?.aborted) throw new Error('Leave submit was cancelled.')
+    const result = await submitLeaveForm({
+      ...payload,
+      headed: false,
+      submit: true,
+    })
+    if (signal?.aborted) throw new Error('Leave submit was cancelled.')
+    return {
+      kind: 'success',
+      text: [
+        '已提交到办公平台并点击「发起流程」。',
+        `假别：${result.leaveType}`,
+        `开始：${result.startDate}`,
+        `结束：${result.endDate}`,
+        `事由：${result.reason}`,
+      ].join('\n'),
+    }
+  } catch (error) {
+    return {
+      kind: 'error',
+      text: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
+
 export async function apply(ctx) {
   ctx.tools.register(officeWorkflowTool())
   ctx.tools.register(leaveFormSubmitTool())
-  for (const [name, description] of [
-    ['leave', '发起请假申请，在会话中填写并确认表单。'],
-    ['travel', '发起出差申请，在会话中填写并确认表单。'],
-    ['office', '发起会议、用品或流程台账办公事务，在会话中填写并确认表单。']
-  ]) {
-    ctx.commands.register({
-      name,
-      description,
-      input: { hint: '可选：先填写已知信息，例如“年假 10 月 9 日到 10 月 10 日”' },
-      handler: () => ({ kind: 'success', text: '已创建办公申请，请在会话卡片中补全并确认。' })
-    })
-  }
   ctx.commands.register({
-    name: 'leave-submit',
-    description: '将会话请假卡片提交到办公平台（Playwright 填表并发起流程）。',
-    input: { hint: 'JSON：{"leave_type":"sick","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","reason":"..."}' },
-    async handler({ rawInput = '', signal } = {}) {
-      try {
-        const payload = parseLeaveSubmitPayload(rawInput)
-        if (signal?.aborted) throw new Error('Leave submit was cancelled.')
-        const result = await submitLeaveForm({
-          ...payload,
-          headed: false,
-          submit: true,
-        })
-        if (signal?.aborted) throw new Error('Leave submit was cancelled.')
-        return {
-          kind: 'success',
-          text: [
-            '已提交到办公平台并点击「发起流程」。',
-            `假别：${result.leaveType}`,
-            `开始：${result.startDate}`,
-            `结束：${result.endDate}`,
-            `事由：${result.reason}`,
-          ].join('\n'),
-        }
-      } catch (error) {
-        return {
-          kind: 'error',
-          text: error instanceof Error ? error.message : String(error),
-        }
-      }
+    name: 'oa-helper',
+    description: 'OA 助手：请假、出差与办公申请（一个入口）。',
+    input: { hint: '请描述申请内容，例如「明天请事假一天」' },
+    async handler({ agent, rawInput = '', signal } = {}) {
+      const { action, rest } = parseOaHelperInvocation(rawInput)
+      if (action === 'submit') return runLeaveSubmit(rest, signal)
+      const text = rawInput.trim()
+      if (!text) return { kind: 'error', text: '请在 /oa-helper 后描述需要办理的事项。' }
+      agent.steer({
+        id: randomUUID(),
+        role: 'user',
+        source: { kind: 'user' },
+        content: [{ type: 'text', text }],
+      })
+      return { kind: 'success', text: '正在分析申请内容。' }
     },
-  })
-  ctx.commands.register({
-    name: 'brand-review',
-    description: '发起武汉地铁智能助手审查任务。',
-    input: { hint: '可选：补充审查重点' },
-    async handler({ rawInput = '' } = {}) {
-      const focus = rawInput.trim()
-      return {
-        kind: 'success',
-        text: focus ? `已收到审查重点：${focus}` : '已收到审查任务。'
-      }
-    }
-  })
-  ctx.commands.register({
-    name: 'brand-review-guidance',
-    description: '查看武汉地铁智能助手的审查指导。',
-    input: { hint: '可选：补充审查对象或重点' },
-    handler({ rawInput = '' } = {}) {
-      return loadGuidance(rawInput)
-    }
   })
 }

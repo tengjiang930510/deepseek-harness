@@ -1,0 +1,23 @@
+{
+  "name": "oa-helper",
+  "projectName": "wuhanmetro",
+  "package": "oa-helper",
+  "version": "0.3.3",
+  "dsh": ">=0.2.1 <0.3.0",
+  "git": {
+    "repository": "https://gitee.com/eureka96/tsy-dsh-plugins-hub.git",
+    "ref": "master",
+    "commit": "61ce0005ea9c6953ef8d0295e3c46762801c9485"
+  },
+  "source": {
+    "commit": "61ce0005ea9c6953ef8d0295e3c46762801c9485",
+    "path": "wuhanmetro/plugins/oa-helper/v0.3.3"
+  },
+  "description": {
+    "zh": "办公申请、请假/出差",
+    "en": "Office forms, leave and travel"
+  },
+  "commands": [
+    "/oa-helper"
+  ]
+}

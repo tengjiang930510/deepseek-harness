@@ -53,36 +53,40 @@ function mapQwenResponse(payload) {
 }
 
 class QwenSearchProvider {
-  id = runtime.searchProvider
-
-  constructor(ctx) {
+  constructor(ctx, options) {
     this.ctx = ctx
+    this.id = options.searchProvider
+    this.credentialRef = options.credentialRef
+    this.baseURL = options.baseURL
+    this.model = options.model
+    this.maxTokens = options.maxTokens
   }
 
   available() {
-    return URL.canParse(runtime.baseURL)
-      && new URL(runtime.baseURL).protocol === 'https:'
-      && runtime.model.length > 0
-      && Number.isInteger(runtime.maxTokens)
-      && runtime.maxTokens > 0
+    if (!URL.canParse(this.baseURL)) return false
+    const protocol = new URL(this.baseURL).protocol
+    return (protocol === 'https:' || protocol === 'http:')
+      && this.model.length > 0
+      && Number.isInteger(this.maxTokens)
+      && this.maxTokens > 0
   }
 
   async search(request, signal) {
-    const credential = await this.ctx.get('credentials')?.resolve(runtime.credentialRef)
-    const apiKey = credential?.value ?? process.env[runtime.credentialRef]
+    const credential = await this.ctx.get('credentials')?.resolve(this.credentialRef)
+    const apiKey = credential?.value ?? process.env[this.credentialRef]
     if (!apiKey) {
       throw new Error(
-        `Qwen search has no API key for "${runtime.credentialRef}"; store it through the credentials service `
+        `Qwen search has no API key for "${this.credentialRef}"; store it through the credentials service `
         + 'or export it in the launching environment',
       )
     }
-    const endpoint = `${runtime.baseURL.replace(/\/$/u, '')}/responses`
+    const endpoint = `${this.baseURL.replace(/\/$/u, '')}/responses`
     // Parallel to DeepSeek's Messages body with web_search_20250305 — Qwen Responses + web_search.
     // Do not send tool_choice: required (thinking mode returns HTTP 400).
     const body = {
-      model: runtime.model,
+      model: this.model,
       input: `Perform a web search for the query: ${request.query}`,
-      max_output_tokens: runtime.maxTokens,
+      max_output_tokens: this.maxTokens,
       tools: [{ type: 'web_search' }],
     }
     let response
@@ -163,7 +167,34 @@ function migrateProfilePatch(profileDir) {
   return true
 }
 
-export function apply(ctx) {
+/**
+ * @param {*} ctx
+ * @param {{
+ *   searchProvider?: string,
+ *   credentialRef?: string,
+ *   baseURL?: string,
+ *   model?: string,
+ *   maxTokens?: number,
+ * }} [config]
+ */
+export function apply(ctx, config = {}) {
   migrateProfilePatch(ctx.get('profileContext')?.dir)
-  ctx.web.registerSearchProvider(new QwenSearchProvider(ctx))
+  const options = {
+    searchProvider: typeof config.searchProvider === 'string' && config.searchProvider !== ''
+      ? config.searchProvider
+      : runtime.searchProvider,
+    credentialRef: typeof config.credentialRef === 'string' && config.credentialRef !== ''
+      ? config.credentialRef
+      : runtime.credentialRef,
+    baseURL: typeof config.baseURL === 'string' && config.baseURL !== ''
+      ? config.baseURL.replace(/\/$/u, '')
+      : runtime.baseURL,
+    model: typeof config.model === 'string' && config.model !== ''
+      ? config.model
+      : runtime.model,
+    maxTokens: Number.isInteger(config.maxTokens) && config.maxTokens > 0
+      ? config.maxTokens
+      : runtime.maxTokens,
+  }
+  ctx.web.registerSearchProvider(new QwenSearchProvider(ctx, options))
 }

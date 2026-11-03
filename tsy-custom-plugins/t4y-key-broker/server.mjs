@@ -129,8 +129,10 @@ async function issue(token, requestedSeconds) {
   const timestamp = nowSeconds()
   if (!Number.isSafeInteger(requestedSeconds) || requestedSeconds < 1) throw new Error('expiresIn must be a positive integer')
   const known = state.sessions[tokenHash]
-  if (known && known.expiresAt <= timestamp) throw new Error('The enterprise login session has expired')
-  const expiresAt = known?.expiresAt ?? timestamp + Math.min(requestedSeconds, config.maxSessionSeconds)
+  // Unexpired: keep original expiresAt. Expired: re-issue with a fresh TTL (re-login path).
+  const expiresAt = known && known.expiresAt > timestamp
+    ? known.expiresAt
+    : timestamp + Math.min(requestedSeconds, config.maxSessionSeconds)
   const enterprise = await provisionEnterprise(identity)
   const session = await tokenSession(enterprise)
   const name = known?.newApiTokenName ?? `usr_${safeLabel(identity.userId)}_${tokenHash.slice(0, 8)}`

@@ -78,8 +78,9 @@ describe('SubprocessRuntime seam', () => {
     await expect(ctx.plugin(SecondService)).rejects.toThrow(/service "subprocess" has been registered/)
   })
 
-  it('scrubbedParentEnv drops credential-shaped and DSH_ names (case-insensitively) but keeps PATH', () => {
+  it('scrubbedParentEnv drops credential-shaped and DSH_ names except the Desktop runtime locator', () => {
     process.env.DSH_SCRUB_PROBE = 'stale'
+    process.env.DSH_DESKTOP_NODE_EXECUTABLE = '/desktop/node'
     process.env.dsh_scrub_probe_lower = 'stale'
     process.env.SCRUB_PROBE_TOKEN = 'secret'
     process.env.SCRUB_PROBE_PASSWORD = 'secret'
@@ -87,6 +88,7 @@ describe('SubprocessRuntime seam', () => {
     try {
       const env = scrubbedParentEnv()
       expect(env.DSH_SCRUB_PROBE).toBeUndefined()
+      expect(env.DSH_DESKTOP_NODE_EXECUTABLE).toBe('/desktop/node')
       expect(env.dsh_scrub_probe_lower).toBeUndefined()
       expect(env.SCRUB_PROBE_TOKEN).toBeUndefined()
       expect(env.SCRUB_PROBE_PASSWORD).toBeUndefined()
@@ -94,6 +96,7 @@ describe('SubprocessRuntime seam', () => {
       expect(env.PATH).toBeDefined()
     } finally {
       delete process.env.DSH_SCRUB_PROBE
+      delete process.env.DSH_DESKTOP_NODE_EXECUTABLE
       delete process.env.dsh_scrub_probe_lower
       delete process.env.SCRUB_PROBE_TOKEN
       delete process.env.SCRUB_PROBE_PASSWORD

@@ -1,7 +1,7 @@
 {
   "name": "t4y-brand",
-  "version": "0.1.0",
-  "description": "武汉地铁智能助手品牌：侧栏与会话首屏 logo / 名称。",
+  "version": "0.2.1",
+  "description": "\u54c1\u724c\u5c55\u793a\uff1a\u767b\u5f55\u540e\u4f7f\u7528 enterprise.systemName \u4e0e\u4f01\u4e1a/\u9879\u76ee logo\u3002",
   "private": true,
   "type": "module",
   "main": "./index.js",

@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 4,
+  "projectId": "wuhanmetro",
+  "plugins": [
+    {
+      "id": "oa-helper",
+      "package": "oa-helper",
+      "name": {
+        "zh": "办公事务表单",
+        "en": "Office forms"
+      },
+      "kind": "capability",
+      "commands": [
+        "/oa-helper"
+      ],
+      "description": {
+        "zh": "在线能力插件。安装后可使用办公申请卡片（请假 / 出差 / 办公）。",
+        "en": "An online capability plugin for office forms (leave / travel / office)."
+      },
+      "releases": [
+        {
+          "version": "0.3.3",
+          "git": {
+            "repository": "https://gitee.com/eureka96/tsy-dsh-plugins-hub.git",
+            "ref": "master",
+            "commit": "61ce0005ea9c6953ef8d0295e3c46762801c9485"
+          },
+          "dsh": ">=0.2.1 <0.3.0",
+          "source": {
+            "commit": "61ce0005ea9c6953ef8d0295e3c46762801c9485",
+            "path": "wuhanmetro/plugins/oa-helper/v0.3.3"
+          }
+        }
+      ]
+    }
+  ]
+}

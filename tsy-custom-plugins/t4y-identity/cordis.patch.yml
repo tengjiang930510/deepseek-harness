@@ -1,0 +1,10 @@
+# 企业 Key/模型由登录同步；关闭设置「模型」页（含官方 onboarding）。
+- id: ui-settings-models
+  disabled: true
+- insert:
+    - id: t4y-identity
+      name: t4y-identity
+      config:
+        apiBaseUrl: https://jgyw.crfsdi.com.cn:51111/backendapi
+        brokerBaseUrl: http://192.10.51.138:4010
+        newApiBaseUrl: http://192.10.51.138:4000/v1

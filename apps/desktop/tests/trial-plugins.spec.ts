@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { seedTrialPlugins, TRIAL_PLUGINS_MARKER } from '../src/trial-plugins.ts'
+import { seedTrialPlugins, TRIAL_PLUGINS_MARKER, TRIAL_PLUGINS_STORE } from '../src/trial-plugins.ts'
 
 const roots: string[] = []
 afterEach(() => {
@@ -51,10 +51,11 @@ describe('trial plugin seeding', () => {
     const { profile, plugins } = setup()
     carry(plugins, 'plugin-a', '1.0.0')
     seedTrialPlugins(profile, plugins)
-    expect(manifest(profile).dependencies).toEqual({ 'plugin-a': `file:${join(plugins, 'plugin-a')}` })
+    expect(manifest(profile).dependencies).toEqual({ 'plugin-a': `file:${TRIAL_PLUGINS_STORE}/plugin-a` })
     expect(manifest(profile).dsh.profile.bundles).toEqual(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'plugin-a'])
     expect(installedVersion(profile, 'plugin-a')).toBe('1.0.0')
     expect(existsSync(join(profile, 'node_modules', 'plugin-a', 'node_modules', 'dep', 'package.json'))).toBe(true)
+    expect(existsSync(join(profile, TRIAL_PLUGINS_STORE, 'plugin-a', 'package.json'))).toBe(true)
   })
 
   it('seeds only explicit bootstrap plugins and records their immutable source specs', () => {
@@ -114,7 +115,25 @@ describe('trial plugin seeding', () => {
     carry(plugins, 'plugin-a', '2.0.0')
     seedTrialPlugins(profile, plugins)
     expect(installedVersion(profile, 'plugin-a')).toBe('2.0.0')
+    expect(manifest(profile).dependencies['plugin-a']).toBe(`file:${TRIAL_PLUGINS_STORE}/plugin-a`)
     expect(manifest(profile).dsh.profile.bundles.filter(name => name === 'plugin-a')).toHaveLength(1)
+  })
+
+  it('rewrites legacy installer-volume dependency specs onto the profile trial store', () => {
+    const { profile, plugins } = setup()
+    carry(plugins, 'plugin-a', '1.0.0')
+    const old = manifest(profile)
+    old.dependencies = {
+      'plugin-a': 'file:/Volumes/DeepSeek Harness.app/Contents/Resources/trial-plugins/plugin-a',
+    }
+    old.dsh.profile.bundles.push('plugin-a')
+    writeFileSync(join(profile, 'package.json'), JSON.stringify(old))
+    writeFileSync(join(profile, TRIAL_PLUGINS_MARKER), JSON.stringify({ seeded: { 'plugin-a': '1.0.0' } }))
+    mkdirSync(join(profile, 'node_modules', 'plugin-a'), { recursive: true })
+    writeFileSync(join(profile, 'node_modules', 'plugin-a', 'package.json'), JSON.stringify({ name: 'plugin-a', version: '1.0.0' }))
+    seedTrialPlugins(profile, plugins)
+    expect(manifest(profile).dependencies['plugin-a']).toBe(`file:${TRIAL_PLUGINS_STORE}/plugin-a`)
+    expect(existsSync(join(profile, TRIAL_PLUGINS_STORE, 'plugin-a', 'package.json'))).toBe(true)
   })
 
   it('replaces a seeded plugin when its immutable Git source changes at the same version', () => {

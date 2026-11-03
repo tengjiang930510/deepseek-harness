@@ -206,12 +206,17 @@ function platformLoginUrl(authorizeUrl: string): string {
   return url.href
 }
 
-function createWindow(preload: string, show = false, primary = false): BrowserWindow {
+function createWindow(preload: string, show = false, primary = false, compact = false): BrowserWindow {
+  // Compact only changes size. Frameless/transparent chrome used to be toggled
+  // here, but Electron cannot change frame after construction — expanding then
+  // destroyed the live renderer and remounted through the restore-login gate.
+  // Keep workspace chrome for both sizes so login↔workspace is setSize only.
   const window = new BrowserWindow({
-    width: 1280,
-    height: 820,
-    minWidth: 520,
-    minHeight: 600,
+    width: compact ? 420 : 1280,
+    // Compact height clears macOS traffic lights / Windows caption above the login card.
+    height: compact ? 440 : 820,
+    minWidth: compact ? 420 : 520,
+    minHeight: compact ? 440 : 600,
     show,
     ...(process.platform === 'win32' && primary ? {
       titleBarStyle: 'hidden' as const,
@@ -220,7 +225,7 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
     } : {}),
     // hiddenInset places traffic lights inside the sidebar; sidebar vibrancy
     // needs a transparent window background to show through the page.
-    ...(process.platform === 'darwin' ? {
+    ...(process.platform === 'darwin' && primary ? {
       titleBarStyle: 'hiddenInset' as const,
       trafficLightPosition: { x: 16, y: 18 },
       vibrancy: 'sidebar' as const,
@@ -254,7 +259,7 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
     // current state so a fullscreen reload does not fall back to windowed CSS.
     window.webContents.on('did-finish-load', sendFullscreen)
   }
-  if (process.platform === 'darwin') {
+  if (process.platform === 'darwin' && primary) {
     // Deminiaturize reattaches the NSVisualEffectView material late
     // (electron/electron#25368), so a transparent window shows the desktop
     // through the sidebar until then. Paint an opaque base while minimized or
@@ -346,6 +351,7 @@ async function main(): Promise<void> {
   let startup: Promise<void> | undefined
   let workspaceRecovery: Promise<void> | undefined
   let mainWindow: BrowserWindow | undefined
+  let mainWindowCompact = false
   let welcomeWindow: BrowserWindow | undefined
   let enteredWorkspace = false
   // NSIS passes --updated when it launches the application after installation.
@@ -799,6 +805,13 @@ async function main(): Promise<void> {
       if (width < 960) window.setSize(960, height)
     }
   })
+  ipcMain.on(DESKTOP_IPC.windowCompact, (event, compact: unknown) => {
+    const window = mainWindow
+    if (window === undefined || window.isDestroyed() || event.sender !== window.webContents
+      || event.senderFrame !== window.webContents.mainFrame
+      || !event.senderFrame.url.startsWith(`${SCHEME}://app/`) || typeof compact !== 'boolean') return
+    setMainWindowCompact(compact)
+  })
   ipcMain.handle(DESKTOP_IPC.updatesOpen, async (event) => {
     assertProductSender(event)
     await openUpdatePrompt()
@@ -1076,9 +1089,10 @@ async function main(): Promise<void> {
       window.hide()
     }
   }
-  const createMainWindow = (): BrowserWindow => {
-    const window = createWindow(appPreload, false, true)
+  const createMainWindow = (compact = false): BrowserWindow => {
+    const window = createWindow(appPreload, false, true, compact)
     mainWindow = window
+    mainWindowCompact = compact
     browserGuests.bind(window, (guest, name) => shortcuts.attachGuest(window, guest, name))
     shortcuts.attach(window)
     window.on('focus', automaticCheck)
@@ -1123,6 +1137,18 @@ async function main(): Promise<void> {
       }
     })
     return window
+  }
+  function setMainWindowCompact(compact: boolean): void {
+    const window = mainWindow
+    if (window === undefined || window.isDestroyed() || mainWindowCompact === compact || quitting) return
+    mainWindowCompact = compact
+    // Same BrowserWindow chrome for both sizes — only bounds change, so the
+    // renderer keeps its login session and never remounts the restore gate.
+    window.setMinimumSize(compact ? 420 : 520, compact ? 440 : 600)
+    window.setSize(compact ? 420 : 1280, compact ? 440 : 820)
+    window.center()
+    if (!window.isVisible()) window.show()
+    window.focus()
   }
   const enterWorkspace = async ({ activate = true }: { activate?: boolean } = {}): Promise<void> => {
     if (quitting) return

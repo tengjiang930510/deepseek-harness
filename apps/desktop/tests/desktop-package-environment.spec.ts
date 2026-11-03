@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { loadDesktopPackageEnvironment, validateDesktopPackageEnvironment } from '../scripts/desktop-package-environment.mjs'
+import { loadDesktopPackageEnvironment, localMacOSPackageEnvironment, validateDesktopPackageEnvironment } from '../scripts/desktop-package-environment.mjs'
 import { resolveWindowsPackageSettings } from '../scripts/windows-package-settings.mjs'
 
 const WINDOWS = { platform: 'win32', arch: 'x64' } as const
@@ -23,6 +23,27 @@ async function withDirectory(action: (directory: string) => Promise<void>): Prom
 }
 
 describe('Desktop local packaging configuration', () => {
+  it('retains explicit trial resources for an unsigned local macOS build', () => {
+    const defaults = '/private/tmp/trial-defaults.json'
+    const plugins = '/private/tmp/trial-plugins'
+    expect(localMacOSPackageEnvironment({
+      PATH: 'build-tools',
+      DSH_DESKTOP_APP_ID: 'com.stale.desktop',
+      DSH_DESKTOP_TRIAL_DEFAULTS_FILE: defaults,
+      DSH_DESKTOP_TRIAL_PLUGINS_DIR: plugins,
+      DSH_DESKTOP_NPM_REGISTRY: 'https://registry.npmmirror.com',
+      DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: '{"stale":true}',
+    })).toMatchObject({
+      PATH: 'build-tools',
+      DSH_DESKTOP_APP_ID: 'com.deepseek.harness',
+      DSH_DESKTOP_TRIAL_DEFAULTS_FILE: defaults,
+      DSH_DESKTOP_TRIAL_PLUGINS_DIR: plugins,
+      DSH_DESKTOP_NPM_REGISTRY: 'https://registry.npmmirror.com',
+      DSH_DESKTOP_UNSIGNED: '1',
+      DSH_DESKTOP_LOCAL_UNSIGNED_MAC: '1',
+    })
+  })
+
   it('accepts a local trial resource and rejects malformed input before packaging', async () => {
     await withDirectory(async (directory) => {
       const path = join(directory, 'trial-defaults.json')

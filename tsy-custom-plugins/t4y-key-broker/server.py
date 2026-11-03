@@ -21,10 +21,14 @@ def required(name: str) -> str:
     return value
 
 
+_STATE_PATH = Path(required("BROKER_DATA_FILE"))
+# SQLite ledger beside the legacy state.json (or override with BROKER_SQLITE_PATH).
+_SQLITE_PATH = Path(os.environ["BROKER_SQLITE_PATH"]) if os.environ.get("BROKER_SQLITE_PATH") else _STATE_PATH.with_name("broker.db")
 CONFIG = {
     "host": os.environ.get("BROKER_LISTEN_HOST", "127.0.0.1"),
     "port": int(os.environ.get("BROKER_LISTEN_PORT", "4010")),
-    "state": Path(required("BROKER_DATA_FILE")),
+    "state": _STATE_PATH,
+    "sqlite": _SQLITE_PATH,
     "external": required("EXTERNAL_API_BASE_URL").rstrip("/"),
     "new_api": required("NEW_API_BASE_URL").rstrip("/"),
     "root_user": required("NEW_API_ROOT_USERNAME"),
@@ -33,12 +37,21 @@ CONFIG = {
     "enterprise_quota": int(os.environ.get("BROKER_ENTERPRISE_QUOTA", "9007199254740991")),
     # Empty disables /admin and /v1/admin/*. Set a long random value for the ops console.
     "admin_token": os.environ.get("BROKER_ADMIN_TOKEN", "").strip(),
+    # Optional same-host New API SQLite — read token secrets without /api/token/{id}/key (avoids 429).
+    "new_api_sqlite": Path(os.environ["NEW_API_SQLITE_PATH"]) if os.environ.get("NEW_API_SQLITE_PATH") else None,
+    # Cache enterprise getInfo this many seconds (status polls + issue share the same token).
+    "identity_cache_ttl": int(os.environ.get("BROKER_IDENTITY_CACHE_TTL_SECONDS", "45")),
 }
-LOCK = threading.RLock()
-STATE: dict = {"enterprises": {}, "sessions": {}, "management_sessions": {}}
 # Refresh root JWT this many seconds before access_expires_at.
 ROOT_SESSION_REFRESH_SKEW_SECONDS = int(os.environ.get("BROKER_ROOT_SESSION_REFRESH_SKEW_SECONDS", "60"))
 ADMIN_HTML = Path(__file__).with_name("admin.html")
+LEDGER = None  # set in main
+# token_digest -> (expires_monotonic, subject)
+_IDENTITY_CACHE: dict[str, tuple[float, dict]] = {}
+_IDENTITY_CACHE_LOCK = threading.Lock()
+# Serialize first-time provision per (user, module); cache hits never take this lock.
+_ISSUE_LOCKS_GUARD = threading.Lock()
+_ISSUE_LOCKS: dict[str, threading.Lock] = {}
 
 
 def digest(value: str) -> str:
@@ -49,26 +62,27 @@ def now() -> int:
     return int(time.time())
 
 
-def load_state() -> None:
-    global STATE
-    try:
-        decoded = json.loads(CONFIG["state"].read_text())
-        if not isinstance(decoded.get("enterprises"), dict) or not isinstance(decoded.get("sessions"), dict):
-            raise ValueError("invalid state")
-        if not isinstance(decoded.get("management_sessions"), dict):
-            decoded["management_sessions"] = {}
-        STATE = decoded
-    except FileNotFoundError:
-        persist()
+def issue_lock_for(user_id: str, module_id: str) -> threading.Lock:
+    key = f"{user_id}\n{module_id}"
+    with _ISSUE_LOCKS_GUARD:
+        lock = _ISSUE_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _ISSUE_LOCKS[key] = lock
+        return lock
 
 
-def persist() -> None:
-    path = CONFIG["state"]
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    temporary = path.with_name(f"{path.name}.{secrets.token_hex(6)}.tmp")
-    temporary.write_text(json.dumps(STATE) + "\n")
-    temporary.chmod(0o600)
-    temporary.replace(path)
+def load_ledger():
+    """Open SQLite WAL ledger; upsert any rows still present in legacy state.json."""
+    global LEDGER
+    from ledger import Ledger
+
+    LEDGER = Ledger(CONFIG["sqlite"])
+    # Idempotent: fills an empty DB and repairs a partial import without wiping newer rows.
+    imported = LEDGER.import_state_json(CONFIG["state"])
+    if imported:
+        print(f"t4y-key-broker: upserted {imported} session rows from {CONFIG['state']}", flush=True)
+    return LEDGER
 
 
 def call(url: str, method: str = "GET", headers: dict | None = None, payload: dict | None = None) -> dict:
@@ -110,24 +124,24 @@ def _store_management_session(username: str, data: dict) -> dict:
     if not isinstance(expires_at, (int, float)) or int(expires_at) <= now():
         # Fallback when upstream omits expiry: keep a short cache, not forever.
         expires_at = now() + 600
-    session = {
-        "token": data["access_token"],
-        "user_id": data["user"]["id"],
-        "expires_at": int(expires_at),
-    }
-    STATE["management_sessions"][username] = session
-    persist()
-    return {"token": session["token"], "user_id": session["user_id"]}
+    assert LEDGER is not None
+    LEDGER.put_management_session(
+        username,
+        {
+            "token": data["access_token"],
+            "user_id": int(data["user"]["id"]),
+            "expires_at": int(expires_at),
+        },
+    )
+    return {"token": data["access_token"], "user_id": int(data["user"]["id"])}
 
 
 def password_session(username: str, password: str, *, force: bool = False) -> dict:
     """Login as a New API user and cache the JWT under management_sessions."""
-    cached = STATE["management_sessions"].get(username)
+    assert LEDGER is not None
+    cached = None if force else LEDGER.get_management_session(username)
     if (
-        not force
-        and isinstance(cached, dict)
-        and isinstance(cached.get("token"), str)
-        and isinstance(cached.get("user_id"), int)
+        cached is not None
         and int(cached.get("expires_at") or 0) - ROOT_SESSION_REFRESH_SKEW_SECONDS > now()
     ):
         return {"token": cached["token"], "user_id": cached["user_id"]}
@@ -149,12 +163,10 @@ def root_session(*, force: bool = False) -> dict:
     Long-lived management credential for the hot path: one cached root JWT.
     New API sk- keys cannot call management APIs; only the login JWT can.
     """
-    cached = STATE["management_sessions"].get(CONFIG["root_user"])
+    assert LEDGER is not None
+    cached = None if force else LEDGER.get_management_session(CONFIG["root_user"])
     if (
-        not force
-        and isinstance(cached, dict)
-        and isinstance(cached.get("token"), str)
-        and isinstance(cached.get("user_id"), int)
+        cached is not None
         and int(cached.get("expires_at") or 0) - ROOT_SESSION_REFRESH_SKEW_SECONDS > now()
     ):
         return {"token": cached["token"], "user_id": cached["user_id"]}
@@ -208,23 +220,47 @@ def manage(
 
 def identity(token: str) -> dict:
     """Validate the parent-account access token. Billing projects are moduleId, not tenant id."""
+    token_digest = digest(token)
+    ttl = CONFIG["identity_cache_ttl"]
+    if ttl > 0:
+        with _IDENTITY_CACHE_LOCK:
+            hit = _IDENTITY_CACHE.get(token_digest)
+            if hit is not None and hit[0] > time.monotonic():
+                return dict(hit[1])
     data = call(f"{CONFIG['external']}/system/user/getInfo", headers={"Authorization": token})
     enterprise, user = data.get("enterprise", {}), data.get("user", {})
     if not isinstance(enterprise.get("id"), str) or not isinstance(user.get("id"), str):
         raise PermissionError("identity response has no enterprise or user id")
     nick = user.get("nickName") if isinstance(user.get("nickName"), str) else ""
     user_name = user.get("userName") if isinstance(user.get("userName"), str) else ""
-    return {
+    subject = {
         "tenant_id": enterprise["id"],
         "tenant_name": enterprise.get("name") or enterprise["id"],
         "user_id": user["id"],
         "nick_name": nick.strip() or user_name.strip() or user["id"],
         "user_name": user_name.strip(),
     }
+    if ttl > 0:
+        with _IDENTITY_CACHE_LOCK:
+            _IDENTITY_CACHE[token_digest] = (time.monotonic() + ttl, subject)
+            if len(_IDENTITY_CACHE) > 50_000:
+                cutoff = time.monotonic()
+                expired = [k for k, (exp, _) in _IDENTITY_CACHE.items() if exp <= cutoff]
+                for k in expired:
+                    del _IDENTITY_CACHE[k]
+    return dict(subject)
 
 
-def session_key(token: str, module_id: str) -> str:
-    return digest(f"{token}\n{module_id}")
+def find_cached_api_key(*, user_id: str) -> tuple[str | None, dict | None]:
+    """O(1) ledger lookup: one unexpired Key per enterprise user (any project)."""
+    assert LEDGER is not None
+    prior = LEDGER.get_session(user_id)
+    if prior is None:
+        return None, None
+    cached = prior.get("api_key")
+    if isinstance(cached, str) and cached.startswith("sk-") and int(prior.get("expires_at") or 0) > now():
+        return cached, prior
+    return None, prior
 
 
 def require_module_id(module_id: object) -> str:
@@ -241,7 +277,8 @@ def project_account(module_id: str, module_name: str) -> dict:
     One New API user per product project (moduleId), e.g. 武汉地铁 / 襄阳铁路公安.
     The login tenant above them is only the parent account.
     """
-    saved = STATE["enterprises"].get(module_id)
+    assert LEDGER is not None
+    saved = LEDGER.get_enterprise(module_id)
     if saved:
         return saved
     username = f"mod_{digest(module_id)[:16]}"
@@ -252,81 +289,244 @@ def project_account(module_id: str, module_name: str) -> dict:
         found = manage(f"/api/user/search?keyword={quote(username)}&p=0&page_size=20")
         return next((item for item in found.get("items", []) if item.get("username") == username), None)
 
-    account = search_account()
-    if account is None:
+    # Serialize first-time provision for the same module; concurrent issuers share the row after.
+    with issue_lock_for("__enterprise__", module_id):
+        saved = LEDGER.get_enterprise(module_id)
+        if saved:
+            return saved
+        account = search_account()
+        if account is None:
+            try:
+                manage(
+                    "/api/user/",
+                    "POST",
+                    payload={
+                        "username": username,
+                        "password": password,
+                        "display_name": display,
+                        "role": 1,
+                    },
+                )
+            except RuntimeError as error:
+                if "409" not in str(error):
+                    raise
+            account = search_account()
+        if not account:
+            raise RuntimeError("New API did not return the project account")
         try:
             manage(
                 "/api/user/",
-                "POST",
+                "PUT",
                 payload={
+                    "id": account["id"],
                     "username": username,
                     "password": password,
                     "display_name": display,
-                    "role": 1,
                 },
             )
-        except RuntimeError as error:
-            if "409" not in str(error):
-                raise
-        account = search_account()
-    if not account:
-        raise RuntimeError("New API did not return the project account")
-    try:
+        except RuntimeError:
+            pass
         manage(
-            "/api/user/",
-            "PUT",
-            payload={
-                "id": account["id"],
-                "username": username,
-                "password": password,
-                "display_name": display,
-            },
+            "/api/user/manage",
+            "POST",
+            payload={"id": account["id"], "action": "add_quota", "mode": "override", "value": CONFIG["enterprise_quota"]},
         )
-    except RuntimeError:
-        pass
-    manage(
-        "/api/user/manage",
-        "POST",
-        payload={"id": account["id"], "action": "add_quota", "mode": "override", "value": CONFIG["enterprise_quota"]},
-    )
-    saved = {
-        "new_api_user_id": account["id"],
-        "username": username,
-        "password": password,
-        "module_id": module_id,
-        "module_name": display,
-    }
-    STATE["enterprises"][module_id] = saved
-    persist()
-    return saved
+        saved = {
+            "new_api_user_id": account["id"],
+            "username": username,
+            "password": password,
+            "module_id": module_id,
+            "module_name": display,
+        }
+        LEDGER.put_enterprise(saved)
+        return saved
+
+
+def _is_rate_limited(error: Exception) -> bool:
+    text = str(error)
+    return "429" in text or "Too Many Requests" in text or "rate" in text.lower()
+
+
+# New API rate-limits POST /api/token/{id}/key; serialize reveals across requests.
+_REVEAL_LOCK = threading.Lock()
+_REVEAL_NEXT_OK_AT = 0.0
+_REVEAL_MIN_INTERVAL_SECONDS = 2.0
+
+
+def read_token_key_from_sqlite(token_id: int) -> str | None:
+    """Read the sk- secret from New API's tokens table when NEW_API_SQLITE_PATH is configured."""
+    path = CONFIG["new_api_sqlite"]
+    if path is None or not path.is_file():
+        return None
+    try:
+        import sqlite3
+
+        with sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5) as connection:
+            row = connection.execute(
+                "SELECT key FROM tokens WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '')",
+                (token_id,),
+            ).fetchone()
+        if not row or not isinstance(row[0], str) or row[0] == "":
+            return None
+        key = row[0]
+        return key if key.startswith("sk-") else f"sk-{key}"
+    except Exception:
+        return None
+
+
+def reveal_token_key(token_id: int, *, ent_uid: int, account: dict) -> str:
+    """
+    Obtain a New API token secret. Prefer same-host SQLite when configured (no rate limit);
+    otherwise POST /api/token/{id}/key with 429 backoff — rapid project switches previously
+    exhausted that endpoint and returned 502 to the client.
+    """
+    from_db = read_token_key_from_sqlite(token_id)
+    if from_db is not None:
+        return from_db
+    global _REVEAL_NEXT_OK_AT
+    last_error: Exception | None = None
+    with _REVEAL_LOCK:
+        for attempt in range(8):
+            wait = _REVEAL_NEXT_OK_AT - time.time()
+            if wait > 0:
+                time.sleep(wait)
+            try:
+                revealed = manage(
+                    f"/api/token/{token_id}/key",
+                    "POST",
+                    as_user_id=ent_uid,
+                    account=account,
+                )
+                key = revealed.get("key") if isinstance(revealed, dict) else None
+                if not isinstance(key, str) or key == "":
+                    raise RuntimeError("New API did not return the user key material")
+                _REVEAL_NEXT_OK_AT = time.time() + _REVEAL_MIN_INTERVAL_SECONDS
+                return key if key.startswith("sk-") else f"sk-{key}"
+            except Exception as error:
+                last_error = error
+                if not _is_rate_limited(error) or attempt == 7:
+                    break
+                # Cool down longer than New API's short burst window before the next reveal.
+                delay = min(30, 2 * (2 ** attempt))
+                _REVEAL_NEXT_OK_AT = time.time() + delay
+                time.sleep(delay)
+    assert last_error is not None
+    if _is_rate_limited(last_error):
+        raise RuntimeError(
+            "New API rate-limited key reveal; wait a few seconds and switch project again"
+        ) from last_error
+    raise last_error
 
 
 def issue(token: str, expires_in: int, module_id: object, module_name: object = None) -> dict:
+    """
+    One Key per enterprise user. moduleId is only required for the first mint (New API home
+    project); later calls — including admin accounts switching projects — reuse the same Key.
+
+    Unexpired ledger rows reuse the Key and original expiresAt (no silent renew).
+    Expired rows are re-issued on a fresh enterprise login: keep Key material when present
+    (no New API reveal), write a new expiresAt from expires_in.
+    """
+    # expires_in is seconds (identity converts enterprise login minutes → seconds).
     if expires_in < 1:
-        raise ValueError("expiresIn must be positive")
+        raise ValueError("expiresIn must be a positive number of seconds")
+    ttl = min(int(expires_in), CONFIG["max_seconds"])
     project_id = require_module_id(module_id)
     label = module_name.strip()[:20] if isinstance(module_name, str) and module_name.strip() else project_id
     subject = identity(token)
-    key_hash = session_key(token, project_id)
-    prior = STATE["sessions"].get(key_hash)
-    if prior and prior["expires_at"] <= now():
-        raise PermissionError("login session has expired")
-    expires_at = prior["expires_at"] if prior else now() + min(expires_in, CONFIG["max_seconds"])
-    account = project_account(project_id, label)
-    ent_uid = int(account["new_api_user_id"])
-    name = prior["token_name"] if prior else f"usr_{digest(subject['user_id'])[:16]}_{key_hash[:8]}"
+    cached_key, prior = find_cached_api_key(user_id=subject["user_id"])
+    # Same user already has an unexpired Key (any home module): reuse, skip New API.
+    if isinstance(cached_key, str) and cached_key.startswith("sk-") and isinstance(prior, dict):
+        return {
+            "apiKey": cached_key,
+            "expiresAt": int(prior["expires_at"]) * 1000,
+            "tenantId": subject["tenant_id"],
+            "moduleId": project_id,
+            "homeModuleId": prior.get("module_id") or project_id,
+            "userId": subject["user_id"],
+        }
 
-    def find_token(token_name: str):
-        items = manage(
-            "/api/token/?p=0&page_size=100",
-            as_user_id=ent_uid,
-            account=account,
-        ).get("items", [])
-        return next((item for item in items if item.get("name") == token_name), None)
+    # Serialize first-time mint / post-expiry re-issue per user only; cache hits above never wait.
+    with issue_lock_for(subject["user_id"], "__user__"):
+        cached_key, prior = find_cached_api_key(user_id=subject["user_id"])
+        if isinstance(cached_key, str) and cached_key.startswith("sk-") and isinstance(prior, dict):
+            return {
+                "apiKey": cached_key,
+                "expiresAt": int(prior["expires_at"]) * 1000,
+                "tenantId": subject["tenant_id"],
+                "moduleId": project_id,
+                "homeModuleId": prior.get("module_id") or project_id,
+                "userId": subject["user_id"],
+            }
+        expires_at = now() + ttl
+        prior_key = prior.get("api_key") if isinstance(prior, dict) else None
+        prior_token_id = prior.get("new_api_token_id") if isinstance(prior, dict) else None
+        prior_token_name = prior.get("token_name") if isinstance(prior, dict) else None
+        # Expired (or otherwise inactive) row still holds Key material: renew expiry only.
+        if (
+            isinstance(prior, dict)
+            and isinstance(prior_key, str)
+            and prior_key.startswith("sk-")
+            and prior_token_id is not None
+            and isinstance(prior_token_name, str)
+            and prior_token_name != ""
+        ):
+            home_module = prior.get("module_id") if isinstance(prior.get("module_id"), str) and prior.get("module_id") else project_id
+            record = {
+                "tenant_id": subject["tenant_id"],
+                "tenant_name": subject["tenant_name"],
+                "module_id": home_module,
+                "module_name": prior.get("module_name") or label,
+                "external_user_id": subject["user_id"],
+                "nick_name": subject["nick_name"],
+                "user_name": subject["user_name"],
+                "new_api_token_id": prior_token_id,
+                "token_name": prior_token_name,
+                "api_key": prior_key,
+                "expires_at": expires_at,
+                "issued_at": now(),
+            }
+            assert LEDGER is not None
+            LEDGER.put_session(record)
+            return {
+                "apiKey": prior_key,
+                "expiresAt": expires_at * 1000,
+                "tenantId": subject["tenant_id"],
+                "moduleId": project_id,
+                "homeModuleId": home_module,
+                "userId": subject["user_id"],
+            }
 
-    row = find_token(name)
-    if not row:
-        try:
+        account = project_account(project_id, label)
+        ent_uid = int(account["new_api_user_id"])
+        # Stable token name per user so re-login does not mint endless New API tokens.
+        stable_name = f"usr_{digest(subject['user_id'])[:20]}"
+        name = prior["token_name"] if prior and prior.get("token_name") else stable_name
+
+        def find_token(token_name: str):
+            items = manage(
+                "/api/token/?p=0&page_size=100",
+                as_user_id=ent_uid,
+                account=account,
+            ).get("items", [])
+            return next((item for item in items if item.get("name") == token_name), None)
+
+        row = find_token(name)
+        if not row:
+            try:
+                manage(
+                    "/api/token/",
+                    "POST",
+                    as_user_id=ent_uid,
+                    account=account,
+                    payload={"name": name, "expired_time": -1, "unlimited_quota": True, "group": "default"},
+                )
+            except RuntimeError as error:
+                if "409" not in str(error):
+                    raise
+            row = find_token(name)
+        if not row:
+            name = f"{name}_{secrets.token_hex(3)}"
             manage(
                 "/api/token/",
                 "POST",
@@ -334,92 +534,78 @@ def issue(token: str, expires_in: int, module_id: object, module_name: object = 
                 account=account,
                 payload={"name": name, "expired_time": -1, "unlimited_quota": True, "group": "default"},
             )
-        except RuntimeError as error:
-            if "409" not in str(error):
-                raise
-        row = find_token(name)
-    if not row:
-        name = f"{name}_{secrets.token_hex(3)}"
-        manage(
-            "/api/token/",
-            "POST",
-            as_user_id=ent_uid,
-            account=account,
-            payload={"name": name, "expired_time": -1, "unlimited_quota": True, "group": "default"},
-        )
-        row = find_token(name)
-    if not row:
-        raise RuntimeError("New API did not return the user key")
-    revealed = manage(
-        f"/api/token/{row['id']}/key",
-        "POST",
-        as_user_id=ent_uid,
-        account=account,
-    )
-    STATE["sessions"][key_hash] = {
-        "tenant_id": subject["tenant_id"],
-        "tenant_name": subject["tenant_name"],
-        "module_id": project_id,
-        "module_name": account.get("module_name") or label,
-        "external_user_id": subject["user_id"],
-        "nick_name": subject["nick_name"],
-        "user_name": subject["user_name"],
-        "new_api_token_id": row["id"],
-        "token_name": name,
-        "expires_at": expires_at,
-        "issued_at": prior.get("issued_at", now()) if prior else now(),
-    }
-    persist()
-    return {
-        "apiKey": f"sk-{revealed['key']}",
-        "expiresAt": expires_at * 1000,
-        "tenantId": subject["tenant_id"],
-        "moduleId": project_id,
-        "userId": subject["user_id"],
-    }
+            row = find_token(name)
+        if not row:
+            raise RuntimeError("New API did not return the user key")
+        api_key = reveal_token_key(int(row["id"]), ent_uid=ent_uid, account=account)
+        record = {
+            "tenant_id": subject["tenant_id"],
+            "tenant_name": subject["tenant_name"],
+            "module_id": project_id,
+            "module_name": account.get("module_name") or label,
+            "external_user_id": subject["user_id"],
+            "nick_name": subject["nick_name"],
+            "user_name": subject["user_name"],
+            "new_api_token_id": row["id"],
+            "token_name": name,
+            "api_key": api_key,
+            "expires_at": expires_at,
+            "issued_at": now(),
+        }
+        assert LEDGER is not None
+        LEDGER.put_session(record)
+        return {
+            "apiKey": api_key,
+            "expiresAt": expires_at * 1000,
+            "tenantId": subject["tenant_id"],
+            "moduleId": project_id,
+            "homeModuleId": project_id,
+            "userId": subject["user_id"],
+        }
 
 
-def status(token: str, module_id: object) -> dict:
-    """Minute-level check: broker local state only (no New API login or token lookup)."""
+def status(token: str, module_id: object = None) -> dict:
+    """Minute-level check: user Key in ledger (moduleId kept for API compat, not used for lookup)."""
     subject = identity(token)
-    project_id = require_module_id(module_id)
-    known = STATE["sessions"].get(session_key(token, project_id))
+    if module_id is not None and not (isinstance(module_id, str) and module_id.strip() == ""):
+        require_module_id(module_id)
+    # Use the ledger row directly: find_cached_api_key clears the Key when expired.
+    assert LEDGER is not None
+    known = LEDGER.get_session(subject["user_id"])
+    ledger_key = known.get("api_key") if isinstance(known, dict) else None
     if (
         not known
-        or known.get("module_id") != project_id
         or known.get("tenant_id") != subject["tenant_id"]
         or known.get("external_user_id") != subject["user_id"]
+        or not (isinstance(ledger_key, str) and ledger_key.startswith("sk-"))
     ):
         return {"active": False, "reason": "key_not_issued"}
-    if known["expires_at"] <= now():
-        return {"active": False, "reason": "key_expired", "expiresAt": known["expires_at"] * 1000}
-    return {"active": True, "reason": None, "expiresAt": known["expires_at"] * 1000}
+    if int(known["expires_at"]) <= now():
+        return {"active": False, "reason": "key_expired", "expiresAt": int(known["expires_at"]) * 1000}
+    return {
+        "active": True,
+        "reason": None,
+        "expiresAt": int(known["expires_at"]) * 1000,
+        "homeModuleId": known.get("module_id"),
+    }
 
 
 def revoke(token: str, module_id: object = None) -> dict:
-    """Revoke one project Key, or every Key for this access token when moduleId is omitted."""
+    """Revoke this user's single Key. moduleId is ignored (API compat)."""
+    assert LEDGER is not None
     subject = identity(token)
-    if module_id is None or (isinstance(module_id, str) and module_id.strip() == ""):
-        targets = [
-            (key, row)
-            for key, row in list(STATE["sessions"].items())
-            if row.get("tenant_id") == subject["tenant_id"] and row.get("external_user_id") == subject["user_id"]
-        ]
-    else:
-        project_id = require_module_id(module_id)
-        key_hash = session_key(token, project_id)
-        row = STATE["sessions"].get(key_hash)
-        targets = [(key_hash, row)] if row else []
+    if module_id is not None and not (isinstance(module_id, str) and module_id.strip() == ""):
+        require_module_id(module_id)
+    targets = LEDGER.delete_sessions_for_user(subject["user_id"], subject["tenant_id"])
 
     revoked = False
-    for key_hash, known in targets:
+    for known in targets:
         if not known:
             continue
         if known.get("tenant_id") != subject["tenant_id"] or known.get("external_user_id") != subject["user_id"]:
             continue
-        account = STATE["enterprises"].get(known.get("module_id"))
+        account = LEDGER.get_enterprise(str(known.get("module_id") or ""))
         if not account:
-            del STATE["sessions"][key_hash]
             revoked = True
             continue
         ent_uid = int(account["new_api_user_id"])
@@ -429,10 +615,7 @@ def revoke(token: str, module_id: object = None) -> dict:
             as_user_id=ent_uid,
             account=account,
         )
-        del STATE["sessions"][key_hash]
         revoked = True
-    if revoked:
-        persist()
     return {"revoked": revoked}
 
 
@@ -448,7 +631,8 @@ def require_admin(authorization: str | None) -> None:
 
 
 def _delete_new_api_token(known: dict) -> None:
-    account = STATE["enterprises"].get(known.get("module_id"))
+    assert LEDGER is not None
+    account = LEDGER.get_enterprise(str(known.get("module_id") or ""))
     if not account:
         return
     ent_uid = int(account["new_api_user_id"])
@@ -460,21 +644,26 @@ def _delete_new_api_token(known: dict) -> None:
     )
 
 
+def admin_session_id(row: dict) -> str:
+    # Keep `|homeModuleId` suffix so older admin UI still shows home project; revoke parses user id.
+    return f"{row['external_user_id']}|{row['module_id']}"
+
+
 def admin_overview() -> dict:
     """Project-first ledger for the ops console (no sk- secrets)."""
+    assert LEDGER is not None
     projects = []
-    for module_id, account in sorted(
-        STATE["enterprises"].items(),
-        key=lambda item: (str(item[1].get("module_name") or ""), item[0]),
+    for account in sorted(
+        LEDGER.list_enterprises(),
+        key=lambda item: (str(item.get("module_name") or ""), str(item.get("module_id") or "")),
     ):
+        module_id = account["module_id"]
         sessions = []
-        for session_id, row in STATE["sessions"].items():
-            if row.get("module_id") != module_id:
-                continue
+        for row in LEDGER.list_sessions_for_module(module_id):
             expires_at = int(row.get("expires_at") or 0)
             sessions.append(
                 {
-                    "id": session_id,
+                    "id": admin_session_id(row),
                     "externalUserId": row.get("external_user_id"),
                     "nickName": row.get("nick_name") or row.get("user_name") or row.get("external_user_id"),
                     "userName": row.get("user_name") or "",
@@ -500,36 +689,32 @@ def admin_overview() -> dict:
 
 
 def admin_revoke_session(session_id: object) -> dict:
+    assert LEDGER is not None
     if not isinstance(session_id, str) or not session_id.strip():
         raise ValueError("sessionId is required")
     key = session_id.strip()
-    known = STATE["sessions"].get(key)
+    known = LEDGER.delete_session_by_id(key)
     if not known:
         return {"revoked": False}
     try:
         _delete_new_api_token(known)
     except Exception:
-        # Ledger still drops; orphan New API tokens can be cleaned from New API UI.
+        # Ledger already dropped; orphan New API tokens can be cleaned from New API UI.
         pass
-    del STATE["sessions"][key]
-    persist()
     return {"revoked": True}
 
 
 def admin_revoke_project_sessions(module_id: object) -> dict:
+    assert LEDGER is not None
     project_id = require_module_id(module_id)
+    known_rows = LEDGER.delete_sessions_for_module(project_id)
     removed = 0
-    for key, known in list(STATE["sessions"].items()):
-        if known.get("module_id") != project_id:
-            continue
+    for known in known_rows:
         try:
             _delete_new_api_token(known)
         except Exception:
             pass
-        del STATE["sessions"][key]
         removed += 1
-    if removed:
-        persist()
     return {"revoked": removed > 0, "count": removed}
 
 
@@ -571,8 +756,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.html(200, ADMIN_HTML.read_bytes())
             if path == "/v1/admin/overview":
                 require_admin(self.headers.get("Authorization"))
-                with LOCK:
-                    return self.response(200, admin_overview())
+                return self.response(200, admin_overview())
             return self.response(404, {"error": "not_found"})
         except PermissionError as error:
             self.response(401, {"error": "admin_unauthorized", "message": str(error)})
@@ -587,29 +771,29 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("request body is too large")
             body = json.loads(self.rfile.read(length) or b"{}")
             path = self.path.split("?", 1)[0]
-            with LOCK:
-                if path == "/v1/admin/session/revoke":
-                    require_admin(token)
-                    return self.response(200, admin_revoke_session(body.get("sessionId")))
-                if path == "/v1/admin/project/revoke-sessions":
-                    require_admin(token)
-                    return self.response(200, admin_revoke_project_sessions(body.get("moduleId")))
-                if not token:
-                    raise PermissionError("Authorization is required")
-                if path == "/v1/session/issue":
-                    return self.response(
-                        200,
-                        issue(
-                            token,
-                            int(body.get("expiresIn", 0)),
-                            body.get("moduleId"),
-                            body.get("moduleName"),
-                        ),
-                    )
-                if path == "/v1/session/status":
-                    return self.response(200, status(token, body.get("moduleId")))
-                if path == "/v1/session/revoke":
-                    return self.response(200, revoke(token, body.get("moduleId")))
+            # No global lock: SQLite WAL + per-user issue locks; upstream HTTP stays concurrent.
+            if path == "/v1/admin/session/revoke":
+                require_admin(token)
+                return self.response(200, admin_revoke_session(body.get("sessionId")))
+            if path == "/v1/admin/project/revoke-sessions":
+                require_admin(token)
+                return self.response(200, admin_revoke_project_sessions(body.get("moduleId")))
+            if not token:
+                raise PermissionError("Authorization is required")
+            if path == "/v1/session/issue":
+                return self.response(
+                    200,
+                    issue(
+                        token,
+                        int(body.get("expiresIn", 0)),
+                        body.get("moduleId"),
+                        body.get("moduleName"),
+                    ),
+                )
+            if path == "/v1/session/status":
+                return self.response(200, status(token, body.get("moduleId")))
+            if path == "/v1/session/revoke":
+                return self.response(200, revoke(token, body.get("moduleId")))
             return self.response(404, {"error": "not_found"})
         except PermissionError as error:
             code = "admin_unauthorized" if self.path.startswith("/v1/admin/") else "identity_invalid"
@@ -619,5 +803,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    load_state()
+    load_ledger()
+    print(
+        f"t4y-key-broker listening on {CONFIG['host']}:{CONFIG['port']} "
+        f"sqlite={CONFIG['sqlite']} identity_cache_ttl={CONFIG['identity_cache_ttl']}s",
+        flush=True,
+    )
     ThreadingHTTPServer((CONFIG["host"], CONFIG["port"]), Handler).serve_forever()

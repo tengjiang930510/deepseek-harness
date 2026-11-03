@@ -12,6 +12,7 @@ import {
   resolveMacOSSigningEnvironment,
 } from './desktop-release-environment.mjs'
 import { notarizeMacOSDiskImageArtifact } from './notarize-macos-disk-images.mjs'
+import { verifyMacOSDiskImageSignature } from './verify-macos-signature.mjs'
 import { verifyMacOSSignatureAfterSign } from './verify-macos-signature.mjs'
 import {
   createWindowsTokenSigner,
@@ -51,22 +52,32 @@ export function createElectronBuilderConfig(
   preparedRuntimeVersion = undefined,
 ) {
   const appId = resolveDesktopAppId(env)
-  const policy = resolveDesktopPolicyEnvironment(env)
   const targetPlatform = env.DSH_DESKTOP_TARGET_PLATFORM
   const resolvedPlatform = targetPlatform ?? hostPlatform
   const resolvedArch = env.DSH_DESKTOP_TARGET_ARCH ?? hostArch
   if (env.DSH_DESKTOP_UNSIGNED !== undefined && !['0', '1'].includes(env.DSH_DESKTOP_UNSIGNED)) {
     throw new Error('desktop package: DSH_DESKTOP_UNSIGNED must be 0 or 1')
   }
+  if (env.DSH_DESKTOP_MACOS_SKIP_NOTARIZATION !== undefined && !['0', '1'].includes(env.DSH_DESKTOP_MACOS_SKIP_NOTARIZATION)) {
+    throw new Error('desktop package: DSH_DESKTOP_MACOS_SKIP_NOTARIZATION must be 0 or 1')
+  }
   const unsigned = env.DSH_DESKTOP_UNSIGNED === '1'
+  const skipNotarization = env.DSH_DESKTOP_MACOS_SKIP_NOTARIZATION === '1'
   const localUnsignedMac = env.DSH_DESKTOP_LOCAL_UNSIGNED_MAC === '1'
-  if (unsigned && resolvedPlatform !== 'win32') throw new Error('desktop package: unsigned builds require Windows')
+    || (unsigned && resolvedPlatform === 'darwin' && !skipNotarization)
+  const policy = localUnsignedMac ? undefined : resolveDesktopPolicyEnvironment(env)
+  if (skipNotarization && unsigned && resolvedPlatform === 'darwin') {
+    throw new Error('desktop package: --skip-notarization requires a signed macOS build')
+  }
+  if (unsigned && !localUnsignedMac && resolvedPlatform !== 'win32') throw new Error('desktop package: unsigned builds require Windows')
   if (localUnsignedMac && resolvedPlatform !== 'darwin') throw new Error('desktop package: local unsigned mac builds require macOS')
   const packagesMacOS = targetPlatform === 'darwin' || (targetPlatform === undefined && hostPlatform === 'darwin')
   const packagesWindows = resolvedPlatform === 'win32'
   if (resolvedPlatform === 'win32') installWindowsDirectoryInstaller()
   const macOSSigning = packagesMacOS && !localUnsignedMac ? resolveMacOSSigningEnvironment(env) : undefined
-  if (packagesMacOS && !localUnsignedMac) resolveMacOSNotarizationEnvironment(env)
+  if (packagesMacOS && !localUnsignedMac && !skipNotarization) {
+    resolveMacOSNotarizationEnvironment(env)
+  }
   const buildPaths = desktopTargetBuildPaths(resolveDesktopBuildTarget(env, hostPlatform, hostArch))
   let primaryRuntimeDestination
   let dshDestination
@@ -104,14 +115,14 @@ export function createElectronBuilderConfig(
     protocols: [{ name: 'DeepSeek Harness', schemes: ['dsh'] }],
     extraMetadata: {
       dshDesktopAppId: appId,
-      dshMandatoryUpdatePolicy: policy,
+      ...(policy === undefined ? {} : { dshMandatoryUpdatePolicy: policy }),
       ...buildVersion === productVersion ? {} : { version: buildVersion },
       ...packaged === undefined ? {} : { dshBuildCommit: packaged.commit, dshBuildDirty: packaged.dirty },
     },
     productName: 'DeepSeek Harness',
     // Unsigned builds carry their own suffix so a shared file can never pass for a release artifact.
-    artifactName: `deepseek-harness-\${version}-\${os}-\${arch}${unsigned ? '-unsigned' : ''}.\${ext}`,
-    directories: { output: unsigned ? buildPaths.unsignedArtifacts : buildPaths.artifacts },
+    artifactName: `deepseek-harness-\${version}-\${os}-\${arch}${unsigned ? '-unsigned' : skipNotarization ? '-unnotarized' : ''}.\${ext}`,
+    directories: { output: unsigned ? buildPaths.unsignedArtifacts : skipNotarization ? buildPaths.unnotarizedArtifacts : buildPaths.artifacts },
     asar: true,
     electronDist: buildPaths.electron,
     electronFuses: { runAsNode: true },
@@ -156,7 +167,7 @@ export function createElectronBuilderConfig(
       category: 'public.app-category.developer-tools',
       // macOS matches the application locale against this bundle, not Electron Framework resources.
       extendInfo: { CFBundleLocalizations: ['en', 'zh_CN'] },
-      identity: macOSSigning?.signingIdentity,
+      identity: localUnsignedMac ? '-' : macOSSigning?.signingIdentity,
       forceCodeSigning: !localUnsignedMac,
       hardenedRuntime: true,
       extendInfo: { NSMicrophoneUsageDescription: 'DeepSeek Harness uses your microphone to transcribe speech into message drafts.' },
@@ -164,10 +175,11 @@ export function createElectronBuilderConfig(
       entitlementsInherit: fileURLToPath(new URL('./macos-entitlements.plist', import.meta.url)),
       // ASAR-unpacked native runtime files are pre-signed; PAK resources are sealed by their enclosing bundle.
       signIgnore: ['/Contents/Resources/app\\.asar\\.unpacked/dsh(?:/|$)', '/Contents/Resources/runtime/primary-runtime(?:/|$)', '\\.pak$'],
-      notarize: !localUnsignedMac,
-      target: ['dmg', 'zip'],
+      notarize: !localUnsignedMac && !skipNotarization,
+      target: localUnsignedMac ? ['dmg'] : ['dmg', 'zip'],
     },
     dmg: {
+      format: 'ULMO',
       sign: !localUnsignedMac,
       writeUpdateInfo: false,
     },
@@ -218,6 +230,10 @@ export function createElectronBuilderConfig(
     },
     artifactBuildCompleted: artifact => {
       if (!artifact.file.endsWith('.dmg') || localUnsignedMac) return
+      if (skipNotarization) {
+        verifyMacOSDiskImageSignature(artifact.file, macOSSigning)
+        return
+      }
       return notarizeMacOSDiskImageArtifact(
         artifact,
         env,

@@ -2,20 +2,27 @@
  * Stage the t4y plugins for a packaged Desktop trial build.
  *
  * Writes `apps/desktop/.desktop-build/trial-plugins/<plugin>/` with each package's published files and a flat,
- * dereferenced copy of its production dependency closure, then points `DSH_DESKTOP_TRIAL_PLUGINS_DIR` in
- * `apps/desktop/.env.windows` at that directory. Packaged Desktop seeds these plugins into its profile on first launch.
+ * dereferenced copy of its production dependency closure, then points `DSH_DESKTOP_TRIAL_PLUGINS_DIR` in the
+ * local macOS and Windows packaging files at that directory. Packaged Desktop seeds these plugins into its profile on first launch.
  * Usage: node tsy-custom-plugins/scripts/stage-desktop-trial-plugins.mjs
  */
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const PLUGINS = ['t4y-brand', 't4y-capability-hub', 't4y-release-manager', 't4y-trial-runtime']
+const PLUGINS = [
+  't4y-tenant',
+  't4y-identity',
+  't4y-brand',
+  't4y-capability-hub',
+  't4y-release-manager',
+  't4y-trial-runtime',
+]
 const pluginsRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const repoRoot = path.resolve(pluginsRoot, '..')
 const desktopRoot = path.join(repoRoot, 'apps/desktop')
 const output = path.join(desktopRoot, '.desktop-build/trial-plugins')
-const envFile = path.join(desktopRoot, '.env.windows')
+const envFiles = ['.env.macos', '.env.windows'].map(file => path.join(desktopRoot, file))
 const ENV_LINE = 'DSH_DESKTOP_TRIAL_PLUGINS_DIR=.desktop-build/trial-plugins'
 
 function readJson(file) {
@@ -50,6 +57,10 @@ function copyDependencies(packageDir, targetModules, copied) {
 }
 
 fs.rmSync(output, { recursive: true, force: true })
+fs.mkdirSync(output, { recursive: true })
+// Omit the development bootstrap manifest from the installer. With no manifest,
+// Desktop seeds each carried package through its local `file:` path rather than
+// persisting a Git release reference for an initial plugin.
 for (const plugin of PLUGINS) {
   const source = path.join(pluginsRoot, plugin)
   const target = path.join(output, plugin)
@@ -66,8 +77,13 @@ for (const plugin of PLUGINS) {
   console.log(`staged ${manifest.name}@${manifest.version}`)
 }
 
-const env = fs.existsSync(envFile) ? fs.readFileSync(envFile, 'utf8') : ''
-if (!/^DSH_DESKTOP_TRIAL_PLUGINS_DIR=/m.test(env)) {
-  fs.writeFileSync(envFile, `${env.replace(/\s*$/, '')}\n${ENV_LINE}\n`)
-  console.log(`added ${ENV_LINE} to apps/desktop/.env.windows`)
+for (const envFile of envFiles) {
+  const env = fs.existsSync(envFile) ? fs.readFileSync(envFile, 'utf8') : ''
+  const next = /^DSH_DESKTOP_TRIAL_PLUGINS_DIR=/m.test(env)
+    ? env.replace(/^DSH_DESKTOP_TRIAL_PLUGINS_DIR=.*$/m, ENV_LINE)
+    : `${env.replace(/\s*$/, '')}\n${ENV_LINE}\n`
+  if (next !== env) {
+    fs.writeFileSync(envFile, next)
+    console.log(`set ${ENV_LINE} in apps/desktop/${path.basename(envFile)}`)
+  }
 }

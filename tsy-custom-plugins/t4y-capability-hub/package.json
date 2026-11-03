@@ -1,7 +1,7 @@
 {
   "name": "t4y-capability-hub",
-  "version": "0.1.7",
-  "description": "武汉地铁能力插件设置页：统一管理在线能力包（如 t4y-review）的启停。",
+  "version": "0.1.18",
+  "description": "武汉地铁授权插件设置页：按项目菜单叶子表单管理安装、启停与最新版更新。",
   "private": true,
   "type": "module",
   "main": "./index.js",
@@ -25,6 +25,7 @@
         "@deepseek-ai/dsh-client-ui-settings-plugins",
         "@deepseek-ai/dsh-api-remotes"
       ],
+      "immediately": true,
       "platform": "web"
     }
   },

@@ -1,11 +1,11 @@
 - id: llm-pi-ai
   config:
     providers:
-      t4y-qwen:
-        displayName: Qwen 3.8
-        apiKeyEnv: T4Y_QWEN_API_KEY
+      t4y-newapi:
+        displayName: 企业模型服务
+        apiKeyEnv: T4Y_NEW_API_KEY
         api: openai-completions
-        baseURL: https://llm-7d9gw5u5aum1zav9.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+        baseURL: http://192.10.51.138:4000/v1
         models:
           - id: qwen3.8-flash
             name: Qwen 3.8 Flash
@@ -13,7 +13,7 @@
             name: Qwen 3.8 Max
 - id: agent-default-model
   config:
-    provider: t4y-qwen
+    provider: t4y-newapi
     model: qwen3.8-flash
 - id: web
   config:
@@ -150,3 +150,7 @@
 - insert:
     - id: t4y-trial-runtime-search
       name: ./index.js
+      config:
+        baseURL: http://192.10.51.138:4000/v1
+        model: qwen3.8-flash
+        credentialRef: T4Y_NEW_API_KEY
