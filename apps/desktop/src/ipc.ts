@@ -15,6 +15,7 @@ export const DESKTOP_IPC = {
   boot: 'dsh-desktop:boot',
   enterWorkspace: 'dsh-desktop:enter-workspace',
   onboardingActive: 'dsh-desktop:onboarding-active',
+  windowCompact: 'dsh-desktop:window-compact',
   onboardingApiKey: 'dsh-desktop:onboarding-api-key',
   bootFailed: 'dsh-desktop:boot-failed',
   browserAcquire: 'dsh-desktop:browser-acquire',

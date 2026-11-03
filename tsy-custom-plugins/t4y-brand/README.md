@@ -1,6 +1,13 @@
 # t4y-brand
 
-Replaces the Web client fish mark with the Wuhan Metro mark and shows **武汉地铁智能助手** in the sidebar. The conversation hero headline is set in `@deepseek-ai/dsh-client-ui-conversation` locales.
+开发流程见 [DEVELOPING.md](./DEVELOPING.md)。
+
+侧栏与会话首屏品牌：默认占位 logo /「智能助手」；登录后由 `t4y-identity` 会话驱动。
+
+| 展示 | 来源 |
+|---|---|
+| 品牌名 | 当前项目 `module.name`，否则 `enterprise.systemName` |
+| Logo | 当前项目 `module.logo`，否则 `enterprise.logo`；失败回退内置图 |
 
 ## Install
 
@@ -12,7 +19,5 @@ Restart `pnpm dsh web`.
 
 ## Assets
 
-- `assets/brand-mark.png` — trimmed 128px logo embedded into `client.js` and the Chat running-status icon
-- Source: `wuhanmetro-mark-transparent.png`
-
-To swap the logo, run `node scripts/prepare-logo.mjs <source.png>`, then `node scripts/gen-client.mjs`, then rebuild `packages/client/ui-chat` with `pnpm run bundle`.
+- `assets/brand-mark.png` — 未登录或远程 logo 失败时的回退图
+- 重新生成回退图：`node scripts/prepare-logo.mjs <source.png>`，再 `node scripts/gen-client.mjs`

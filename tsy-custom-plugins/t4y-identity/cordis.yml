@@ -1,0 +1,10 @@
+# Dev overlay: pnpm dsh web --patch ./tsy-custom-plugins/t4y-tenant/cordis.yml --patch ./tsy-custom-plugins/t4y-identity/cordis.yml
+# 不要在 CLI overlay 里写 llm-pi-ai：会锁住 settings.update。
+# 模型列表由 apply() seed + 登录后 New API /v1/models 同步写入可写 settings 层。
+- insert:
+    - id: t4y-identity
+      name: ./index.js
+      config:
+        apiBaseUrl: https://jgyw.crfsdi.com.cn:51111/backendapi
+        brokerBaseUrl: http://192.10.51.138:4010
+        newApiBaseUrl: http://192.10.51.138:4000/v1

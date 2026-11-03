@@ -1,7 +1,7 @@
 window.__ModuleLoader__.load({
   // The module system normalizes a package's client entry by removing `/client`.
   // Using the canonical specifier prevents one bundle from being registered twice.
-  id: 't4y-review/client',
+  id: 'oa-helper/client',
   factory: (require) => {
     const module = { exports: {} }
     const exports = module.exports
@@ -10,10 +10,25 @@ window.__ModuleLoader__.load({
     const React = require('react')
     const OFFICE_NS = 't4y.office-workflows'
     const COMMAND_KINDS = { leave: 'leave', travel: 'travel', office: 'office' }
+    const OA_HELPER_ACTIONS = {
+      leave: 'leave', 请假: 'leave',
+      travel: 'travel', 出差: 'travel',
+      office: 'office', 办公: 'office',
+    }
+    function parseOaHelperCommandArgs(args) {
+      const text = typeof args === 'string' ? args.trim() : ''
+      if (text === '') return { kind: 'leave', rest: '' }
+      const matched = text.match(/^(\S+)(?:\s+([\s\S]*))?$/)
+      const head = matched?.[1] ?? ''
+      const rest = (matched?.[2] ?? '').trim()
+      const kind = OA_HELPER_ACTIONS[head] || OA_HELPER_ACTIONS[head.toLowerCase()]
+      if (kind) return { kind, rest }
+      return { kind: 'leave', rest: text }
+    }
     const STORAGE_PREFIX = 't4y.office-workflow.v2.'
     const copy = {
       zh: {
-        leave: '请假申请', travel: '出差申请', office: '办公事务',
+        leave: '请假申请', travel: '出差申请', office: '办公事务', select: '请选择',
         leaveType: '假别', annual: '年假', personal: '事假', sick: '病假',
         startDate: '开始日期', endDate: '结束日期', destination: '出差地点', itinerary: '行程安排', budget: '预算（元）', companions: '同行人',
         officeType: '事务类型', meeting: '会议预约', supplies: '办公用品申领', ledger: '流程台账查询', subject: '主题 / 名称', reason: '事由', detail: '说明',
@@ -22,10 +37,10 @@ window.__ModuleLoader__.load({
         submitted: '已提交到办公平台，当前状态：审批中。',
         submitFailed: '提交失败：{message}',
         leaveOnly: '目前仅请假支持提交到办公平台；出差与办公事务仍为本地确认。',
-        draft: '核对并补全申请信息，确认后将写入办公平台请假流程。', status: '待确认'
+        draft: '请核对并补全申请信息。', status: '待确认'
       },
       en: {
-        leave: 'Leave request', travel: 'Business trip', office: 'Office request',
+        leave: 'Leave request', travel: 'Business trip', office: 'Office request', select: 'Select',
         leaveType: 'Leave type', annual: 'Annual leave', personal: 'Personal leave', sick: 'Sick leave',
         startDate: 'Start date', endDate: 'End date', destination: 'Destination', itinerary: 'Itinerary', budget: 'Budget (CNY)', companions: 'Travellers',
         officeType: 'Request type', meeting: 'Meeting reservation', supplies: 'Office supplies', ledger: 'Workflow ledger query', subject: 'Subject / name', reason: 'Reason', detail: 'Details',
@@ -34,7 +49,7 @@ window.__ModuleLoader__.load({
         submitted: 'Submitted to ZhiJianYun. Status: approval pending.',
         submitFailed: 'Submit failed: {message}',
         leaveOnly: 'Only leave requests submit to ZhiJianYun for now; travel and office stay local.',
-        draft: 'Review and complete your request. Confirming will submit the leave form to ZhiJianYun.', status: 'Needs confirmation'
+        draft: 'Review and complete your request.', status: 'Needs confirmation'
       }
     }
     function isRecord(value) { return typeof value === 'object' && value !== null && !Array.isArray(value) }
@@ -116,18 +131,16 @@ window.__ModuleLoader__.load({
     }
     function normalize(input) {
       const kind = COMMAND_KINDS[input.kind] || input.kind
-      const text = [input.reason, input.itinerary, input.detail, input.destination].filter(Boolean).join(' ')
-      const inferred = text ? parseRelativeDates(text) : {}
       return {
         kind: ['leave', 'travel', 'office'].includes(kind) ? kind : 'office',
-        leaveType: input.leave_type || input.leaveType || 'annual',
-        startDate: input.start_date || input.startDate || inferred.start_date || '',
-        endDate: input.end_date || input.endDate || inferred.end_date || '',
+        leaveType: input.leave_type || input.leaveType || '',
+        startDate: input.start_date || input.startDate || '',
+        endDate: input.end_date || input.endDate || '',
         destination: input.destination || '',
         itinerary: input.itinerary || '',
         budget: input.budget === undefined || input.budget === null ? '' : String(input.budget),
         companions: input.companions || '',
-        officeType: input.office_type || input.officeType || 'meeting',
+        officeType: input.office_type || input.officeType || '',
         subject: input.subject || '',
         reason: input.reason || '',
         detail: input.detail || ''
@@ -164,7 +177,7 @@ window.__ModuleLoader__.load({
       }, [initial])
       const update = name => event => setValues(current => ({ ...current, [name]: event.target.value }))
       const needs = values.kind === 'leave'
-        ? ['startDate', 'endDate', 'reason']
+        ? ['leaveType', 'startDate', 'endDate', 'reason']
         : values.kind === 'travel'
           ? ['destination', 'startDate', 'endDate', 'itinerary', 'reason']
           : ['subject', 'detail']
@@ -213,6 +226,7 @@ window.__ModuleLoader__.load({
           React.createElement('form', { onSubmit: submit },
             values.kind === 'leave' && React.createElement(React.Fragment, null,
               React.createElement(Field, { label: t('leaveType'), wide: true }, React.createElement('select', { value: values.leaveType, onChange: update('leaveType'), disabled: busy },
+                React.createElement('option', { value: '' }, t('select')),
                 React.createElement('option', { value: 'annual' }, t('annual')), React.createElement('option', { value: 'personal' }, t('personal')), React.createElement('option', { value: 'sick' }, t('sick')))),
               React.createElement(Field, { label: t('startDate') }, React.createElement('input', { type: 'date', value: values.startDate, onChange: update('startDate'), disabled: busy })),
               React.createElement(Field, { label: t('endDate') }, React.createElement('input', { type: 'date', value: values.endDate, onChange: update('endDate'), disabled: busy }))
@@ -227,6 +241,7 @@ window.__ModuleLoader__.load({
             ),
             values.kind === 'office' && React.createElement(React.Fragment, null,
               React.createElement(Field, { label: t('officeType') }, React.createElement('select', { value: values.officeType, onChange: update('officeType') },
+                React.createElement('option', { value: '' }, t('select')),
                 React.createElement('option', { value: 'meeting' }, t('meeting')), React.createElement('option', { value: 'supplies' }, t('supplies')), React.createElement('option', { value: 'ledger' }, t('ledger')))),
               React.createElement(Field, { label: t('subject') }, React.createElement('input', { value: values.subject, onChange: update('subject') }))
             ),
@@ -253,8 +268,50 @@ window.__ModuleLoader__.load({
         submitLeave,
       })
     }
+    /**
+     * Slash `/oa-helper` has no turn (Host command lifecycle is log-only), so the
+     * turnTail projection never mounts. Specialize the command row instead.
+     */
+    function OfficeCommandView({ node, sessionId, t, submitLeave }) {
+      const args = typeof node.args === 'string' ? node.args : ''
+      if (/^\s*submit\b/i.test(args)) {
+        const text = node.outcome?.text
+        return React.createElement('section', {
+          className: 't4y-office-card',
+          role: node.outcome?.kind === 'error' ? 'alert' : 'status',
+        }, React.createElement('div', { className: 't4y-office-card-frame' },
+          React.createElement('p', { className: 't4y-office-note', style: { margin: 0 } },
+            text || (node.outcome?.kind === 'error' ? t('submitFailed', { message: 'unknown' }) : t('submitted')))))
+      }
+      if (node.outcome === null) {
+        return React.createElement('section', { className: 't4y-office-card', role: 'status' },
+          React.createElement('div', { className: 't4y-office-card-frame' },
+            React.createElement('p', { className: 't4y-office-note', style: { margin: 0 } }, t('status'))))
+      }
+      if (node.outcome?.text !== '已创建办公申请，请在会话卡片中补全并确认。') {
+        return React.createElement('section', {
+          className: 't4y-office-card',
+          role: node.outcome?.kind === 'error' ? 'alert' : 'status',
+        }, React.createElement('div', { className: 't4y-office-card-frame' },
+          React.createElement('p', { className: 't4y-office-note', style: { margin: 0 } }, node.outcome?.text || t('status'))))
+      }
+      const parsed = parseOaHelperCommandArgs(args)
+      const form = { kind: parsed.kind, ...parseCommand(parsed.kind, parsed.rest) }
+      const id = `${sessionId}:${node.commandId}`
+      return React.createElement(OfficeCard, {
+        key: id,
+        node: { id, data: form },
+        t,
+        sessionId,
+        submitLeave,
+      })
+    }
     function officeFormState(event) {
       if (event.type === 'command/run') {
+        if (event.data.name === 'oa-helper') {
+          const parsed = parseOaHelperCommandArgs(event.data.args)
+          return { seq: event.seq, kind: parsed.kind, ...parseCommand(parsed.kind, parsed.rest) }
+        }
         const kind = COMMAND_KINDS[event.data.name]
         return { seq: event.seq, kind, ...parseCommand(kind, event.data.args) }
       }
@@ -262,6 +319,30 @@ window.__ModuleLoader__.load({
     }
     function isOfficeKind(kind) {
       return kind === 'leave' || kind === 'travel' || kind === 'office'
+    }
+    const commandActivity = {
+      kind: 't4y-office-command-activity',
+      target: 't4y-office-command-activity',
+      match: event => event.type === 'command/run' && event.data.name === 'oa-helper'
+        ? { id: String(event.data.commandId), role: 'start' } : null,
+      start: () => ({}),
+      update: context => context.state,
+      buildViewNode: context => ({
+        key: context.key, kind: context.kind, id: context.id,
+        target: 't4y-office-command-activity', data: null,
+      }),
+    }
+    const commandActivityView = {
+      target: 't4y-office-command-activity',
+      create: () => {
+        let active = false
+        return {
+          empty: false,
+          replace: ({ nodes }) => (active = nodes.length > 0),
+          apply: ({ upserts }) => (active = active || upserts.length > 0),
+        }
+      },
+      isActive: snapshot => snapshot,
     }
     // Turn-scoped projection (same seat as schedule_create): survives process-group
     // collapse and stays under the closing assistant text after the turn ends.
@@ -272,17 +353,33 @@ window.__ModuleLoader__.load({
         if (event.type === 'tool/call' && event.data.name === 'office_workflow_prepare' && typeof event.data.turn === 'number') {
           return { id: String(event.data.turn), role: 'update' }
         }
-        if (event.type === 'command/run' && COMMAND_KINDS[event.data.name] && typeof event.data.turn === 'number') {
+        if (event.type === 'tool/result' && typeof event.data.turn === 'number') {
           return { id: String(event.data.turn), role: 'update' }
+        }
+        if (event.type === 'command/run' && typeof event.data.turn === 'number') {
+          if (event.data.name === 'oa-helper') {
+            const parsed = parseOaHelperCommandArgs(event.data.args)
+            if (COMMAND_KINDS[parsed.kind]) return { id: String(event.data.turn), role: 'update' }
+          } else if (COMMAND_KINDS[event.data.name]) {
+            return { id: String(event.data.turn), role: 'update' }
+          }
         }
         return null
       },
       start: (_context, match) => {
         if (match.event.type !== 'turn/start') throw new Error('t4y-office-workflow start requires turn/start')
-        return { turn: match.event.data.turn, form: null }
+        return { turn: match.event.data.turn, form: null, pending: null }
       },
       update: (context, match) => {
-        if (match.event.type === 'tool/call' || match.event.type === 'command/run') {
+        if (match.event.type === 'tool/call') {
+          return { ...context.state, pending: { id: match.event.data.callId, form: officeFormState(match.event) } }
+        }
+        if (match.event.type === 'tool/result') {
+          const pending = context.state.pending
+          if (!pending || match.event.data.message?.source?.callId !== pending.id) return context.state
+          return { ...context.state, pending: null, form: match.event.data.message.isError ? null : pending.form }
+        }
+        if (match.event.type === 'command/run') {
           return { ...context.state, form: officeFormState(match.event) }
         }
         return context.state
@@ -310,17 +407,17 @@ window.__ModuleLoader__.load({
     exports.apply = (ctx) => {
       ctx.effect(() => ctx.locale.register(OFFICE_NS, copy), 't4y review: office workflow locale')
       const submitLeave = async ({ sessionId, leave_type, start_date, end_date, reason }) => {
-        const line = `/leave-submit ${JSON.stringify({ leave_type, start_date, end_date, reason })}`
+        const line = `/oa-helper submit ${JSON.stringify({ leave_type, start_date, end_date, reason })}`
         const result = await ctx.remote.commands.execute(sessionId, line, [])
         if (!result.ok) {
           return { ok: false, message: `${result.error.code}: ${result.error.message}` }
         }
         if (result.value === undefined) {
-          return { ok: false, message: 'unknown command: /leave-submit' }
+          return { ok: false, message: 'unknown command: /oa-helper submit' }
         }
         const commandResult = result.value.result
         if (commandResult?.kind === 'error') {
-          return { ok: false, message: commandResult.text || 'leave-submit failed' }
+          return { ok: false, message: commandResult.text || 'oa-helper submit failed' }
         }
         return { ok: true, message: commandResult?.text || 'ok' }
       }
@@ -458,11 +555,30 @@ window.__ModuleLoader__.load({
         }
       }, 't4y review: office workflow styles')
       ctx.uiConversation.events.register(definition)
-      // A pending application is an actionable result, outside both process disclosures.
+      ctx.uiConversation.events.register(commandActivity)
+      ctx.uiConversation.views.register(commandActivityView)
+      ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
+        name: 'conversation.input.dock', id: 't4y-office-command-activity',
+        inject: sessionId => ({ activate: () => ctx.uiConversation.binding(sessionId).activate('t4y-office-command-activity') }),
+      }, ({ activate }) => {
+        React.useEffect(() => { activate() }, [activate])
+        return null
+      }))
+      // Tool-created cards sit on the turn (office_workflow_prepare).
       ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register(
         { name: 'conversation.chat.turnTail', id: 't4y-office-workflow', locale: OFFICE_NS },
         props => React.createElement(OfficeTurnTail, {
           ...props,
+          t: ctx.locale.bind(OFFICE_NS),
+          submitLeave,
+        })
+      ))
+      // Slash `/oa-helper` is command-scoped (no turn); render the form on the command row.
+      ctx.slots.inject('conversation.chat.commandview', () => ctx.slots.register(
+        { name: 'conversation.chat.commandview', key: 'oa-helper', locale: OFFICE_NS },
+        props => React.createElement(OfficeCommandView, {
+          node: props.node,
+          sessionId: props.sessionId,
           t: ctx.locale.bind(OFFICE_NS),
           submitLeave,
         })

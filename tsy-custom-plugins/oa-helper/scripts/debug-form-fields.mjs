@@ -5,13 +5,17 @@ const LOGIN_URL =
 const LEAVE_FORM_URL =
   'https://jgyw.crfsdi.com.cn:51111/smart-supervision-hhjc/#/company/hhjczhjl/dashboard/2100475767734706178/form/wf87b15ec0603dfd28acd3cf'
 
+const username = process.env.OA_USERNAME
+const password = process.env.OA_PASSWORD
+if (!username || !password) throw new Error('Set OA_USERNAME and OA_PASSWORD before running this script')
+
 const browser = await chromium.launch({ headless: false })
 const context = await browser.newContext({ locale: 'zh-CN', ignoreHTTPSErrors: true })
 const page = await context.newPage()
 page.setDefaultTimeout(60_000)
 await page.goto(LOGIN_URL)
-await page.getByRole('textbox', { name: '请输入用户名' }).fill('admin')
-await page.getByRole('textbox', { name: '请输入密码' }).fill('Tsy@123456')
+await page.getByRole('textbox', { name: '请输入用户名' }).fill(username)
+await page.getByRole('textbox', { name: '请输入密码' }).fill(password)
 await page.getByRole('button', { name: /登录/ }).click()
 await page.getByRole('textbox', { name: '请输入用户名' }).waitFor({ state: 'hidden' })
 // Stay on company product; do not click 返回企业级 (may jump to another portal).

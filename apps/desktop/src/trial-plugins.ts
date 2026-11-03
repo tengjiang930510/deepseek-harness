@@ -5,6 +5,8 @@ import { join } from 'node:path'
 
 /** Profile file recording which trial plugins this installer family has seeded, by package name and version. */
 export const TRIAL_PLUGINS_MARKER = 'trial-plugins.json'
+/** Profile-owned copies of installer-carried plugins; dependency specs point here so the installer volume may unmount. */
+export const TRIAL_PLUGINS_STORE = '.dsh-trial-plugins'
 const BOOTSTRAP_PLUGINS_MANIFEST = 'desktop-bootstrap-plugins.json'
 
 interface ProfileManifestFields {
@@ -21,6 +23,26 @@ interface BootstrapPlugin {
 
 function isLegacyInstallerResource(spec: string | undefined): boolean {
   return spec?.startsWith('file:') === true && spec.includes('/Resources/trial-plugins/')
+}
+
+/** @param name - package name under the profile trial store. */
+function profileTrialSpec(name: string): string {
+  return `file:${TRIAL_PLUGINS_STORE}/${name}`
+}
+
+/**
+ * Persist a carried plugin under the profile and mirror it into `node_modules`.
+ * @param profileDir - Desktop profile directory.
+ * @param name - package name.
+ * @param source - installer-carried package directory to copy.
+ */
+function installTrialCopy(profileDir: string, name: string, source: string): void {
+  const store = join(profileDir, TRIAL_PLUGINS_STORE, name)
+  const target = join(profileDir, 'node_modules', name)
+  rmSync(store, { recursive: true, force: true })
+  cpSync(source, store, { recursive: true })
+  rmSync(target, { recursive: true, force: true })
+  cpSync(store, target, { recursive: true })
 }
 
 function readJsonObject(path: string, label: string): Record<string, unknown> {
@@ -76,6 +98,9 @@ function bootstrapPlugins(pluginsDir: string): BootstrapPlugin[] {
  * Installer-resource dependencies created by pre-manifest Desktop releases are migrated to the explicit bootstrap
  * set. After seeding, a plugin the user removes stays removed; one the profile still declares is replaced when the
  * installer carries another version. Recovery that disables bundles is likewise preserved.
+ *
+ * Dependency specs for installer-copied packages use {@link TRIAL_PLUGINS_STORE} under the profile, not the
+ * installer path, so a DMG or network volume may unmount after the first seed without breaking later resolves.
  * @param profileDir - Initialized Desktop profile directory holding `package.json`.
  * @param pluginsDir - Resource directory whose children each hold one package with its production dependencies.
  */
@@ -90,11 +115,13 @@ export function seedTrialPlugins(profileDir: string, pluginsDir: string): void {
   let changed = false
   const plugins = bootstrapPlugins(pluginsDir)
   const bootstrapNames = new Set(plugins.map(plugin => plugin.name))
+  const hasBootstrapManifest = existsSync(join(pluginsDir, BOOTSTRAP_PLUGINS_MANIFEST))
   for (const [name, spec] of Object.entries(manifest.dependencies ?? {})) {
     if (!bootstrapNames.has(name) && isLegacyInstallerResource(spec)) {
       const index = bundles.indexOf(name)
       if (index !== -1) bundles.splice(index, 1)
       rmSync(join(profileDir, 'node_modules', name), { recursive: true, force: true })
+      rmSync(join(profileDir, TRIAL_PLUGINS_STORE, name), { recursive: true, force: true })
       changed = true
       continue
     }
@@ -109,18 +136,31 @@ export function seedTrialPlugins(profileDir: string, pluginsDir: string): void {
     if (name !== plugin.name) {
       throw new Error(`desktop trial plugins: ${plugin.directory}/package.json does not match ${BOOTSTRAP_PLUGINS_MANIFEST}`)
     }
+    // Manifest git/registry specs stay authoritative; bare installer copies use the profile store.
+    const recordedSpec = hasBootstrapManifest ? plugin.spec : profileTrialSpec(name)
     const target = join(profileDir, 'node_modules', name)
+    const store = join(profileDir, TRIAL_PLUGINS_STORE, name)
     const previous = seeded[name]
+    const currentSpec = dependencies[name]
+    const needsLegacyRewrite = isLegacyInstallerResource(currentSpec)
     if (previous === undefined) {
       if (name in dependencies && !isLegacyInstallerResource(dependencies[name])) continue
-      dependencies[name] = plugin.spec
+      dependencies[name] = recordedSpec
       if (!bundles.includes(name)) bundles.push(name)
-    } else if (!(name in dependencies) || (previous === version && dependencies[name] === plugin.spec && existsSync(join(target, 'package.json')))) {
+    } else if (!(name in dependencies)) {
+      // User removed the package after seeding; do not re-add it.
+      continue
+    } else if (
+      !needsLegacyRewrite
+      && previous === version
+      && currentSpec === recordedSpec
+      && existsSync(join(target, 'package.json'))
+      && existsSync(join(store, 'package.json'))
+    ) {
       continue
     }
-    dependencies[name] = plugin.spec
-    rmSync(target, { recursive: true, force: true })
-    cpSync(source, target, { recursive: true })
+    dependencies[name] = recordedSpec
+    installTrialCopy(profileDir, name, source)
     seeded[name] = version
     changed = true
   }

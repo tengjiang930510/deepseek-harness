@@ -12,15 +12,17 @@ const pluginsRoot = path.join(repoRoot, 'tsy-custom-plugins')
 
 /** Same order as the web profile for a predictable loader graph. */
 const PLUGIN_NAMES = [
-  't4y-review',
+  't4y-tenant',
+  't4y-identity',
   't4y-capability-hub',
   't4y-brand',
   't4y-release-manager',
   't4y-trial-runtime',
 ]
 
+const home = process.env.HOME || process.env.USERPROFILE || ''
 const profileDirs = [
-  path.join(process.env.USERPROFILE ?? '', '.dsh', 'profiles', 'desktop'),
+  path.join(home, '.dsh', 'profiles', 'desktop'),
   path.join(repoRoot, 'apps/desktop/.desktop-build/development/home/profiles/desktop'),
 ].filter(dir => dir && fs.existsSync(path.join(dir, 'package.json')))
 

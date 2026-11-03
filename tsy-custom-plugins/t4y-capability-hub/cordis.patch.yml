@@ -1,3 +1,4 @@
+# 能力（功能）插件设置页；平台内置包（identity 等）由 release-manager 从「已安装插件」列表隐藏。
 - insert:
     - id: t4y-capability-hub
       name: t4y-capability-hub

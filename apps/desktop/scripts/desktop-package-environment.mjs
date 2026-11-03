@@ -20,6 +20,21 @@ const AMBIENT_RELEASE_SETTING = /^(?:DSH_DESKTOP_(?:APP_ID|AUTO_UPDATE_ENV|MANDA
 const FILE_SETTINGS = ['DSH_DESKTOP_WINDOWS_CER_FILE', 'DSH_DESKTOP_WINDOWS_SIGNTOOL', 'DSH_DESKTOP_TRIAL_DEFAULTS_FILE', 'DSH_DESKTOP_TRIAL_PLUGINS_DIR', 'APPLE_API_KEY', 'APPLE_KEYCHAIN', 'CSC_LINK']
 
 /**
+ * Select unsigned local macOS defaults without reading a release dotenv file.
+ * @param {NodeJS.ProcessEnv} environment Parent environment, retained for build tools and networking.
+ * @returns {NodeJS.ProcessEnv} Unsigned build environment with the standard application identifier.
+ */
+export function localMacOSPackageEnvironment(environment = process.env) {
+  return {
+    ...Object.fromEntries(Object.entries(environment).filter(([name]) => !AMBIENT_RELEASE_SETTING.test(name)
+      || name === 'DSH_DESKTOP_TRIAL_DEFAULTS_FILE' || name === 'DSH_DESKTOP_TRIAL_PLUGINS_DIR' || name === 'DSH_DESKTOP_NPM_REGISTRY')),
+    DSH_DESKTOP_APP_ID: 'com.deepseek.harness',
+    DSH_DESKTOP_UNSIGNED: '1',
+    DSH_DESKTOP_LOCAL_UNSIGNED_MAC: '1',
+  }
+}
+
+/**
  * Read the target's required UTF-8 dotenv file; release settings never fall back to ambient values.
  * @param {'win32' | 'darwin'} platform Target platform.
  * @param {NodeJS.ProcessEnv} environment Parent environment, retained only for unrelated build tools.
@@ -131,7 +146,7 @@ export function validateDesktopPackageEnvironment(environment, target, options =
   if (environment.DSH_DESKTOP_TRIAL_PLUGINS_DIR) validateTrialPluginsDirectory(environment.DSH_DESKTOP_TRIAL_PLUGINS_DIR)
   resolveDesktopAppId(environment)
   resolveNpmRegistry(environment)
-  resolveDesktopPolicyEnvironment(environment)
+  if (target.platform !== 'darwin' || !options.unsigned) resolveDesktopPolicyEnvironment(environment)
   if (target.platform === 'darwin') resolveMacOSPackageSettings(environment)
   else resolveWindowsPackageSettings(environment)
   if (options.unsigned) return

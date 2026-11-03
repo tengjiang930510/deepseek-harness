@@ -62,6 +62,7 @@ if (location.protocol === `${SCHEME}:` && location.hostname === 'app') {
   contextBridge.exposeInMainWorld('dshOnboarding', {
     hasApiKey: () => ipcRenderer.invoke(DESKTOP_IPC.onboardingApiKey) as Promise<boolean>,
     setActive: (active: boolean) => { ipcRenderer.send(DESKTOP_IPC.onboardingActive, active) },
+    setCompact: (compact: boolean) => { ipcRenderer.send(DESKTOP_IPC.windowCompact, compact) },
   })
   ipcRenderer.on(DESKTOP_IPC.enterWorkspace, () => {
     const body = document.body

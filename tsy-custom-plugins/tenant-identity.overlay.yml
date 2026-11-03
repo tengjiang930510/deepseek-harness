@@ -1,0 +1,38 @@
+# Host-side Web/Desktop 联调：
+# pnpm dsh web --patch apps/web/tests/pin-browse-picker.overlay.yml --patch tsy-custom-plugins/tenant-identity.overlay.yml
+#
+# 不要在本 overlay 里 patch `llm-pi-ai` / `agent-default-model`：
+# CLI overlay 会锁住 settings.update，导致登录后无法用 New API /v1/models 覆盖模型列表。
+# 企业模型路由由 t4y-identity 在可写 settings 层 seed，登录签发后再同步模型。
+- insert:
+    - id: t4y-tenant
+      name: ./t4y-tenant/index.js
+    - id: t4y-identity
+      name: ./t4y-identity/index.js
+      config:
+        apiBaseUrl: https://jgyw.crfsdi.com.cn:51111/backendapi
+        brokerBaseUrl: http://192.10.51.138:4010
+        newApiBaseUrl: http://192.10.51.138:4000/v1
+    - id: t4y-release-manager
+      name: ./t4y-release-manager/index.js
+    - id: t4y-capability-hub
+      name: ./t4y-capability-hub/index.js
+    - id: t4y-trial-runtime-search
+      name: ./t4y-trial-runtime/index.js
+      config:
+        baseURL: http://192.10.51.138:4000/v1
+        model: qwen3.8-flash
+        credentialRef: T4Y_NEW_API_KEY
+- id: web
+  config:
+    searchProvider: t4y-qwen-search
+    fetchProvider: http
+- id: web-search-deepseek
+  disabled: true
+# 企业部署由登录同步模型；设置里的「模型」页不允许用户改提供商/密钥/目录。
+- id: ui-settings-models
+  disabled: true
+- id: tool-web
+  config:
+    fetch: true
+    searchTimeoutMs: 120000

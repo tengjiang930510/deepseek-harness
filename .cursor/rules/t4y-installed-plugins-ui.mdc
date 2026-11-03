@@ -1,0 +1,25 @@
+---
+description: Wuhan Metro t4y plugins must never appear under Desktop/Web「已安装插件」
+alwaysApply: true
+---
+
+# t4y plugins ≠「已安装插件」
+
+Left sidebar **插件** → group **已安装插件** (`bundlesTitle`) is only for user-added third-party bundles.
+
+**Never** surface deployment-owned Wuhan Metro / trial packages there:
+
+- `t4y-tenant`, `t4y-identity`, `t4y-brand`, `t4y-capability-hub`, `t4y-release-manager`, `t4y-trial-runtime`, and any new `t4y-*`
+- Legacy `@deepseek-ai/dsh-t4y-enterprise`
+
+Those packages are seeded / linked into the profile for login, brand, and hub UI. End users manage hub capabilities under **设置 → 授权插件**, not under「已安装插件」.
+
+## 授权插件包名 = 菜单 name
+
+Hub 可下载能力的 npm `package`、Hub `{projectName}/plugins/{name}` 目录名、Cordis 插件 id **必须等于**企业菜单叶子的 `name`（例如菜单 `oa-helper` → 包名 / 目录 `oa-helper`）。不要再加 `t4y-` 前缀；`t4y-*` 只用于部署内置/平台插件。
+
+## Agent obligations
+
+- Do **not** leave orphan `dsh.profile.bundles` entries for packages that are not in `dependencies` (causes 异常 / 未安装 cards).
+- Do **not** “fix” missing t4y cards by adding them to the Installed list; keep the Client filter in `packages/client/ui-plugin-manager` (`isDeploymentOwnedEnterprisePlugin`) and trial seed scripts aligned.
+- When adding a new `t4y-*` package, ensure it stays excluded from「已安装插件」(name prefix `t4y-` is enough with the current filter).

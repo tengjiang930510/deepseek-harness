@@ -1,0 +1,33 @@
+{
+  "name": "t4y-identity",
+  "version": "0.2.10",
+  "description": "\u4f01\u4e1a\u540e\u7aef\u767b\u5f55\u95e8\u7981\uff1aRSA \u767b\u5f55\u3001nickName \u5c55\u793a\u3001module \u5207\u6362\uff0c\u5e76\u9a71\u52a8\u79df\u6237\u4e0e\u54c1\u724c\u3002",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "t4y-capability-hub"
+      ],
+      "platform": "web"
+    }
+  },
+  "license": "MIT"
+}

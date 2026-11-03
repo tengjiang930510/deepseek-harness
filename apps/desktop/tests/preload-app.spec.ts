@@ -28,13 +28,21 @@ it('reads only native login API-key presence through the onboarding bridge', asy
   expect(electron.ipcRenderer.invoke).toHaveBeenCalledWith(DESKTOP_IPC.onboardingApiKey)
 })
 
-it('exposes onboarding size activation to the application document', async () => {
+it('exposes onboarding size controls to the application document', async () => {
   vi.stubGlobal('location', new URL('dsh-app://app/'))
   await import('../src/preload-app.ts')
-  const api = electron.contextBridge.exposeInMainWorld.mock.calls.find(([name]) => name === 'dshOnboarding')?.[1] as { setActive(active: boolean): void }
+  const api = electron.contextBridge.exposeInMainWorld.mock.calls.find(([name]) => name === 'dshOnboarding')?.[1] as {
+    setActive(active: boolean): void
+    setCompact(compact: boolean): void
+  }
   api.setActive(true)
   api.setActive(false)
-  expect(electron.ipcRenderer.send.mock.calls).toEqual([[DESKTOP_IPC.onboardingActive, true], [DESKTOP_IPC.onboardingActive, false]])
+  api.setCompact(true)
+  api.setCompact(false)
+  expect(electron.ipcRenderer.send.mock.calls).toEqual([
+    [DESKTOP_IPC.onboardingActive, true], [DESKTOP_IPC.onboardingActive, false],
+    [DESKTOP_IPC.windowCompact, true], [DESKTOP_IPC.windowCompact, false],
+  ])
 })
 
 it('limits product documents to update status and a native confirmation action', async () => {

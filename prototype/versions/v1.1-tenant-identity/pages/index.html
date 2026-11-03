@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>武汉地铁智能助手 · 登录与租户能力页原型</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            dsh: {
+              primary: '#4d6bfe',
+              'primary-hover': '#3b57e0',
+              mask: 'rgba(15, 23, 42, 0.28)',
+              layer: '#ffffff',
+              border: '#e2e8f0',
+              label: '#0f172a',
+              secondary: '#64748b',
+              tertiary: '#94a3b8',
+              error: '#dc2626',
+            },
+          },
+          fontFamily: {
+            sans: ['"Source Han Sans SC"', '"Noto Sans SC"', 'PingFang SC', 'Microsoft YaHei', 'system-ui', 'sans-serif'],
+          },
+        },
+      },
+    }
+  </script>
+  <style>
+    :root {
+      --dsw-radius-panel: 16px;
+      --dsw-radius-md: 8px;
+      --dsw-mask-blur: blur(8px);
+    }
+    body { margin: 0; min-height: 100vh; background: #f8fafc; font-family: theme('fontFamily.sans'); color: #0f172a; }
+    #app-shell { display: none; }
+    #app-shell.is-visible { display: block; }
+    .t4y-identity-root {
+      position: fixed; inset: 0; z-index: 1200;
+      display: flex; flex-direction: column;
+      background: #f8fafc; user-select: none;
+    }
+    .t4y-identity-stage {
+      display: flex; flex: 1; align-items: center; justify-content: center;
+      padding: 24px; overflow: auto;
+    }
+    .t4y-identity-dialog {
+      position: relative; z-index: 1; width: min(380px, 100%);
+      display: flex; flex-direction: column; gap: 20px;
+      padding: 0 0 24px; border-radius: var(--dsw-radius-panel);
+      background: #fff; box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+      border: 0.5px solid transparent;
+    }
+    .t4y-identity-header { padding: 22px 24px 12px; }
+    .t4y-identity-title { margin: 0; font-size: 16px; line-height: 24px; font-weight: 500; }
+    .t4y-identity-description { margin: 0; padding: 0 24px; font-size: 14px; line-height: 22px; }
+    .t4y-identity-body { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; padding: 0 24px; }
+    .t4y-identity-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #64748b; }
+    .t4y-identity-field input {
+      height: 36px; padding: 0 12px; border: 0.5px solid #cbd5e1; border-radius: 8px; font-size: 14px;
+    }
+    .t4y-identity-field input:focus { outline: none; border-color: #4d6bfe; box-shadow: 0 0 0 2px rgba(77, 107, 254, 0.25); }
+    .t4y-identity-error { margin: 0; font-size: 13px; color: #dc2626; }
+    .t4y-identity-hint { margin: 0; font-size: 12px; color: #94a3b8; }
+    .t4y-identity-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 0 24px; }
+    .t4y-identity-btn {
+      min-width: 72px; height: 36px; padding: 0 14px; border-radius: 8px; font-size: 14px; cursor: pointer;
+    }
+    .t4y-identity-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .t4y-identity-btn-primary { border: 0; padding: 0 16px; font-weight: 500; background: #4d6bfe; color: #fff; }
+    .t4y-identity-btn-primary:hover:not(:disabled) { background: #3b57e0; }
+    .t4y-identity-btn-outline { border: 0.5px solid #cbd5e1; background: transparent; color: #0f172a; }
+    .t4y-identity-btn-outline:hover:not(:disabled) { background: rgba(15, 23, 42, 0.06); }
+  </style>
+</head>
+<body>
+  <div id="app-shell" class="min-h-screen">
+    <div class="mx-auto max-w-3xl px-4 py-10">
+      <p class="text-sm text-slate-400">主界面（仅登录后显示）</p>
+    </div>
+  </div>
+  <div id="app"></div>
+
+  <script>
+    const DEMO_ACCOUNTS = [
+      { username: 'demo', password: 'demo123', tenantId: 'wuhanmetro', displayName: '演示用户' },
+      { username: 'ops', password: 'ops123', tenantId: 'wuhanmetro', displayName: '运维账号' },
+    ]
+    const DEFAULT_TENANT_ID = 'wuhanmetro'
+    const SESSION_KEY = 't4y.identity.session.v1'
+
+    const TENANT_CATALOGS = {
+      wuhanmetro: {
+        schemaVersion: 4,
+        tenantId: 'wuhanmetro',
+        plugins: [
+          {
+            id: 'office-forms',
+            package: 't4y-review',
+            name: { zh: '办公事务表单' },
+            kind: 'capability',
+            commands: ['/leave', '/travel', '/office', '/brand-review'],
+            description: { zh: '在线能力插件。安装后可使用办公申请卡片、审查任务与审查指导。' },
+            releases: [
+              { version: '0.2.5', git: { commit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }, changelog: { zh: '初版办公卡片' } },
+              { version: '0.2.6', git: { commit: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' }, changelog: { zh: '修复表单校验' } },
+              { version: '0.2.7', git: { commit: 'd9d9f1ee65b317605f2bdf143608d89e6d819097' }, changelog: { zh: '请假卡片 turnTail 驻留' } },
+            ],
+          },
+        ],
+      },
+    }
+
+    const state = {
+      session: loadSession(),
+      notice: null,
+      expanded: {},
+      local: loadLocalReleases(),
+      busy: null,
+    }
+
+    function loadSession() {
+      try {
+        const raw = localStorage.getItem(SESSION_KEY)
+        if (!raw) return null
+        const parsed = JSON.parse(raw)
+        if (!parsed || typeof parsed.username !== 'string' || typeof parsed.tenantId !== 'string') return null
+        return parsed
+      } catch { return null }
+    }
+    function saveSession(session) {
+      if (session === null) localStorage.removeItem(SESSION_KEY)
+      else localStorage.setItem(SESSION_KEY, JSON.stringify(session))
+      state.session = session
+    }
+    function loadLocalReleases() {
+      try { return JSON.parse(localStorage.getItem('t4y.release.local.v1') || '{}') } catch { return {} }
+    }
+    function saveLocalReleases() {
+      localStorage.setItem('t4y.release.local.v1', JSON.stringify(state.local))
+    }
+    function ensurePluginLocal(pluginId) {
+      if (!state.local[pluginId]) state.local[pluginId] = { installed: [], active: null, enabled: false }
+      return state.local[pluginId]
+    }
+    function login(username, password) {
+      const account = DEMO_ACCOUNTS.find((item) => item.username === username && item.password === password)
+      if (!account) return { ok: false, message: '账号或密码错误，请重试。' }
+      return {
+        ok: true,
+        session: {
+          username: account.username,
+          displayName: account.displayName,
+          tenantId: account.tenantId,
+          loggedInAt: new Date().toISOString(),
+        },
+      }
+    }
+    function logout() {
+      saveSession(null)
+      state.notice = { kind: 'info', text: '已退出。当前回默认租户 ' + DEFAULT_TENANT_ID + '，请重新登录。' }
+      render()
+    }
+    function installRelease(plugin, release) {
+      const entry = ensurePluginLocal(plugin.id)
+      const record = { version: release.version, commit: release.git.commit, installedAt: new Date().toISOString() }
+      entry.installed = [...entry.installed.filter((item) => item.commit !== record.commit), record]
+      entry.active = { version: record.version, commit: record.commit }
+      entry.enabled = true
+      saveLocalReleases()
+      state.notice = { kind: 'info', text: '已安装 v' + release.version + '，请重启后生效。' }
+      state.busy = null
+      render()
+    }
+    function activateRelease(plugin, release) {
+      const entry = ensurePluginLocal(plugin.id)
+      if (!entry.installed.some((item) => item.commit === release.git.commit)) {
+        installRelease(plugin, release)
+        return
+      }
+      entry.active = { version: release.version, commit: release.git.commit }
+      saveLocalReleases()
+      state.notice = { kind: 'info', text: '已回滚/切换至 v' + release.version + '，请重启后生效。' }
+      state.busy = null
+      render()
+    }
+    function toggleEnabled(pluginId) {
+      const entry = ensurePluginLocal(pluginId)
+      if (!entry.active) return
+      entry.enabled = !entry.enabled
+      saveLocalReleases()
+      state.notice = { kind: 'info', text: entry.enabled ? '已更新启用状态。' : '已关闭。' }
+      render()
+    }
+    function el(tag, attrs, children) {
+      const node = document.createElement(tag)
+      if (attrs) {
+        Object.entries(attrs).forEach(([key, value]) => {
+          if (key === 'className') node.className = value
+          else if (key === 'text') node.textContent = value
+          else if (key.startsWith('on') && typeof value === 'function') node.addEventListener(key.slice(2).toLowerCase(), value)
+          else if (value !== undefined && value !== null) node.setAttribute(key, value)
+        })
+      }
+      ;(children || []).forEach((child) => {
+        if (child == null) return
+        node.appendChild(typeof child === 'string' ? document.createTextNode(child) : child)
+      })
+      return node
+    }
+
+    function renderLogin() {
+      let errorBox
+      const usernameInput = el('input', { name: 'username', autocomplete: 'username', value: '' })
+      const passwordInput = el('input', { name: 'password', type: 'password', autocomplete: 'current-password', value: '' })
+      const form = el('form', {
+        className: 't4y-identity-dialog',
+        role: 'dialog',
+        'aria-modal': 'true',
+        'aria-labelledby': 't4y-identity-title',
+        onSubmit: (event) => {
+          event.preventDefault()
+          const result = login(usernameInput.value.trim(), passwordInput.value)
+          if (!result.ok) {
+            errorBox.textContent = result.message
+            errorBox.hidden = false
+            return
+          }
+          saveSession(result.session)
+          state.notice = { kind: 'info', text: '登录成功，已归属租户 ' + result.session.tenantId }
+          render()
+        },
+      }, [
+        el('div', { className: 't4y-identity-content' }, [
+          el('div', { className: 't4y-identity-header' }, [
+            el('h2', { id: 't4y-identity-title', className: 't4y-identity-title', text: '开始使用' }),
+          ]),
+          el('p', {
+            className: 't4y-identity-description',
+            text: '登录租户账号，或使用演示账号，即可开始使用。你的项目和文件保存在本地。',
+          }),
+          el('div', { className: 't4y-identity-body' }, [
+            el('label', { className: 't4y-identity-field' }, [el('span', { text: '账号' }), usernameInput]),
+            el('label', { className: 't4y-identity-field' }, [el('span', { text: '密码' }), passwordInput]),
+            (() => {
+              errorBox = el('p', { className: 't4y-identity-error', role: 'alert', text: '' })
+              errorBox.hidden = true
+              return errorBox
+            })(),
+            el('p', { className: 't4y-identity-hint', text: '演示账号：demo / demo123 · ops / ops123' }),
+          ]),
+        ]),
+        el('div', { className: 't4y-identity-actions' }, [
+          el('button', {
+            type: 'button',
+            className: 't4y-identity-btn t4y-identity-btn-outline',
+            text: '填入演示账号',
+            onClick: () => {
+              usernameInput.value = 'demo'
+              passwordInput.value = 'demo123'
+              errorBox.hidden = true
+            },
+          }),
+          el('button', { type: 'submit', className: 't4y-identity-btn t4y-identity-btn-primary', text: '登录' }),
+        ]),
+      ])
+      return el('div', { className: 't4y-identity-root' }, [
+        el('div', { className: 't4y-identity-stage' }, [form]),
+      ])
+    }
+
+    function renderCapability() {
+      const tenantId = state.session.tenantId
+      const catalog = TENANT_CATALOGS[tenantId]
+      const header = el('header', { className: 'mb-6 flex flex-wrap items-center justify-between gap-3' }, [
+        el('div', null, [
+          el('h1', { className: 'text-xl font-medium text-slate-900', text: '武汉地铁能力插件' }),
+          el('p', { className: 'mt-1 text-sm text-slate-500', text: '租户 ' + tenantId + ' · 用户 ' + (state.session.displayName || state.session.username) }),
+        ]),
+        el('button', {
+          type: 'button',
+          className: 'rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700',
+          text: '退出登录',
+          onClick: () => logout(),
+        }),
+      ])
+      const intro = el('p', {
+        className: 'mb-4 max-w-3xl text-sm leading-6 text-slate-500',
+        text: '开启或关闭本租户能力插件。版本历史永久保留，可一键回滚。部分变更需重启后生效。',
+      })
+      const notice = state.notice
+        ? el('p', {
+          className: 'mb-4 rounded-lg border px-3 py-2 text-sm ' + (state.notice.kind === 'error' ? 'border-red-200 bg-red-50 text-red-700' : 'border-blue-200 bg-blue-50 text-blue-800'),
+          role: state.notice.kind === 'error' ? 'alert' : 'status',
+          text: state.notice.text,
+        })
+        : null
+
+      const cards = catalog.plugins.map((plugin) => {
+        const entry = ensurePluginLocal(plugin.id)
+        const releases = [...plugin.releases].reverse()
+        const active = entry.active
+        const latest = releases[0]
+        const expanded = !!state.expanded[plugin.id]
+        const missing = !active
+        const actions = missing
+          ? el('button', {
+            type: 'button',
+            className: 'shrink-0 rounded-lg bg-[#4d6bfe] px-3 py-1.5 text-sm text-white',
+            text: state.busy === plugin.id ? '正在安装…' : '安装',
+            onClick: () => { state.busy = plugin.id; render(); setTimeout(() => installRelease(plugin, latest), 400) },
+          })
+          : el('label', { className: 'flex shrink-0 items-center gap-2 text-sm text-slate-600' }, [
+            (() => {
+              const input = el('input', { type: 'checkbox' })
+              input.checked = entry.enabled
+              input.addEventListener('change', () => toggleEnabled(plugin.id))
+              return input
+            })(),
+            el('span', { text: entry.enabled ? '已开启' : '已关闭' }),
+          ])
+        const history = expanded
+          ? el('div', { className: 'mt-4 border-t border-slate-100 pt-4' }, [
+            el('h3', { className: 'mb-2 text-sm font-medium', text: '版本历史（只增不改）' }),
+            el('ul', { className: 'space-y-2' }, releases.map((release) => {
+              const isActive = active && active.commit === release.git.commit
+              const installed = entry.installed.some((item) => item.commit === release.git.commit)
+              return el('li', { className: 'flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm' }, [
+                el('div', null, [
+                  el('div', { className: 'font-medium', text: 'v' + release.version + (isActive ? ' · 当前' : '') }),
+                  el('div', { className: 'text-xs text-slate-500', text: (release.changelog?.zh || '') + ' · ' + release.git.commit.slice(0, 8) }),
+                ]),
+                isActive
+                  ? el('span', { className: 'text-xs text-[#4d6bfe]', text: '使用中' })
+                  : el('button', {
+                    type: 'button',
+                    className: 'rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs',
+                    text: installed ? '回滚至此版' : '安装此版',
+                    onClick: () => { state.busy = plugin.id; render(); setTimeout(() => activateRelease(plugin, release), 350) },
+                  }),
+              ])
+            })),
+          ])
+          : null
+        return el('article', { className: 'rounded-xl border border-slate-200 bg-white p-5 shadow-sm' }, [
+          el('div', { className: 'flex items-start justify-between gap-5' }, [
+            el('div', { className: 'min-w-0 flex-1 space-y-2' }, [
+              el('div', { className: 'flex flex-wrap items-baseline gap-2' }, [
+                el('strong', { className: 'text-base font-medium', text: plugin.name.zh }),
+                active ? el('span', { className: 'text-xs text-slate-400', text: 'v' + active.version }) : null,
+              ]),
+              el('p', { className: 'text-sm text-slate-500', text: missing ? '尚未安装' : plugin.description.zh }),
+              el('p', { className: 'text-sm text-slate-500' }, [
+                el('span', { text: '命令：' }),
+                ...plugin.commands.map((command) => el('code', { className: 'mr-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-xs', text: command })),
+              ]),
+              el('button', {
+                type: 'button',
+                className: 'text-sm text-[#4d6bfe]',
+                text: expanded ? '收起版本历史' : '展开版本历史（' + releases.length + '）',
+                onClick: () => { state.expanded[plugin.id] = !expanded; render() },
+              }),
+              history,
+            ]),
+            actions,
+          ]),
+        ])
+      })
+
+      return el('div', { className: 'mx-auto max-w-3xl px-4 py-10' }, [header, intro, notice, el('div', { className: 'space-y-4' }, cards)])
+    }
+
+    function render() {
+      const root = document.getElementById('app')
+      const shell = document.getElementById('app-shell')
+      root.replaceChildren()
+      if (!state.session) {
+        shell.classList.remove('is-visible')
+        root.appendChild(renderLogin())
+      } else {
+        shell.classList.add('is-visible')
+        root.appendChild(renderCapability())
+      }
+    }
+
+    render()
+  </script>
+</body>
+</html>

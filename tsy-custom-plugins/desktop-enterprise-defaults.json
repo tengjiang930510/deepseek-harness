@@ -1,0 +1,5 @@
+{
+  "plugin": "t4y-identity",
+  "credentialRef": "T4Y_DESKTOP_ENTERPRISE_GATE",
+  "credential": "enabled"
+}

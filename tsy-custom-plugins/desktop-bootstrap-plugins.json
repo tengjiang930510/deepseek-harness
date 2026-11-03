@@ -2,6 +2,16 @@
   "schemaVersion": 1,
   "plugins": [
     {
+      "directory": "t4y-tenant",
+      "name": "t4y-tenant",
+      "spec": "git+https://gitee.com/eureka96/tsy-dsh-plugins-hub.git#3833e77fb2715df2ee67bacb2f3f1cd80052d680"
+    },
+    {
+      "directory": "t4y-identity",
+      "name": "t4y-identity",
+      "spec": "git+https://gitee.com/eureka96/tsy-dsh-plugins-hub.git#4b201885ba2728b1da44d2f72fe274d21d430267"
+    },
+    {
       "directory": "t4y-brand",
       "name": "t4y-brand",
       "spec": "git+https://gitee.com/eureka96/tsy-dsh-plugins-hub.git#4d71110ae9bf5c4bc7ecdcf59237088052db8fa9"
@@ -9,12 +19,12 @@
     {
       "directory": "t4y-capability-hub",
       "name": "t4y-capability-hub",
-      "spec": "git+https://gitee.com/eureka96/tsy-dsh-plugins-hub.git#0d0ec0def25c069d55e8447dbdd02a0c620aa5ae"
+      "spec": "git+https://gitee.com/eureka96/tsy-dsh-plugins-hub.git#c087d3ab29cd739b7a74d86fefdd004fa45dbef4"
     },
     {
       "directory": "t4y-release-manager",
       "name": "t4y-release-manager",
-      "spec": "git+https://gitee.com/eureka96/tsy-dsh-plugins-hub.git#4eaeb5a7b41aa20b42c958cef3236be5a02af2dc"
+      "spec": "git+https://gitee.com/eureka96/tsy-dsh-plugins-hub.git#f52b22b7f72dc9c4ab8fdeca99c1c9570c885894"
     },
     {
       "directory": "t4y-trial-runtime",
