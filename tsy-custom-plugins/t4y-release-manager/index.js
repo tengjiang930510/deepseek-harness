@@ -11,6 +11,8 @@ export const inject = {
   pluginManager: true,
   profileContext: true,
   t4yTenant: { required: false },
+  /** Shared Host enterprise token / outbound (from t4y-identity). */
+  t4yEnterprise: true,
   webServer: true,
 }
 
@@ -826,14 +828,13 @@ export function apply(ctx) {
     async handler(request, response) {
       try {
         const path = new URL(request.url || '/', 'http://localhost').pathname
-        // Enterprise login token (not the DSH web session Authorization header).
-        const authorization = request.headers['x-t4y-access-token']
-          || request.headers['X-T4Y-Access-Token']
         if (request.method === 'GET' && path === '/api/t4y-release/state') {
           const [state, bundles] = await Promise.all([manager.snapshot(), manager.bundleStates()])
           sendJson(response, 200, { ok: true, value: { ...state, bundles } })
           return
         }
+        // Host injects enterprise token from host-session; clients need not send X-T4Y-*.
+        const authorization = await ctx.t4yEnterprise.requireAccessToken(request)
         if (request.method === 'POST' && path === '/api/t4y-release/authorized-coordinates') {
           const body = await readJson(request)
           const moduleId = manager.resolveModuleId(body.moduleId, 'authorized-coordinates')

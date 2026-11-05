@@ -41,7 +41,13 @@ window.__ModuleLoader__.load({
       window.dispatchEvent(new CustomEvent(OVERLAY_UI_EVENT, { detail: { ...overlayUi } }))
     }
     const LOCALE_NS = 't4y.identity'
+    /**
+     * Upstream enterprise API (Host config `apiBaseUrl`). Browser never calls it
+     * directly — mobile tunnels cannot rely on split-DNS / public :51111.
+     */
     const API_BASE_URL = 'https://jgyw.crfsdi.com.cn:51111/backendapi'
+    /** Same-origin Host proxy; PC forwards to {@link API_BASE_URL}. */
+    const ENTERPRISE_PROXY_PATH = '/api/t4y-identity/enterprise-proxy'
     /** File host used when module logo/favicon come back as relative paths. */
     const ASSET_BASE_URL = 'https://eims.crfsdi.com.cn:59111'
     /**
@@ -241,14 +247,30 @@ window.__ModuleLoader__.load({
       }
       let response
       try {
-        response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers })
+        // Host proxies to apiBaseUrl so phone (cpolar/iroh) does not need enterprise DNS/port.
+        response = await fetch(ENTERPRISE_PROXY_PATH, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/plain, */*' },
+          body: JSON.stringify({
+            path,
+            method: options.method || 'GET',
+            headers,
+            ...(options.body !== undefined ? { body: options.body } : {}),
+          }),
+        })
       } catch {
+        return { ok: false, messageKey: 'networkError' }
+      }
+      if (response.status === 502) {
         return { ok: false, messageKey: 'networkError' }
       }
       let json
       try {
         json = await response.json()
       } catch {
+        return { ok: false, messageKey: 'networkError' }
+      }
+      if (json?.error === 'enterprise_upstream_unavailable' || json?.error === 'invalid_path') {
         return { ok: false, messageKey: 'networkError' }
       }
       if (json?.code !== 200) {
@@ -298,13 +320,24 @@ window.__ModuleLoader__.load({
       return apiJson(path, { headers: { Authorization: accessToken } })
     }
 
+    /**
+     * Enterprise token for Host `/api/t4y-identity/*`.
+     * Do not put it in `Authorization` — Mobile WebViews may drop the DSH session
+     * Cookie when that header is set (release-manager already uses this header).
+     * @param {string} accessToken
+     * @returns {Record<string, string>}
+     */
+    function enterpriseHostHeaders(accessToken) {
+      return { 'X-T4Y-Access-Token': accessToken }
+    }
+
     async function issueModelKey(accessToken, expiresIn, context) {
       const moduleId = typeof context?.moduleId === 'string' ? context.moduleId.trim() : ''
       if (moduleId === '') return { ok: false, message: 'moduleId is required' }
       try {
         const response = await fetch('/api/t4y-identity/issue-model-key', {
           method: 'POST',
-          headers: { Authorization: accessToken, 'Content-Type': 'application/json' },
+          headers: { ...enterpriseHostHeaders(accessToken), 'Content-Type': 'application/json' },
           body: JSON.stringify({
             expiresIn,
             moduleId,
@@ -319,12 +352,13 @@ window.__ModuleLoader__.load({
               : {}),
           }),
         })
-        const data = await response.json()
+        let data = null
+        try { data = await response.json() } catch { data = null }
         if (!response.ok || typeof data?.expiresAt !== 'number') {
-          return {
-            ok: false,
-            message: typeof data?.message === 'string' && data.message !== '' ? data.message : undefined,
-          }
+          const detail = typeof data?.message === 'string' && data.message !== ''
+            ? data.message
+            : (typeof data?.error === 'string' ? data.error : `HTTP ${response.status}`)
+          return { ok: false, message: detail }
         }
         return {
           ok: true,
@@ -333,7 +367,9 @@ window.__ModuleLoader__.load({
           models: Array.isArray(data.models) ? data.models : [],
           defaultModel: typeof data.defaultModel === 'string' ? data.defaultModel : undefined,
         }
-      } catch { return { ok: false } }
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : 'network' }
+      }
     }
 
     async function revokeModelKey(accessToken) {
@@ -341,7 +377,7 @@ window.__ModuleLoader__.load({
       try {
         await fetch('/api/t4y-identity/revoke-model-key', {
           method: 'POST',
-          headers: { Authorization: accessToken },
+          headers: enterpriseHostHeaders(accessToken),
         })
       } catch { /* logout continues even if revoke fails */ }
     }
@@ -353,7 +389,7 @@ window.__ModuleLoader__.load({
         await fetch('/api/t4y-identity/set-context', {
           method: 'POST',
           headers: {
-            Authorization: session.accessToken,
+            ...enterpriseHostHeaders(session.accessToken),
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -386,11 +422,14 @@ window.__ModuleLoader__.load({
     async function afterProjectContext(session, { reason }) {
       if (!session) return
       await syncHostContext(session, reason)
-      // Plugin disable talks to the enterprise menu API — do not block the UI switch.
+      // Plugin reconcile hits enterprise menu + Gitee and can stall the Host event
+      // loop; defer so the project-pick UI can dismiss and paint first.
       if (session.moduleId && !session.needsModulePick) {
-        void applyModulePlugins(session).then(() => {
-          emitTenant(session, 'module-plugins-applied')
-        })
+        window.setTimeout(() => {
+          void applyModulePlugins(session).then(() => {
+            emitTenant(session, 'module-plugins-applied')
+          })
+        }, 0)
       }
     }
 
@@ -398,7 +437,7 @@ window.__ModuleLoader__.load({
       try {
         const response = await fetch('/api/t4y-identity/session-status', {
           method: 'POST',
-          headers: { Authorization: accessToken, 'Content-Type': 'application/json' },
+          headers: { ...enterpriseHostHeaders(accessToken), 'Content-Type': 'application/json' },
           body: JSON.stringify({
             ...(typeof moduleId === 'string' && moduleId !== '' ? { moduleId } : {}),
           }),
@@ -415,22 +454,81 @@ window.__ModuleLoader__.load({
       return Math.max(1, Math.floor((session.expiresAt - Date.now()) / 1000))
     }
 
+    function encodePathSegments(path) {
+      return path.split('/').map((part, index) => {
+        if (index === 0 || part === '') return part
+        try {
+          return encodeURIComponent(decodeURIComponent(part))
+        } catch {
+          return encodeURIComponent(part)
+        }
+      }).join('/')
+    }
+
+    const ASSET_PROXY_HOSTS = new Set(['eims.crfsdi.com.cn', 'jgyw.crfsdi.com.cn'])
+    // 方案 B gateway paths (distinct from login ENTERPRISE_PROXY_PATH above).
+    const GATEWAY_ASSET_PATH = '/api/t4y-enterprise/asset'
+    const GATEWAY_PROXY_PATH = '/api/t4y-enterprise/proxy'
+
+    /**
+     * Rewrite intranet asset hosts through Host so Mobile (cpolar/iroh) can load logos.
+     * @param {string} absolute
+     * @returns {string}
+     */
+    function viaAssetProxy(absolute) {
+      try {
+        const parsed = new URL(absolute)
+        if (!ASSET_PROXY_HOSTS.has(parsed.hostname)) return absolute
+        return `${GATEWAY_ASSET_PATH}?url=${encodeURIComponent(parsed.toString())}`
+      } catch {
+        return absolute
+      }
+    }
+
     function resolveAssetUrl(url) {
       if (typeof url !== 'string' || url === '') return ''
-      if (/^(https?:|data:)/i.test(url)) return url
+      if (/^data:/i.test(url)) return url
+      // Accept both 方案 B path and legacy alias stored in older host-session logos.
+      if (url.startsWith(`${GATEWAY_ASSET_PATH}?`) || url.startsWith('/api/t4y-identity/asset-proxy?')) return url
+      if (/^https?:/i.test(url)) {
+        // Absolute enterprise URLs may contain Chinese path segments; encode for WebView.
+        try {
+          const parsed = new URL(url)
+          parsed.pathname = encodePathSegments(parsed.pathname)
+          return viaAssetProxy(parsed.toString())
+        } catch {
+          return viaAssetProxy(url)
+        }
+      }
       if (url.startsWith('/')) {
         // Encode path segments so Chinese filenames (e.g. 图片1.png) load in <img>.
-        const encoded = url.split('/').map((part, index) => {
-          if (index === 0 || part === '') return part
-          try {
-            return encodeURIComponent(decodeURIComponent(part))
-          } catch {
-            return encodeURIComponent(part)
-          }
-        }).join('/')
-        return `${ASSET_BASE_URL}${encoded}`
+        return viaAssetProxy(`${ASSET_BASE_URL}${encodePathSegments(url)}`)
       }
       return url
+    }
+
+    /**
+     * Future plugins: call allowlisted intranet APIs without sending accessToken.
+     * Host injects the token from host-session.
+     * @param {{ path?: string, url?: string, method?: string, headers?: Record<string, string>, body?: unknown }} request
+     * @returns {Promise<{ ok: boolean, status: number, data: unknown, raw: string }>}
+     */
+    async function enterpriseGatewayRequest(request) {
+      const response = await fetch(GATEWAY_PROXY_PATH, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          ...(typeof request?.path === 'string' ? { path: request.path } : {}),
+          ...(typeof request?.url === 'string' ? { url: request.url } : {}),
+          ...(typeof request?.method === 'string' ? { method: request.method } : {}),
+          ...(request?.headers && typeof request.headers === 'object' ? { headers: request.headers } : {}),
+          ...(request?.body !== undefined ? { body: request.body } : {}),
+        }),
+      })
+      const raw = await response.text()
+      let data = null
+      try { data = raw ? JSON.parse(raw) : null } catch { data = raw }
+      return { ok: response.ok, status: response.status, data, raw }
     }
 
     function mapModuleItem(item) {
@@ -643,7 +741,63 @@ window.__ModuleLoader__.load({
       }))
     }
 
-    function writeSession(session, reason = 'update') {
+    /**
+     * Complete sessions only — Mobile should skip both login and project pick.
+     * @param {object | null | undefined} session
+     */
+    function isShareableHostSession(session) {
+      return Boolean(
+        session
+        && typeof session.accessToken === 'string'
+        && session.accessToken !== ''
+        && sessionTenantId(session) !== ''
+        && typeof session.moduleId === 'string'
+        && session.moduleId !== ''
+        && session.needsModulePick !== true
+        && typeof session.expiresAt === 'number'
+        && session.expiresAt > Date.now(),
+      )
+    }
+
+    /** Push Desktop login onto Host so paired Mobile can inherit it. */
+    async function pushHostSession(session) {
+      if (!isShareableHostSession(session)) return
+      try {
+        await fetch('/api/t4y-identity/host-session', {
+          method: 'PUT',
+          headers: {
+            ...enterpriseHostHeaders(session.accessToken),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ session }),
+        })
+      } catch { /* Mobile can still log in manually */ }
+    }
+
+    /** @returns {Promise<object | null>} */
+    async function pullHostSession() {
+      try {
+        const response = await fetch('/api/t4y-identity/host-session', { method: 'GET' })
+        if (!response.ok) return null
+        const data = await response.json()
+        return isShareableHostSession(data?.session) ? data.session : null
+      } catch {
+        return null
+      }
+    }
+
+    async function clearHostSession() {
+      try {
+        await fetch('/api/t4y-identity/host-session', { method: 'DELETE' })
+      } catch { /* ignore */ }
+    }
+
+    /**
+     * @param {object | null} session
+     * @param {string} [reason]
+     * @param {{ skipHostPush?: boolean }} [options]
+     */
+    function writeSession(session, reason = 'update', options = {}) {
       if (session === null) localStorage.removeItem(SESSION_KEY)
       else localStorage.setItem(SESSION_KEY, JSON.stringify(session))
       window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: { session } }))
@@ -652,14 +806,19 @@ window.__ModuleLoader__.load({
       // Keep Host t4yTenant aligned whenever the browser session changes.
       // Logout clears Host via revoke-model-key → identity.logout().
       if (session) void syncHostContext(session, reason)
+      if (options.skipHostPush) return
+      if (session) void pushHostSession(session)
+      else void clearHostSession()
     }
 
     async function doLogout() {
       const current = readSession()
       if (current) rememberLoginPrefs(current)
       if (current?.accessToken) await revokeModelKey(current.accessToken)
+      else await clearHostSession()
       try { localStorage.removeItem(FRESH_AUTH_KEY) } catch { /* ignore */ }
-      writeSession(null, 'logout')
+      writeSession(null, 'logout', { skipHostPush: true })
+      await clearHostSession()
     }
 
     function selectModule(session, moduleId) {
@@ -762,22 +921,35 @@ window.__ModuleLoader__.load({
 
     /** Keep the shell's account trigger labeled with the signed-in person's name. */
     function replaceAccountTriggerLabel(trigger, label) {
+      if (!(trigger instanceof HTMLElement) || !label) return
       const labels = ['更多', 'More']
-      const walker = document.createTreeWalker(trigger, NodeFilter.SHOW_TEXT)
-      let node = walker.nextNode()
-      while (node !== null) {
-        const text = node.textContent?.trim() || ''
-        if (labels.includes(text) || text === label) {
-          if (node.textContent !== label) node.textContent = label
-          return
+      // Prefer the dedicated label span (Host CSS modules always include "label").
+      const labelEl = [...trigger.querySelectorAll('span')].find((span) => (
+        String(span.className || '').includes('label') && !span.querySelector('svg')
+      ))
+      if (labelEl) {
+        if (labelEl.textContent !== label) labelEl.textContent = label
+        labelEl.setAttribute('data-t4y-bound', '1')
+      } else {
+        const walker = document.createTreeWalker(trigger, NodeFilter.SHOW_TEXT)
+        let node = walker.nextNode()
+        while (node !== null) {
+          const text = node.textContent?.trim() || ''
+          if (labels.includes(text) || text === label || text !== '') {
+            if (node.textContent !== label) node.textContent = label
+            break
+          }
+          node = walker.nextNode()
         }
-        // Host may already show a truncated nickname; always force the current display name.
-        if (node.parentElement?.className && String(node.parentElement.className).includes('label')) {
-          if (node.textContent !== label) node.textContent = label
-          return
-        }
-        node = walker.nextNode()
       }
+      // Keep a11y name as the account menu; visible text carries the person name.
+      if (trigger.getAttribute('aria-label') !== '账号菜单'
+        && trigger.getAttribute('aria-label') !== 'Account menu') {
+        trigger.setAttribute('aria-label', '账号菜单')
+      }
+      trigger.setAttribute('title', label)
+      trigger.dataset.t4yAccountLabel = label
+      trigger.dataset.t4yAccountBound = '1'
     }
 
     // Inline glyphs for the DOM account-menu adapter (cannot import ui-primitives icons).
@@ -875,67 +1047,56 @@ window.__ModuleLoader__.load({
 
       const finishReveal = (menu) => {
         if (trigger?.getAttribute('aria-expanded') !== 'true') return
-        // Host Menu uses `transition: all`; revealing mid-remeasure animates a
-        // top jump (e.g. 674→634). Freeze transitions for one frame.
+        // Host Menu uses `transition: all`; revealing mid-remeasure would animate
+        // opacity/top. Freeze transitions across the reveal + a few frames.
         if (menu instanceof HTMLElement) {
-          menu.style.transition = 'none'
+          menu.style.setProperty('transition', 'none', 'important')
           menu.removeAttribute('data-t4y-menu-pending')
         }
         trigger.setAttribute('data-t4y-menu-ready', 'true')
         patchedOpen = true
         if (menu instanceof HTMLElement) {
-          revealFrame = window.requestAnimationFrame(() => {
+          if (revealFrame !== 0) window.cancelAnimationFrame(revealFrame)
+          let held = 0
+          const hold = () => {
             revealFrame = 0
-            if (menu.style.transition === 'none') menu.style.transition = ''
-          })
+            if (!menu.isConnected) return
+            held += 1
+            menu.style.setProperty('transition', 'none', 'important')
+            if (held < 4) {
+              revealFrame = window.requestAnimationFrame(hold)
+              return
+            }
+            menu.style.removeProperty('transition')
+          }
+          revealFrame = window.requestAnimationFrame(hold)
         }
       }
 
       const revealMenu = () => {
-        // Wait until portal top/height stop moving after we inject「切换项目」.
-        if (revealFrame !== 0) window.cancelAnimationFrame(revealFrame)
-        const menu = activeMenu
-        if (!(menu instanceof HTMLElement)) {
-          finishReveal(null)
-          return
-        }
-        let lastTop = menu.style.top
-        let lastHeight = Math.round(menu.getBoundingClientRect().height)
-        let stable = 0
-        let frames = 0
-        const tick = () => {
+        // Reveal as soon as rows are patched. Waiting for layout stability kept
+        // the menu invisible for several frames and read as a flash on mobile.
+        if (revealFrame !== 0) {
+          window.cancelAnimationFrame(revealFrame)
           revealFrame = 0
-          if (disposed || trigger?.getAttribute('aria-expanded') !== 'true') return
-          frames += 1
-          const top = menu.style.top
-          const height = Math.round(menu.getBoundingClientRect().height)
-          if (top === lastTop && height === lastHeight) stable += 1
-          else {
-            stable = 0
-            lastTop = top
-            lastHeight = height
-          }
-          if ((stable >= 2 && frames >= 2) || frames >= 10) {
-            finishReveal(menu)
-            return
-          }
-          revealFrame = window.requestAnimationFrame(tick)
         }
-        revealFrame = window.requestAnimationFrame(tick)
+        finishReveal(activeMenu)
       }
 
       const armReadyFailsafe = () => {
         if (readyTimer !== 0) return
+        // Mobile WebViews are slower; keep the opacity gate from sticking closed.
         readyTimer = window.setTimeout(() => {
           readyTimer = 0
-          if (trigger?.getAttribute('aria-expanded') === 'true') {
+          if (trigger?.getAttribute('aria-expanded') === 'true'
+            && trigger.getAttribute('data-t4y-menu-ready') !== 'true') {
             if (revealFrame !== 0) {
               window.cancelAnimationFrame(revealFrame)
               revealFrame = 0
             }
             finishReveal(activeMenu)
           }
-        }, 160)
+        }, 120)
       }
 
       const syncTriggerChrome = () => {
@@ -946,6 +1107,22 @@ window.__ModuleLoader__.load({
           setLeadingIcon(trigger, ICON_USER, 'user')
           trigger.setAttribute('data-signed-out', 'false')
         }
+      }
+
+      /** Host React re-renders reset the caption to「更多」; keep the display name sticky. */
+      let labelObserver = null
+      const watchTriggerLabel = () => {
+        labelObserver?.disconnect()
+        labelObserver = null
+        if (!(trigger instanceof HTMLElement)) return
+        labelObserver = new MutationObserver(() => {
+          const session = readSession()
+          if (!session?.displayName) return
+          const current = trigger.querySelector('span[class*="label"]')?.textContent?.trim()
+            || trigger.textContent?.trim()
+          if (current !== session.displayName) replaceAccountTriggerLabel(trigger, session.displayName)
+        })
+        labelObserver.observe(trigger, { characterData: true, childList: true, subtree: true })
       }
 
       const hideFeedbackRows = (items) => {
@@ -1064,8 +1241,51 @@ window.__ModuleLoader__.load({
         clearMenuReady()
       }
 
+      let bodyObserved = false
+
+      const unbindTriggerListeners = () => {
+        trigger?.removeEventListener('pointerdown', onTriggerPointerDown, true)
+        trigger?.removeEventListener('keydown', onTriggerKeyDown, true)
+      }
+
+      const attachTrigger = (candidate) => {
+        if (!(candidate instanceof HTMLElement) || disposed) return false
+        if (candidate === trigger && trigger.isConnected) {
+          syncTriggerChrome()
+          return true
+        }
+        unbindTriggerListeners()
+        trigger = candidate
+        trigger.addEventListener('pointerdown', onTriggerPointerDown, true)
+        trigger.addEventListener('keydown', onTriggerKeyDown, true)
+        if (!bodyObserved) {
+          observer.observe(document.body, { childList: true, subtree: true })
+          bodyObserved = true
+        }
+        observer.observe(trigger, { attributes: true, attributeFilter: ['aria-expanded'] })
+        syncTriggerChrome()
+        watchTriggerLabel()
+        if (trigger.getAttribute('aria-expanded') === 'true') syncMenu()
+        return true
+      }
+
+      const findAccountTrigger = () => document.querySelector('[aria-label="账号菜单"], [aria-label="Account menu"]')
+
+      /** Host remounts the sidebar foot after Settings; re-bind the live button. */
+      const ensureTrigger = () => {
+        if (disposed) return
+        if (trigger instanceof HTMLElement && trigger.isConnected) {
+          syncTriggerChrome()
+          return
+        }
+        const candidate = findAccountTrigger()
+        if (candidate instanceof HTMLElement) attachTrigger(candidate)
+      }
+
       const observer = new MutationObserver((records) => {
-        if (disposed || trigger === null) return
+        if (disposed) return
+        ensureTrigger()
+        if (trigger === null) return
 
         // Conceal as soon as the account menu portal mounts — even before aria-expanded flips.
         for (const menu of collectAddedMenus(records)) {
@@ -1089,28 +1309,33 @@ window.__ModuleLoader__.load({
         }
         const menu = findAccountMenuList()
         if (menu === null) return
+        // Do not re-conceal a menu we already revealed — that opacity cycle is the flash.
+        if (
+          patchedOpen
+          && menu === activeMenu
+          && menu.getAttribute('data-t4y-menu-pending') !== 'true'
+          && (switchItem === null || switchItem.isConnected)
+        ) {
+          return
+        }
         if (menu.getAttribute('data-t4y-menu-pending') !== 'true') concealMenu(menu)
         if (!patchedOpen || !switchItem?.isConnected || menu !== activeMenu) syncMenu()
       })
 
       const bindTrigger = () => {
         if (disposed) return
-        const candidate = document.querySelector('[aria-label="账号菜单"], [aria-label="Account menu"]')
+        const candidate = findAccountTrigger()
         if (candidate instanceof HTMLElement) {
-          trigger = candidate
-          trigger.addEventListener('pointerdown', onTriggerPointerDown, true)
-          trigger.addEventListener('keydown', onTriggerKeyDown, true)
-          observer.observe(document.body, { childList: true, subtree: true })
-          observer.observe(trigger, { attributes: true, attributeFilter: ['aria-expanded'] })
-          syncTriggerChrome()
-          if (trigger.getAttribute('aria-expanded') === 'true') syncMenu()
+          attachTrigger(candidate)
           return
         }
         attempts += 1
         if (attempts < 30) frame = window.requestAnimationFrame(bindTrigger)
       }
       const onSession = () => {
+        ensureTrigger()
         syncTriggerChrome()
+        watchTriggerLabel()
         patchedOpen = false
         if (trigger?.getAttribute('aria-expanded') === 'true') syncMenu()
       }
@@ -1119,10 +1344,11 @@ window.__ModuleLoader__.load({
       return () => {
         disposed = true
         clearMenuReady()
+        labelObserver?.disconnect()
+        labelObserver = null
         observer.disconnect()
         if (frame !== null) window.cancelAnimationFrame(frame)
-        trigger?.removeEventListener('pointerdown', onTriggerPointerDown, true)
-        trigger?.removeEventListener('keydown', onTriggerKeyDown, true)
+        unbindTriggerListeners()
         window.removeEventListener(EVENT_NAME, onSession)
         switchItem?.remove()
         switchItem = null
@@ -1171,7 +1397,8 @@ window.__ModuleLoader__.load({
       if (bootGate.current === null) {
         const existing = readSession()
         const fresh = Boolean(existing) && consumeFreshAuth()
-        bootGate.current = { fresh, restore: Boolean(existing) && !fresh }
+        // No local session still bootstraps: Mobile may inherit Desktop via Host.
+        bootGate.current = { fresh, restore: !fresh }
       }
       const startedFresh = bootGate.current.fresh
       const [session, setSession] = React.useState(readSession)
@@ -1211,24 +1438,82 @@ window.__ModuleLoader__.load({
 
       React.useEffect(() => {
         let cancelled = false
-        const existing = readSession()
-        if (!existing) {
-          setBootstrapping(false)
-          emitBrand(null)
-          emitTenant(null, 'anonymous')
-          return undefined
-        }
         if (startedFresh) {
+          const existing = readSession()
           emitBrand(existing)
           emitTenant(existing, 'login')
+          if (existing) void pushHostSession(existing)
           setBootstrapping(false)
           return undefined
         }
         ;(async () => {
+          let existing = readSession()
+          let fromHost = false
+          if (!existing) {
+            const shared = await pullHostSession()
+            if (cancelled) return
+            if (!shared) {
+              setBootstrapping(false)
+              emitBrand(null)
+              emitTenant(null, 'anonymous')
+              return
+            }
+            existing = shared
+            fromHost = true
+            markFreshAuth()
+            writeSession(shared, 'host-sync', { skipHostPush: true })
+            setSession(shared)
+            setModuleId(shared.moduleId || '')
+          }
+
+          // Mobile co-watch: phone only remotes the PC — never refresh enterprise
+          // profile or hit Broker (those hang or fail over cpolar/iroh).
+          if (window.__t4yMobileCowatch?.active) {
+            let keyPresent = typeof existing.llmApiKeyExpiresAt === 'number'
+              && existing.llmApiKeyExpiresAt > Date.now()
+            if (!keyPresent) {
+              try {
+                const shared = await fetch('/api/t4y-identity/host-session', {
+                  method: 'GET',
+                  credentials: 'same-origin',
+                  signal: AbortSignal.timeout(8_000),
+                })
+                if (shared.ok) {
+                  const body = await shared.json()
+                  keyPresent = body?.modelKeyPresent === true
+                    || (typeof body?.session?.llmApiKeyExpiresAt === 'number'
+                      && body.session.llmApiKeyExpiresAt > Date.now())
+                  if (body?.session && isShareableHostSession(body.session)) {
+                    existing = body.session
+                  }
+                }
+              } catch { /* treat as missing */ }
+            }
+            if (cancelled) return
+            if (!keyPresent || !isShareableHostSession(existing)) {
+              // Leave Host session intact; WaitGate tells the user to sign in on PC.
+              writeSession(null, 'mobile-wait', { skipHostPush: true })
+              setSession(null)
+              setBootstrapping(false)
+              emitBrand(null)
+              emitTenant(null, 'anonymous')
+              return
+            }
+            emitBrand(existing)
+            emitTenant(existing, fromHost ? 'host-sync' : 'restore')
+            writeSession(existing, fromHost ? 'host-sync' : 'restore', { skipHostPush: true })
+            setSession(existing)
+            setModuleId(existing.moduleId || '')
+            void syncHostContext(existing, fromHost ? 'mobile-host-sync' : 'mobile-restore')
+            setBootstrapping(false)
+            return
+          }
+
           const result = await loadProfile(existing.accessToken, existing.expiresAt, existing)
           if (cancelled) return
           if (!result.ok) {
-            doLogout()
+            if (fromHost) await clearHostSession()
+            await doLogout()
             setBootstrapping(false)
             return
           }
@@ -1237,23 +1522,24 @@ window.__ModuleLoader__.load({
               tenantId: sessionTenantId(result.session),
               moduleId: result.session.moduleId,
               moduleName: result.session.moduleName,
-              reason: 'restore',
+              reason: fromHost ? 'host-sync' : 'restore',
             })
             if (cancelled) return
             if (!key.ok) {
-              doLogout()
+              if (fromHost) await clearHostSession()
+              await doLogout()
               setBootstrapping(false)
               return
             }
             result.session.llmApiKeyExpiresAt = key.expiresAt
             result.session.keyHomeModuleId = key.homeModuleId || result.session.moduleId
           }
-          writeSession(result.session, 'restore')
+          writeSession(result.session, fromHost ? 'host-sync' : 'restore')
           setSession(result.session)
           setModuleId(result.session.moduleId || '')
           if (!result.session.needsModulePick) {
             await afterProjectContext(result.session, {
-              reason: 'restore',
+              reason: fromHost ? 'host-sync' : 'restore',
             })
           }
           if (cancelled) return
@@ -1304,6 +1590,10 @@ window.__ModuleLoader__.load({
 
       React.useEffect(() => {
         if (!session?.accessToken || session.needsModulePick) return undefined
+        // Mobile co-watch: cpolar/iroh gateways may strip X-T4Y-* headers, so
+        // session-status returns 401 and would falsely log the phone out. Desktop
+        // Host already owns key/session liveness.
+        if (window.__t4yMobileCowatch?.active) return undefined
         let cancelled = false
         const verify = async () => {
           if (typeof session.expiresAt === 'number' && Date.now() >= session.expiresAt) {
@@ -1494,8 +1784,23 @@ window.__ModuleLoader__.load({
               className: `t4y-identity-module-item${moduleId === item.id ? ' is-selected' : ''}`,
               onClick: () => setModuleId(item.id),
             },
-            item.logo
-              ? React.createElement('img', { src: item.logo, alt: '', className: 't4y-identity-module-logo', draggable: false })
+            (resolveAssetUrl(item.logo || item.favicon || ''))
+              ? React.createElement('img', {
+                src: resolveAssetUrl(item.logo || item.favicon || ''),
+                alt: '',
+                className: 't4y-identity-module-logo',
+                draggable: false,
+                loading: 'lazy',
+                decoding: 'async',
+                referrerPolicy: 'no-referrer',
+                onError: (event) => {
+                  const img = event?.currentTarget
+                  if (img) {
+                    img.style.visibility = 'hidden'
+                    img.removeAttribute('src')
+                  }
+                },
+              })
               : React.createElement('span', { className: 't4y-identity-module-logo t4y-identity-module-logo-fallback' }),
             React.createElement('span', { className: 't4y-identity-module-name' }, item.name))))
         moduleDialog = React.createElement(DialogShell, {
@@ -1518,19 +1823,21 @@ window.__ModuleLoader__.load({
             }, '×') : null),
           React.createElement('p', { className: 't4y-identity-description' },
             hasModules ? t('pickModuleDescription') : t('noModuleDescription')),
+          error ? React.createElement('p', { className: 't4y-identity-error', role: 'alert' }, error) : null,
           React.createElement('div', { className: 't4y-identity-body' }, moduleList)),
         React.createElement('div', { className: 't4y-identity-actions' },
           !session.needsModulePick ? React.createElement('button', {
             type: 'button',
             className: 't4y-identity-btn t4y-identity-btn-outline',
+            disabled: busy,
             onClick: closeModuleDialog,
           }, t('cancel')) : null,
           hasModules ? React.createElement('button', {
             type: 'button',
             className: 't4y-identity-btn t4y-identity-btn-primary',
-            disabled: !moduleId,
+            disabled: !moduleId || busy,
             onClick: confirmModule,
-          }, t('confirmModule')) : React.createElement('button', {
+          }, busy ? t('waiting') : t('confirmModule')) : React.createElement('button', {
             type: 'button',
             className: 't4y-identity-btn t4y-identity-btn-primary',
             disabled: busy,
@@ -1675,17 +1982,29 @@ window.__ModuleLoader__.load({
           body:has([aria-label="Account menu"][aria-expanded="true"]) [role="menu"] > [role="presentation"] > div:nth-child(2) {
             display: none !important;
           }
-          /* Pending mark is set synchronously when the menu mounts (before paint). */
+          /* Suppress Host「更多」flash until the adapter stamps the person name. */
+          [aria-label="账号菜单"] span[class*="label"]:not([data-t4y-bound="1"]),
+          [aria-label="Account menu"] span[class*="label"]:not([data-t4y-bound="1"]) {
+            opacity: 0 !important;
+          }
+          /* Pending mark is set synchronously when the menu mounts (before paint).
+             transition:none — Host Menu uses transition:all; opacity must not ease. */
           [role="menu"][data-t4y-menu-pending="true"] {
             opacity: 0 !important;
+            visibility: hidden !important;
             pointer-events: none !important;
+            transition: none !important;
           }
           /* Fallback if the portal paints before our observer marks it. */
           body:has([aria-label="账号菜单"][aria-expanded="true"]:not([data-t4y-menu-ready="true"])) [role="menu"],
           body:has([aria-label="Account menu"][aria-expanded="true"]:not([data-t4y-menu-ready="true"])) [role="menu"] {
             opacity: 0 !important;
+            visibility: hidden !important;
             pointer-events: none !important;
+            transition: none !important;
           }
+          /* Phone chrome (menu z-index, account label ellipsis, settings stack)
+             lives in t4y-mobile-cowatch — identity keeps account adapter logic only. */
           .t4y-identity-stage {
             position: relative;
             z-index: 1;
@@ -1729,6 +2048,27 @@ window.__ModuleLoader__.load({
             display: flex;
             flex-direction: column;
             height: 100%;
+          }
+          /* Project pick on phone: keep list +「进入项目」reachable without clipping. */
+          .t4y-identity-root[data-t4y-identity="module-pick"].t4y-identity-root-gate .t4y-identity-stage {
+            align-items: stretch;
+            padding: max(16px, var(--dsh-frame-overlay-top, 16px)) 16px 16px;
+          }
+          .t4y-identity-root[data-t4y-identity="module-pick"].t4y-identity-root-gate .t4y-identity-dialog {
+            width: 100%;
+            max-width: 480px;
+            max-height: 100%;
+            margin: 0 auto;
+            overflow: auto;
+            -webkit-overflow-scrolling: touch;
+          }
+          .t4y-identity-root[data-t4y-identity="module-pick"] .t4y-identity-module-list {
+            max-height: min(40vh, 320px);
+            touch-action: pan-y;
+          }
+          .t4y-identity-root[data-t4y-identity="module-pick"] .t4y-identity-module-item {
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
           }
           @keyframes t4yIdentityEnter {
             from { opacity: 0; }
@@ -1962,11 +2302,24 @@ window.__ModuleLoader__.load({
           window.addEventListener(EVENT_NAME, handler)
           return () => window.removeEventListener(EVENT_NAME, handler)
         },
+        /** Same-origin proxy URL for intranet logos (Mobile / cpolar). */
+        proxiedAssetUrl: resolveAssetUrl,
         apiBaseUrl: API_BASE_URL,
         defaultTenantId: '',
       }
 
-      ctx.effect(() => () => { delete window.__t4yIdentity }, 't4y identity: bridge')
+      // 方案 B: unified enterprise gateway for future plugins (no accessToken in browser).
+      window.__t4yEnterprise = {
+        request: enterpriseGatewayRequest,
+        assetUrl: resolveAssetUrl,
+        proxyPath: GATEWAY_PROXY_PATH,
+        assetPath: GATEWAY_ASSET_PATH,
+      }
+
+      ctx.effect(() => () => {
+        delete window.__t4yIdentity
+        delete window.__t4yEnterprise
+      }, 't4y identity: bridge')
     }
     return module.exports
   },

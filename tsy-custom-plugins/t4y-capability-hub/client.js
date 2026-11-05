@@ -17,7 +17,10 @@ window.__ModuleLoader__.load({
         shortcut: '在输入框显示快捷按钮',
         shortcutDraft: '请先处理当前输入内容',
         shortcutFailed: '无法打开插件命令，请确认插件已启用后重试',
+        shortcutBar: '插件快捷入口',
         enableToggle: '启用 {name}',
+        stateOn: '已启用',
+        stateOff: '已停用',
         loading: '正在读取插件状态…',
         loginRequired: '请先通过账户菜单登录，再查看或安装当前项目的插件。',
         missing: '尚未安装',
@@ -37,7 +40,10 @@ window.__ModuleLoader__.load({
         shortcut: 'Show shortcut in composer',
         shortcutDraft: 'Finish the current draft first',
         shortcutFailed: 'Could not open the plugin command. Check that the plugin is enabled and try again.',
+        shortcutBar: 'Plugin shortcuts',
         enableToggle: 'Enable {name}',
+        stateOn: 'On',
+        stateOff: 'Off',
         loading: 'Loading plugin status…',
         loginRequired: 'Sign in from the account menu before viewing or installing this project’s plugins.',
         missing: 'Not installed',
@@ -70,19 +76,13 @@ window.__ModuleLoader__.load({
 
     async function releaseRequest(path, body) {
       const url = new URL(path, window.location.origin).toString()
-      // Never put the enterprise token in Authorization — that header is reserved
-      // for the DSH web session; overwriting it yields plain-text 401/404 bodies.
-      const headers = {}
-      const accessToken = window.__t4yIdentity?.getAccessToken?.()
-      const needsEnterpriseAuth = body !== undefined
-      if (needsEnterpriseAuth && typeof accessToken === 'string' && accessToken !== '') {
-        headers['X-T4Y-Access-Token'] = accessToken
-      }
+      // Enterprise accessToken stays on the Host (host-session). Do not send
+      // X-T4Y-* — Mobile gateways strip it; Host injects the token itself.
       const init = body === undefined
-        ? { headers }
+        ? {}
         : {
           method: 'POST',
-          headers: { ...headers, 'content-type': 'application/json' },
+          headers: { 'content-type': 'application/json' },
           body: JSON.stringify(body),
         }
       const response = await fetch(url, init)
@@ -231,13 +231,26 @@ window.__ModuleLoader__.load({
 
     function PluginIcon({ url, size }) {
       const [failedUrl, setFailedUrl] = React.useState(null)
-      if (!url || failedUrl === url) return React.createElement(PluginArtworkDefault, { size })
+      const src = typeof url === 'string' && url !== ''
+        ? (window.__t4yIdentity?.proxiedAssetUrl?.(url) || url)
+        : ''
+      if (!src || failedUrl === src) return React.createElement(PluginArtworkDefault, { size })
       return React.createElement('img', {
-        src: url, alt: '', width: size, height: size,
+        src, alt: '', width: size, height: size,
         className: 't4y-plugin-icon', referrerPolicy: 'no-referrer',
-        onError: () => setFailedUrl(url),
+        onError: () => setFailedUrl(src),
       })
     }
+
+    /**
+     * Slash `/` menu allowlist:
+     * - native core commands only (drop skills / mobile / diagnose / other extras)
+     * - authorized project plugins (`t4y-plugins`)
+     */
+    const SLASH_MENU_SOURCES = new Set(['command', 't4y-plugins'])
+    const NATIVE_SLASH_COMMANDS = new Set([
+      'file', 'goal', 'plan', 'feedback', 'compact', 'permission', 'model', 'export',
+    ])
 
     function createMenuProjection(controller) {
       let original = null
@@ -249,31 +262,41 @@ window.__ModuleLoader__.load({
         original = state
         indexes = new Map()
         const plugins = state.groups.find(group => group.source === 't4y-plugins')
-        const names = new Set(plugins?.status === 'ready' ? plugins.items.map(item => item.name) : [])
+        const pluginNames = new Set(plugins?.status === 'ready' ? plugins.items.map(item => item.name) : [])
         for (const metadata of Object.values(readPluginMetadata())) {
           if (!metadata || !Array.isArray(metadata.commands)) continue
           for (const command of metadata.commands) {
-            if (typeof command === 'string' && command.startsWith('/')) names.add(command.slice(1))
+            if (typeof command === 'string' && command.startsWith('/')) pluginNames.add(command.slice(1))
           }
         }
         let hasDuplicates = false
-        const groups = state.groups.map(group => {
+        const groups = []
+        for (const group of state.groups) {
+          if (!SLASH_MENU_SOURCES.has(group.source)) {
+            indexes.set(group.source, [])
+            continue
+          }
           const mapping = []
           const items = group.items.filter((item, index) => {
-            if (group.source === 'command' && names.has(item.name)) { hasDuplicates = true; return false }
+            if (group.source === 'command') {
+              if (!NATIVE_SLASH_COMMANDS.has(item.name)) return false
+              if (pluginNames.has(item.name)) { hasDuplicates = true; return false }
+            }
             mapping.push(index)
             return true
           })
           indexes.set(group.source, mapping)
-          return { ...group, items }
-        })
+          groups.push({ ...group, items })
+        }
         let highlight = state.highlight
         if (highlight) {
           const mapped = indexes.get(highlight.source)?.indexOf(highlight.index) ?? -1
           if (mapped >= 0) highlight = { source: highlight.source, index: mapped }
           else {
             const hidden = state.groups.find(group => group.source === highlight.source)?.items[highlight.index]
-            const replacement = plugins?.items.findIndex(item => item.name === hidden?.name) ?? -1
+            const replacement = plugins?.status === 'ready'
+              ? plugins.items.findIndex(item => item.name === hidden?.name)
+              : -1
             highlight = replacement < 0 ? null : { source: 't4y-plugins', index: replacement }
           }
         }
@@ -356,9 +379,7 @@ window.__ModuleLoader__.load({
             if (!disposed && request === generation) setPlugins([])
           }
         }
-        const onChange = () => {
-          void refresh()
-        }
+        const onChange = () => { void refresh() }
         const onIdentityChange = (_tenant, reason) => {
           const next = currentPluginIdentity()
           if (reason === 'module-plugins-applied' && samePluginIdentity(identity, next)) {
@@ -381,11 +402,16 @@ window.__ModuleLoader__.load({
         }
       }, [])
       if (!plugins.length) return null
-      return React.createElement('div', { className: 't4y-shortcut-bar' }, error && React.createElement('span', { role: 'alert' }, t('shortcutFailed')), plugins.flatMap((plugin) =>
-        plugin.commands.map((command) => React.createElement('button', {
-          type: 'button', key: `${plugin.key}:${command}`,
-          disabled: input.phase !== 'plain' || input.draft !== '' || input.attachmentIds.length > 0,
-          title: input.draft !== '' ? t('shortcutDraft') : command,
+      const busy = !input || input.phase !== 'plain' || input.draft !== '' || input.attachmentIds.length > 0
+      const buttons = plugins.flatMap((plugin) => plugin.commands.map((command) => {
+        const label = plugin.commands.length === 1 ? (plugin.menuTitle || plugin.name) : command
+        return React.createElement('button', {
+          type: 'button',
+          key: `${plugin.key}:${command}`,
+          className: 't4y-shortcut-inline',
+          disabled: busy,
+          title: busy && input?.draft !== '' ? t('shortcutDraft') : label,
+          'aria-label': label,
           onClick: () => {
             setError(false)
             const span = inputActions.captureInsertion()
@@ -396,7 +422,17 @@ window.__ModuleLoader__.load({
               return resolveCommand(command, span)
             })().then((ok) => { if (!ok) setError(true) }, () => { setError(true) })
           },
-        }, React.createElement(PluginIcon, { url: plugin.iconUrl, size: 18 }), plugin.commands.length === 1 ? (plugin.menuTitle || plugin.name) : command))))
+        },
+          React.createElement(PluginIcon, { url: plugin.iconUrl, size: 18 }),
+          label)
+      }))
+      return React.createElement(React.Fragment, null,
+        error && React.createElement('span', { className: 't4y-shortcut-rail-error', role: 'alert' }, t('shortcutFailed')),
+        React.createElement('div', {
+          className: 't4y-shortcut-bar t4y-shortcut-bar--inline',
+          role: 'toolbar',
+          'aria-label': t('shortcutBar'),
+        }, buttons))
     }
 
     /** Same role="switch" control the system Plugins page uses. */
@@ -442,12 +478,19 @@ window.__ModuleLoader__.load({
         }))
       }
 
-      return React.createElement('article', { className: 't4y-capability-card' },
+      return React.createElement('article', {
+        className: 't4y-capability-card',
+        'data-enabled': enabled ? '1' : '0',
+      },
         React.createElement('div', { className: 't4y-capability-card-main' },
           React.createElement('div', { className: 't4y-capability-card-heading' },
             React.createElement(PluginIcon, { url: plugin.iconUrl, size: 24 }),
             React.createElement('strong', null, title),
-            React.createElement('span', { className: 't4y-capability-version' }, `v${plugin.version}`)),
+            React.createElement('span', { className: 't4y-capability-version' }, `v${plugin.version}`),
+            React.createElement('span', {
+              className: enabled ? 't4y-capability-state t4y-capability-state--on' : 't4y-capability-state',
+              role: 'status',
+            }, enabled ? t('stateOn') : t('stateOff'))),
           description && React.createElement('p', { className: 't4y-capability-description' }, description),
           commands.length > 0 && React.createElement('p', { className: 't4y-capability-commands' },
             React.createElement('span', null, t('commands'), '：'),
@@ -463,13 +506,14 @@ window.__ModuleLoader__.load({
             className: notice.kind === 'error' ? 't4y-capability-error' : 't4y-capability-note',
             role: notice.kind === 'error' ? 'alert' : 'status',
           }, notice.text)),
-        React.createElement(CapabilitySwitch, {
-          checked: enabled,
-          disabled: busy,
-          // Match system Plugins: missing packages accept an "on" toggle to install.
-          label: format(t('enableToggle'), { name: title }),
-          onChange: runToggle,
-        }))
+        React.createElement('div', { className: 't4y-capability-card-switch' },
+          React.createElement(CapabilitySwitch, {
+            checked: enabled,
+            disabled: busy,
+            // Match system Plugins: missing packages accept an "on" toggle to install.
+            label: format(t('enableToggle'), { name: title }),
+            onChange: runToggle,
+          })))
     }
 
     function CapabilityTab(props) {
@@ -512,21 +556,33 @@ window.__ModuleLoader__.load({
         }
         if (!background) setView({ status: 'loading' })
         try {
-          const [plugins, state] = await Promise.all([
+          const [plugins, state, snapshot] = await Promise.all([
             authorizedPlugins(),
             releaseRequest('/api/t4y-release/state'),
+            loadPluginSnapshot().catch(() => null),
           ])
           if (!isCurrent()) return
           const bundles = Array.isArray(state.bundles) ? state.bundles : []
           const byPackage = new Map(bundles.map((bundle) => [bundle.name, bundle.enabled === true]))
+          // Prefer live Host profile (same source as system「插件」页 / slash) so the
+          // switch matches actual enablement when release inventory lags.
+          const liveEnabled = new Set(
+            (snapshot?.state?.bundles || [])
+              .filter((bundle) => bundle && bundle.enabled === true)
+              .map((bundle) => bundle.name),
+          )
           const installed = new Set()
           const enabled = new Set()
           for (const plugin of plugins) {
             const entry = state.plugins?.[plugin.key]
             const present = entry?.active?.commit !== undefined
               || byPackage.has(plugin.package)
+              || liveEnabled.has(plugin.package)
             if (present) installed.add(plugin.key)
-            if (byPackage.get(plugin.package) === true) enabled.add(plugin.key)
+            const packageOn = liveEnabled.size > 0
+              ? liveEnabled.has(plugin.package)
+              : byPackage.get(plugin.package) === true
+            if (packageOn) enabled.add(plugin.key)
           }
           setView({ status: 'ready', plugins, installed, enabled })
         } catch (error) {
@@ -692,10 +748,32 @@ window.__ModuleLoader__.load({
           .t4y-capability-category { display: flex; flex-direction: column; gap: 12px; }
           .t4y-capability-category h3 { margin: 0; font-size: 14px; font-weight: 500; color: var(--dsw-alias-label-primary); }
           .t4y-shortcut-setting { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--dsw-alias-label-secondary); }
-          .t4y-shortcut-bar { display: flex; gap: 4px; max-width: min(40vw, 400px); overflow-x: auto; }
-          .t4y-shortcut-bar button { display: inline-flex; align-items: center; gap: 4px; flex: none; border: 0; border-radius: 6px; padding: 5px 8px; background: transparent; color: var(--dsw-alias-label-primary); cursor: pointer; }
-          .t4y-shortcut-bar button:disabled { opacity: .5; cursor: default; }
-          .t4y-shortcut-bar button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); }
+          .t4y-shortcut-rail-error {
+            margin: 0;
+            color: var(--dsw-alias-state-error-primary);
+            font-size: 12px;
+            line-height: 1.4;
+          }
+          .t4y-shortcut-bar--inline {
+            display: flex;
+            gap: 4px;
+            max-width: min(40vw, 400px);
+            overflow-x: auto;
+          }
+          .t4y-shortcut-inline {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            flex: none;
+            border: 0;
+            border-radius: 6px;
+            padding: 5px 8px;
+            background: transparent;
+            color: var(--dsw-alias-label-primary);
+            cursor: pointer;
+          }
+          .t4y-shortcut-inline:disabled { opacity: .5; cursor: default; }
+          .t4y-shortcut-inline:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); }
           .t4y-capability-intro,
           .t4y-capability-note,
           .t4y-capability-description,
@@ -714,6 +792,48 @@ window.__ModuleLoader__.load({
             border: 1px solid var(--dsw-alias-border-l2);
             border-radius: 12px;
             background: var(--dsw-alias-bg-base);
+          }
+          .t4y-capability-card-switch {
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+            padding-top: 2px;
+          }
+          .t4y-capability-state {
+            margin-left: auto;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 12px;
+            line-height: 18px;
+            color: var(--dsw-alias-label-secondary, #475569);
+            background: var(--dsw-alias-bg-module-platform, #f1f5f9);
+          }
+          .t4y-capability-state--on {
+            color: var(--dsw-alias-brand-primary, #0f766e);
+            background: color-mix(in srgb, var(--dsw-alias-brand-primary, #0f766e) 12%, transparent);
+          }
+          @media (max-width: 720px) {
+            .t4y-capability {
+              max-width: none;
+              gap: 12px;
+            }
+            .t4y-capability-card {
+              flex-direction: row;
+              align-items: flex-start;
+              gap: 12px;
+              padding: 14px 14px;
+            }
+            .t4y-capability-card-heading {
+              flex-wrap: wrap;
+              gap: 6px 10px;
+            }
+            .t4y-capability-card-switch {
+              align-self: flex-start;
+              padding-top: 4px;
+            }
+            .t4y-shortcut-setting {
+              align-items: flex-start;
+            }
           }
           .t4y-capability-card-main { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 8px; }
           .t4y-capability-card-heading {

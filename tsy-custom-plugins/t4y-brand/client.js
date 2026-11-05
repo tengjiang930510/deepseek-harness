@@ -16,9 +16,11 @@ window.__ModuleLoader__.load({
       if (!session) {
         return { name: FALLBACK_BRAND_NAME, logo: FALLBACK_LOGO_SRC, enterpriseLogo: '' }
       }
+      const proxy = window.__t4yIdentity?.proxiedAssetUrl
+      const proxied = (url) => (typeof url === 'string' && url !== '' && typeof proxy === 'function' ? (proxy(url) || url) : (url || ''))
       const name = session.moduleName || session.systemName || FALLBACK_BRAND_NAME
-      const enterpriseLogo = session.logo || ''
-      const logo = session.moduleLogo || enterpriseLogo || FALLBACK_LOGO_SRC
+      const enterpriseLogo = proxied(session.logo || '')
+      const logo = proxied(session.moduleLogo || '') || enterpriseLogo || FALLBACK_LOGO_SRC
       return { name, logo: logo || FALLBACK_LOGO_SRC, enterpriseLogo }
     }
 

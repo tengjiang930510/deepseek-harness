@@ -541,8 +541,23 @@ window.__ModuleLoader__.load({
           @container (max-width: 420px) {
             .t4y-office-card-frame { padding: 18px; }
             .t4y-office-card form { grid-template-columns: 1fr; }
-            .t4y-office-submit { width: 100%; }
+            .t4y-office-submit { width: 100%; justify-self: stretch; }
             .t4y-office-card-submitted .t4y-office-card-heading { align-items: flex-start; flex-direction: column; }
+          }
+          /* Viewport fallback when the chat column is crushed (e.g. drawer open
+             beside content) and container queries do not fire as expected. */
+          @media (max-width: 720px) {
+            .t4y-office-card-frame { padding: 16px; }
+            .t4y-office-card form { grid-template-columns: 1fr; }
+            .t4y-office-submit {
+              width: 100%;
+              justify-self: stretch;
+              white-space: normal;
+            }
+            .t4y-office-card-heading {
+              align-items: flex-start;
+              flex-direction: column;
+            }
           }
         `
         let disposed = false

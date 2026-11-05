@@ -31,7 +31,7 @@ pnpm dsh web
 
 Broker / New API 地址写在 profile 或 patch 的 identity `config` 里，**不要**用 CLI `--patch` 去锁 `llm-pi-ai` / `agent-default-model`（会阻断登录后写模型列表）。
 
-会话调试：`localStorage['t4y.identity.session.v1']`；偏好：`t4y.identity.prefs.v1`。
+会话调试：`localStorage['t4y.identity.session.v1']`；偏好：`t4y.identity.prefs.v1`；跨端共享：`~/.dsh/t4y-identity/host-session.json`（`GET/PUT/DELETE /api/t4y-identity/host-session`）。
 
 ## 验证
 

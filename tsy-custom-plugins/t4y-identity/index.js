@@ -1,7 +1,16 @@
 /** Host half: enterprise identity config; bridges enterprise tokens to New API keys via Broker into credential slot `T4Y_NEW_API_KEY`. */
-import { mkdir, realpath } from 'node:fs/promises'
-import { homedir } from 'node:os'
+import { mkdir, readFile, realpath, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import {
+  createEnterpriseAccess,
+  dshHome,
+  ENTERPRISE_ASSET_PATH,
+  ENTERPRISE_PROXY_PATH,
+  hostSessionPath,
+  parseAllowedEnterpriseUrl,
+  resolveEnterpriseAccessToken,
+  resolveEnterpriseProxyTarget,
+} from './enterprise-access.js'
 
 export const name = 't4y-identity'
 export const inject = {
@@ -32,11 +41,81 @@ const MODEL_CREDENTIAL_REF = 'T4Y_NEW_API_KEY'
 const LLM_SETTINGS_NAMESPACE = 'llm-pi-ai'
 const LLM_PROVIDER = 't4y-newapi'
 
-/** @returns {string} */
-function dshHome() {
-  const configured = process.env.DSH_HOME
-  if (typeof configured === 'string' && configured !== '') return configured
-  return join(homedir(), '.dsh')
+/**
+ * Keep only fields Mobile needs to skip the login gate. Drop incomplete picks.
+ * @param {unknown} raw
+ * @returns {object | null}
+ */
+function sanitizeSharedSession(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const body = /** @type {Record<string, unknown>} */ (raw)
+  if (typeof body.accessToken !== 'string' || body.accessToken.trim() === '') return null
+  if (typeof body.expiresAt !== 'number' || !Number.isFinite(body.expiresAt) || body.expiresAt <= Date.now()) return null
+  if (body.needsModulePick === true) return null
+  const tenantId = typeof body.tenantId === 'string' && body.tenantId.trim() !== ''
+    ? body.tenantId.trim()
+    : (typeof body.enterpriseId === 'string' ? body.enterpriseId.trim() : '')
+  if (tenantId === '' || tenantId.includes('/') || tenantId.includes('..')) return null
+  const moduleId = typeof body.moduleId === 'string' ? body.moduleId.trim() : ''
+  if (moduleId === '') return null
+  const modules = Array.isArray(body.modules)
+    ? body.modules.filter((item) => item && typeof item === 'object' && typeof item.id === 'string' && item.id !== '').slice(0, 64)
+    : []
+  return {
+    accessToken: body.accessToken.trim(),
+    expiresAt: body.expiresAt,
+    username: typeof body.username === 'string' ? body.username : '',
+    displayName: typeof body.displayName === 'string' ? body.displayName : '',
+    tenantId,
+    enterpriseName: typeof body.enterpriseName === 'string' ? body.enterpriseName : '',
+    systemName: typeof body.systemName === 'string' ? body.systemName : '',
+    logo: typeof body.logo === 'string' ? body.logo : '',
+    roles: Array.isArray(body.roles) ? body.roles.filter((role) => typeof role === 'string').slice(0, 32) : [],
+    moduleId,
+    moduleName: typeof body.moduleName === 'string' ? body.moduleName : null,
+    moduleLogo: typeof body.moduleLogo === 'string' ? body.moduleLogo : null,
+    modules,
+    loggedInAt: typeof body.loggedInAt === 'string' ? body.loggedInAt : new Date().toISOString(),
+    needsModulePick: false,
+    ...(typeof body.llmApiKeyExpiresAt === 'number' && Number.isFinite(body.llmApiKeyExpiresAt)
+      ? { llmApiKeyExpiresAt: body.llmApiKeyExpiresAt }
+      : {}),
+    ...(typeof body.keyHomeModuleId === 'string' && body.keyHomeModuleId !== ''
+      ? { keyHomeModuleId: body.keyHomeModuleId }
+      : {}),
+  }
+}
+
+/**
+ * @returns {Promise<object | null>}
+ */
+async function readHostSessionFile() {
+  try {
+    const raw = await readFile(hostSessionPath(), 'utf8')
+    const parsed = JSON.parse(raw)
+    const session = sanitizeSharedSession(parsed?.session ?? parsed)
+    if (!session) {
+      try { await unlink(hostSessionPath()) } catch { /* missing/expired */ }
+      return null
+    }
+    return session
+  } catch {
+    return null
+  }
+}
+
+/**
+ * @param {object | null} session
+ * @returns {Promise<void>}
+ */
+async function writeHostSessionFile(session) {
+  const path = hostSessionPath()
+  if (session === null) {
+    try { await unlink(path) } catch { /* already gone */ }
+    return
+  }
+  await mkdir(join(dshHome(), 't4y-identity'), { recursive: true })
+  await writeFile(path, `${JSON.stringify({ version: 1, updatedAt: Date.now(), session }, null, 0)}\n`, 'utf8')
 }
 
 /**
@@ -328,7 +407,12 @@ export class T4yIdentity {
  */
 export function apply(ctx, config = {}) {
   const identity = new T4yIdentity(ctx.t4yTenant, config ?? {})
+  const enterprise = createEnterpriseAccess({
+    apiBaseUrl: identity.apiBaseUrl || DEFAULT_API_BASE_URL,
+  })
   ctx.provide('t4yIdentity', identity)
+  // Shared Host enterprise token + outbound helpers for release-manager and future plugins.
+  ctx.provide('t4yEnterprise', enterprise)
   // Provider shell must live in the writable settings layer. A CLI overlay on
   // `llm-pi-ai` would block later New API catalog sync after Key issue.
   ctx.effect(() => {
@@ -360,6 +444,126 @@ export function apply(ctx, config = {}) {
   }
 
   /**
+   * Enterprise access token for Broker / Host context (see resolveEnterpriseAccessToken).
+   * @param {Request} request
+   * @returns {Promise<string | null>}
+   */
+  const enterpriseAuthorization = (request) => resolveEnterpriseAccessToken(request)
+
+  /**
+   * Fetch an allowlisted intranet asset through the Host (phone cannot reach eims/jgyw).
+   * @param {Request} request
+   * @returns {Promise<Response>}
+   */
+  const fetchEnterpriseAsset = async (request) => {
+    let target
+    try {
+      target = new URL(request.url, 'http://localhost').searchParams.get('url')
+    } catch {
+      return json(400, { error: 'invalid_request' })
+    }
+    if (typeof target !== 'string' || target === '') return json(400, { error: 'invalid_request' })
+    const parsed = parseAllowedEnterpriseUrl(target)
+    if (!parsed) return json(400, { error: 'host_not_allowed' })
+    try {
+      const upstream = await fetch(parsed.toString(), {
+        method: 'GET',
+        redirect: 'follow',
+        signal: AbortSignal.timeout(20_000),
+      })
+      const contentType = upstream.headers.get('content-type') || 'application/octet-stream'
+      if (!upstream.ok) {
+        return new Response(null, { status: upstream.status === 404 ? 404 : 502 })
+      }
+      return new Response(upstream.body, {
+        status: 200,
+        headers: {
+          'content-type': contentType,
+          'cache-control': 'private, max-age=300',
+        },
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      ctx.logger?.warn?.('t4y-enterprise: asset proxy failed: %s', message)
+      return json(502, { error: 'asset_upstream_unavailable' })
+    }
+  }
+
+  // 方案 B canonical asset gateway
+  ctx.connection.fetch.register({
+    path: ENTERPRISE_ASSET_PATH,
+    methods: ['GET'],
+    requestBody: 'buffered',
+    fetch: fetchEnterpriseAsset,
+  })
+  // Compatibility alias used by older session-stored logo URLs
+  ctx.connection.fetch.register({
+    path: '/api/t4y-identity/asset-proxy',
+    methods: ['GET'],
+    requestBody: 'buffered',
+    fetch: fetchEnterpriseAsset,
+  })
+
+  /**
+   * Generic enterprise API proxy: Host injects accessToken; clients never send it.
+   * Body: { path: "/system/..." } or { url: "https://jgyw.../..." }, plus method/headers/body.
+   */
+  ctx.connection.fetch.register({
+    path: ENTERPRISE_PROXY_PATH,
+    methods: ['POST'],
+    requestBody: 'buffered',
+    async fetch(request) {
+      const accessToken = await resolveEnterpriseAccessToken(request)
+      if (!accessToken) return json(401, { error: 'authorization_required' })
+      let body
+      try { body = await request.json() } catch { return json(400, { error: 'invalid_request' }) }
+      const resolved = resolveEnterpriseProxyTarget(body, enterprise.apiBaseUrl)
+      if (!resolved.ok) return json(400, { error: resolved.error })
+      const method = typeof body?.method === 'string' ? body.method.toUpperCase() : (body?.body === undefined ? 'GET' : 'POST')
+      if (method !== 'GET' && method !== 'POST' && method !== 'PUT' && method !== 'DELETE') {
+        return json(400, { error: 'invalid_method' })
+      }
+      /** @type {Record<string, string>} */
+      const headers = {
+        Accept: 'application/json, text/plain, */*',
+      }
+      const incoming = body?.headers && typeof body.headers === 'object' ? body.headers : {}
+      for (const key of ['Content-Type', 'browser', 'operating-system', 'operator-type', 'module-id']) {
+        const value = incoming[key]
+        if (typeof value === 'string' && value !== '') headers[key] = value
+      }
+      // Never let the browser override Authorization — Host owns the enterprise token.
+      headers.Authorization = accessToken
+      let upstreamBody
+      if (method !== 'GET' && body?.body !== undefined) {
+        if (typeof body.body === 'string') upstreamBody = body.body
+        else {
+          upstreamBody = JSON.stringify(body.body)
+          if (headers['Content-Type'] === undefined) headers['Content-Type'] = 'application/json'
+        }
+      }
+      try {
+        const upstream = await fetch(resolved.target.toString(), {
+          method,
+          headers,
+          ...(upstreamBody === undefined ? {} : { body: upstreamBody }),
+          signal: AbortSignal.timeout(30_000),
+        })
+        const contentType = upstream.headers.get('content-type') || 'application/json'
+        const text = await upstream.text()
+        return new Response(text, {
+          status: upstream.status,
+          headers: { 'content-type': contentType, 'cache-control': 'no-store' },
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        ctx.logger?.warn?.('t4y-enterprise: proxy upstream failed: %s', message)
+        return json(502, { error: 'enterprise_upstream_unavailable', message })
+      }
+    },
+  })
+
+  /**
    * Write Host t4yTenant from a client body. Returns null when the body has no
    * usable system `tenantId` (callers that require context treat that as invalid_request).
    * `moduleId` is the enterprise id. Accepts brief `enterpriseId` alias as system tenant.
@@ -383,12 +587,80 @@ export function apply(ctx, config = {}) {
     }
   }
 
+  /**
+   * Allow only enterprise auth/menu paths so the proxy cannot be used as an open SSRF.
+   * @param {unknown} path
+   * @returns {string | null}
+   */
+  const normalizeEnterpriseProxyPath = (path) => {
+    if (typeof path !== 'string' || path === '') return null
+    if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\') || path.includes('..')) return null
+    const pathname = path.split('?', 1)[0] || ''
+    if (!(pathname.startsWith('/auth/') || pathname.startsWith('/system/'))) return null
+    if (path.length > 512) return null
+    return path
+  }
+
+  /**
+   * Forward browser enterprise-login calls through the Host process.
+   * Mobile (cpolar/iroh) cannot reach split-DNS / firewalled public endpoints; the PC can.
+   */
+  ctx.connection.fetch.register({
+    path: '/api/t4y-identity/enterprise-proxy',
+    methods: ['POST'],
+    requestBody: 'buffered',
+    async fetch(request) {
+      let body
+      try { body = await request.json() } catch { return json(400, { error: 'invalid_request' }) }
+      const path = normalizeEnterpriseProxyPath(body?.path)
+      if (path === null) return json(400, { error: 'invalid_path' })
+      const method = typeof body?.method === 'string' ? body.method.toUpperCase() : 'GET'
+      if (method !== 'GET' && method !== 'POST') return json(400, { error: 'invalid_method' })
+
+      /** @type {Record<string, string>} */
+      const headers = {
+        Accept: 'application/json, text/plain, */*',
+      }
+      const incoming = body?.headers && typeof body.headers === 'object' ? body.headers : {}
+      for (const key of ['Authorization', 'Content-Type', 'browser', 'operating-system', 'operator-type']) {
+        const value = incoming[key]
+        if (typeof value === 'string' && value !== '') headers[key] = value
+      }
+      if (method === 'POST' && headers['Content-Type'] === undefined) {
+        headers['Content-Type'] = 'application/json'
+      }
+
+      let upstream
+      try {
+        upstream = await fetch(`${identity.apiBaseUrl}${path}`, {
+          method,
+          headers,
+          ...(method === 'GET' || body?.body === undefined
+            ? {}
+            : { body: typeof body.body === 'string' ? body.body : JSON.stringify(body.body) }),
+          signal: AbortSignal.timeout(30_000),
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        ctx.logger?.warn?.('t4y-identity: enterprise-proxy upstream failed: %s', message)
+        return json(502, { error: 'enterprise_upstream_unavailable', message })
+      }
+
+      const contentType = upstream.headers.get('content-type') || 'application/json'
+      const text = await upstream.text()
+      return new Response(text, {
+        status: upstream.status,
+        headers: { 'content-type': contentType },
+      })
+    },
+  })
+
   ctx.connection.fetch.register({
     path: '/api/t4y-identity/issue-model-key',
     methods: ['POST'],
     requestBody: 'buffered',
     async fetch(request) {
-      const authorization = request.headers.get('authorization')
+      const authorization = await enterpriseAuthorization(request)
       if (!authorization) return json(401, { error: 'authorization_required' })
       let body
       try { body = await request.json() } catch { return json(400, { error: 'invalid_request' }) }
@@ -437,7 +709,7 @@ export function apply(ctx, config = {}) {
     methods: ['POST'],
     requestBody: 'buffered',
     async fetch(request) {
-      const authorization = request.headers.get('authorization')
+      const authorization = await enterpriseAuthorization(request)
       if (!authorization) return json(401, { error: 'authorization_required' })
       // Chat AUTH deletes the local Key; treat missing credential as inactive before asking Broker.
       try {
@@ -473,18 +745,66 @@ export function apply(ctx, config = {}) {
     methods: ['POST'],
     requestBody: 'buffered',
     async fetch(request) {
-      const authorization = request.headers.get('authorization')
+      const authorization = await enterpriseAuthorization(request)
       if (!authorization) return json(401, { error: 'authorization_required' })
       let body = {}
       try { body = await request.json() } catch { body = {} }
       // One Key per user; moduleId on body is ignored by Broker (kept for older clients).
       const result = await brokerPost('/v1/session/revoke', authorization, {})
       try { await ctx.credentials.deleteRecord(MODEL_CREDENTIAL_REF) } catch { /* best-effort local cleanup */ }
+      try { await writeHostSessionFile(null) } catch { /* best-effort share clear */ }
       identity.logout()
       if (!result.ok && result.status !== 401) {
         return json(502, { error: result.payload?.error || 'broker_rejected' })
       }
       return json(200, { revoked: result.payload?.revoked === true })
+    },
+  })
+
+  /**
+   * Shared enterprise session for paired Mobile clients.
+   * Desktop PUT after login/project pick; Mobile GET on cold boot to skip the gate.
+   * Only authenticated DSH peers (cookie / pairing) can call these routes.
+   */
+  ctx.connection.fetch.register({
+    path: '/api/t4y-identity/host-session',
+    methods: ['GET', 'PUT', 'DELETE'],
+    requestBody: 'buffered',
+    async fetch(request) {
+      if (request.method === 'GET') {
+        const session = await readHostSessionFile()
+        if (!session) return json(404, { error: 'host_session_missing' })
+        // Mobile co-watch reads this over cpolar/iroh; avoid a second Host route
+        // that some gateway paths reject. Desktop ignores the extra field.
+        let modelKeyPresent = false
+        try {
+          const resolved = await ctx.credentials.resolve(MODEL_CREDENTIAL_REF)
+          modelKeyPresent = typeof resolved?.value === 'string' && resolved.value !== ''
+        } catch { /* treat as missing */ }
+        return json(200, { session, modelKeyPresent })
+      }
+      if (request.method === 'DELETE') {
+        await writeHostSessionFile(null)
+        return json(200, { cleared: true })
+      }
+      let body
+      try { body = await request.json() } catch { return json(400, { error: 'invalid_request' }) }
+      const session = sanitizeSharedSession(body?.session ?? body)
+      if (!session) return json(400, { error: 'invalid_session' })
+      // Only the request header (not host-session fallback) — otherwise a stale
+      // Host copy could reject a legitimate Desktop re-login PUT.
+      const rawHeader = request.headers.get('x-t4y-access-token') || request.headers.get('authorization')
+      const headerToken = typeof rawHeader === 'string' && rawHeader.trim() !== '' ? rawHeader.trim() : null
+      if (headerToken !== null && headerToken !== session.accessToken) {
+        return json(400, { error: 'token_mismatch' })
+      }
+      await writeHostSessionFile(session)
+      applyClientContext({
+        tenantId: session.tenantId,
+        moduleId: session.moduleId,
+        reason: 'host-session-put',
+      }, 'host-session-put')
+      return json(200, { saved: true, moduleId: session.moduleId, tenantId: session.tenantId })
     },
   })
 
@@ -494,7 +814,7 @@ export function apply(ctx, config = {}) {
     methods: ['POST'],
     requestBody: 'buffered',
     async fetch(request) {
-      const authorization = request.headers.get('authorization')
+      const authorization = await enterpriseAuthorization(request)
       if (!authorization) return json(401, { error: 'authorization_required' })
       let body
       try { body = await request.json() } catch { return json(400, { error: 'invalid_request' }) }
@@ -511,7 +831,7 @@ export function apply(ctx, config = {}) {
     methods: ['POST'],
     requestBody: 'buffered',
     async fetch(request) {
-      const authorization = request.headers.get('authorization')
+      const authorization = await enterpriseAuthorization(request)
       if (!authorization) return json(401, { error: 'authorization_required' })
       let body
       try { body = await request.json() } catch { return json(400, { error: 'invalid_request' }) }

@@ -8,6 +8,22 @@
 
 对接既有后端登录：`publicKey → RSA(PKCS1) 加密密码 → login → Authorization → getInfo / getRouters`。未登录时全屏门禁，登录后账号菜单展示 `user.nickName`。
 
+浏览器不直连 `apiBaseUrl`：经 Host `POST /api/t4y-identity/enterprise-proxy` 转发（手机走 cpolar/iroh 时由本机访问企业登录口，避开分裂 DNS / 公网端口不可达）。
+
+电脑登录并选好项目后，完整企业会话经 `PUT /api/t4y-identity/host-session` 落到 Host（`~/.dsh/t4y-identity/host-session.json`）。已配对手机冷启动 `GET` 同一接口即可继承，无需再登；退出时 `DELETE` / revoke 清掉。
+
+## 统一企业网关（方案 B）
+
+后续插件调内网 **不要**在浏览器里传 accessToken。Host 提供：
+
+| 接口 | 用途 |
+|---|---|
+| `POST /api/t4y-enterprise/proxy` | JSON/API 出站；Host 从 host-session 注入 token。body：`{ path }`（相对 `apiBaseUrl`）或 `{ url }`（白名单绝对地址） |
+| `GET /api/t4y-enterprise/asset?url=` | 内网图片/静态资源同源代理（白名单 host） |
+
+Client：`window.__t4yEnterprise.request({ path: '/system/...' })`、`window.__t4yEnterprise.assetUrl(url)`。
+Host 插件：`inject: { t4yEnterprise: true }` 后调用 `ctx.t4yEnterprise.requireAccessToken()` / `apiFetch()`。
+
 ## 领域 id
 
 | 概念 | 来源 | 含义 |
@@ -60,6 +76,8 @@
 
 | 本机接口 | 作用 |
 |---|---|
+| `POST /api/t4y-identity/enterprise-proxy` | 浏览器企业登录 API 代理：仅允许 `/auth/*`、`/system/*`，Host 转发到 `apiBaseUrl` |
+| `GET/PUT/DELETE /api/t4y-identity/host-session` | Desktop↔Mobile 共享企业会话（仅已配对/已鉴权的 DSH 对端；只存已选项目的完整会话） |
 | `POST /api/t4y-identity/issue-model-key` | 登录/恢复/首次选企业：Broker 签发或复用 Key → 写槽 → 同步 `/models` |
 | `POST /api/t4y-identity/session-status` | 每分钟 / 回前台：本机槽 + Broker 用户账本 |
 | `POST /api/t4y-identity/revoke-model-key` | 退出：Broker 删 Token + 清本机槽 |

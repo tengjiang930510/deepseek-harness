@@ -20,7 +20,7 @@ pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-capability-hub
 
 Restart `pnpm dsh web`.
 
-Authorized plugins are grouped by the form’s “插件种类”, or the parent enterprise menu directory when that field is empty. The icon uses the first uploaded image, falling back to a default. Selecting “在输入框显示快捷按钮” on a card shows the installed, enabled plugin’s commands below the composer. Clicking a shortcut or selecting a slash-menu command inserts the same blue command marker for the user to confirm and send; shortcuts are unavailable while the composer contains text or attachments. The browser saves choices separately by enterprise, account and project. Project and login changes trigger another authorization query.
+Authorized plugins are grouped by the form’s “插件种类”, or the parent enterprise menu directory when that field is empty. The icon uses the first uploaded image, falling back to a default. Selecting “在输入框显示快捷按钮” on a card shows the installed, enabled plugin’s commands in the composer tool row. Clicking a shortcut or selecting a slash-menu command inserts the same blue command marker for the user to confirm and send; shortcuts are unavailable while the composer contains text or attachments. The browser saves choices separately by enterprise, account and project. Project and login changes trigger another authorization query. Phone co-watch seating is owned by `t4y-mobile-cowatch`.
 
 Typing `/` groups enabled plugin commands by the form’s “插件种类”; each heading shows the matching plugin count and each item uses the uploaded icon.
 

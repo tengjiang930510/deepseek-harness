@@ -8,6 +8,10 @@ See [DEVELOPING.md](./DEVELOPING.md) for development.
 
 Connects to the existing backend login: `publicKey → RSA(PKCS1) 加密密码 → login → Authorization → getInfo / getRouters`. A full-screen gate appears when signed out; after login the account menu shows `user.nickName`.
 
+The browser does not call `apiBaseUrl` directly. It uses Host `POST /api/t4y-identity/enterprise-proxy` so mobile over cpolar/iroh reaches the enterprise login API through the PC (avoids split DNS / unreachable public :51111).
+
+After Desktop signs in and picks a project, the complete enterprise session is stored on Host via `PUT /api/t4y-identity/host-session` (`~/.dsh/t4y-identity/host-session.json`). A paired Mobile cold start `GET`s the same route to inherit it without signing in again; logout `DELETE`s / revoke clears it.
+
 ## Domain ids
 
 | Concept | Source | Meaning |
@@ -60,6 +64,8 @@ The Key is written to local slot **`T4Y_NEW_API_KEY`**. Current `moduleId` drive
 
 | Local endpoint | Purpose |
 |---|---|
+| `POST /api/t4y-identity/enterprise-proxy` | Browser enterprise-login API proxy: only `/auth/*` and `/system/*`, Host forwards to `apiBaseUrl` |
+| `GET/PUT/DELETE /api/t4y-identity/host-session` | Shared Desktop→Mobile enterprise session (authenticated DSH peers only; complete project-selected sessions) |
 | `POST /api/t4y-identity/issue-model-key` | Login / restore / first enterprise selection: Broker issues or reuses a Key → write slot → sync `/models` |
 | `POST /api/t4y-identity/session-status` | Every minute / on foreground: check local slot and Broker user ledger |
 | `POST /api/t4y-identity/revoke-model-key` | Logout: Broker deletes Token and clears the local slot |
