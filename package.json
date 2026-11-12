@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-root",
-  "version": "0.2.2-rc.1",
+  "version": "0.2.2-rc.2",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -155,6 +155,7 @@
     "verify-no-bare-dispatcher": "tsx scripts/verify-no-bare-dispatcher.ts",
     "verify-no-top-level-await": "tsx scripts/verify-no-top-level-await.ts",
     "verify-plugin-record-callers": "tsx scripts/verify-plugin-record-callers.ts",
+    "verify-plugin-entry-exports": "tsx scripts/verify-plugin-entry-exports.ts",
     "verify-cordis-config": "tsx scripts/verify-cordis-config.ts",
     "rescope-vendor": "tsx scripts/rescope-vendor.ts",
     "rescope-vendor:check": "tsx scripts/rescope-vendor.ts --check",
@@ -229,6 +230,7 @@
     "@deepseek-ai/dsh-computer-use": "workspace:*",
     "@deepseek-ai/dsh-cua": "workspace:*",
     "@deepseek-ai/dsh-cua-bundle": "workspace:*",
+    "@deepseek-ai/dsh-cua-windows": "workspace:*",
     "@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp": "workspace:*",
     "@deepseek-ai/dsh-experimental-browser-use-playwright-mcp": "workspace:*",
     "@deepseek-ai/dsh-experimental-browser-use-runtime": "workspace:*",
@@ -251,6 +253,7 @@
     "@deepseek-ai/dsh-mcp-client": "workspace:*",
     "@deepseek-ai/dsh-skill-office": "workspace:*",
     "@deepseek-ai/dsh-subagent-dsh-sdk": "workspace:*",
+    "@deepseek-ai/dsh-terminal-panel": "workspace:*",
     "@deepseek-ai/dsh-tool-executor-native": "workspace:*",
     "@deepseek-ai/dsh-tool-executor-ptc": "workspace:*",
     "@deepseek-ai/dsh-tool-ralph": "workspace:*",
@@ -306,6 +309,6 @@
     "vite": "8.2.2",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.11",
-    "zod": "^4.4.3"
+    "zod": "4.6.6"
   }
 }
