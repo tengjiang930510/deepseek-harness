@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-web-search-bailian",
   "description": "Bailian Responses web search provider for the DeepSeek Harness web service",
-  "version": "0.2.2-rc.2",
+  "version": "0.2.2-rc.3",
   "publishConfig": {
     "access": "public"
   },
