@@ -31,4 +31,6 @@ The build generates resources under `.dsh-build/product/` and copies them into W
 
 The product name and images supply the sidebar, new-session headline, running-status mark, browser title and favicon, PWA installation, Desktop welcome and shell copy, application icons, Windows tray, and installer artwork. Keep the `t4y-brand` bundle enabled for the assistant's brand slots. Its package name is an installation identifier and does not need changing for another product.
 
+Custom client bundles register their package name as `__ModuleLoader__.load({ id })`, such as `t4y-brand`. The `./client` export selects the script file; `/client` is not part of the registration ID. A mismatched ID prevents the bundle from loading and leaves the built-in brand slots visible.
+
 Branding does not change models, business tools, credentials, application IDs, update channels, user data directories, or protocol identifiers. Separate products that need independent installation and updates also need explicit deployment settings; see [Desktop configuration](../apps/desktop/README.md).

@@ -31,4 +31,6 @@ pnpm run start:web
 
 产品名称和图片用于侧栏、新会话标题、处理中图标、浏览器标题及 favicon、PWA 安装、桌面欢迎页面和外壳文案、应用图标、Windows 托盘及安装程序图片。保持 `t4y-brand` bundle 启用以显示助手品牌。其包名是安装标识，更换产品时无需改名。
 
+自定义客户端 bundle 使用包名注册 `__ModuleLoader__.load({ id })`，例如 `t4y-brand`。`./client` 导出用于选择脚本文件，注册 ID 不包含 `/client`。ID 不匹配会阻止 bundle 加载，使页面继续显示内置品牌插槽的默认内容。
+
 品牌配置不会改变模型、业务工具、凭据、应用 ID、更新渠道、用户数据目录或协议标识。需要独立安装和更新的产品还需明确配置部署参数，参见[桌面配置](../apps/desktop/README.zh.md)。

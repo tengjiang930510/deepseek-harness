@@ -1,7 +1,5 @@
 window.__ModuleLoader__.load({
-  // The module system normalizes a package's client entry by removing `/client`.
-  // Using the canonical specifier prevents one bundle from being registered twice.
-  id: 't4y-review/client',
+  id: 't4y-review',
   factory: (require) => {
     const module = { exports: {} }
     const exports = module.exports

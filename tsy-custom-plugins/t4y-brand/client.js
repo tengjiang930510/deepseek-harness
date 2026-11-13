@@ -1,6 +1,6 @@
 /** Configurable brand occupants; resources are emitted by the product build. */
 window.__ModuleLoader__.load({
-  id: 't4y-brand/client',
+  id: 't4y-brand',
   factory: (require) => {
     const React = require('react')
     return {

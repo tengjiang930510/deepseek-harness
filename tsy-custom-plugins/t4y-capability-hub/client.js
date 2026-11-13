@@ -1,28 +1,27 @@
-  /** Capability cards shown on this settings tab. Edit here when adding a package. */
-  const CAPABILITY_PACKAGES = [
-    {
-      name: 't4y-review',
-      commands: ['/leave', '/travel', '/office', '/brand-review', '/brand-review-guidance'],
-      title: { zh: '办公事务表单', en: 'Office forms' },
-      description: {
-        zh: '智能助手：办公申请卡片、审查任务与审查指导（/brand-review）。可在本页启用或禁用。',
-        en: 'Assistant: office request cards, review tasks, and review guidance (/brand-review). Enable or disable on this page.',
-      },
-    },
-    {
-      name: 't4y-bilibili-search',
-      commands: ['/bilibili', 'bilibili_video_search'],
-      title: { zh: 'B站视频搜索', en: 'Bilibili video search' },
-      description: {
-        zh: '内置 Playwright，搜索 B站视频（工具 bilibili_video_search）。',
-        en: 'Built-in Playwright Bilibili search (tool bilibili_video_search).',
-      },
-    },
-  ]
-
 window.__ModuleLoader__.load({
-  id: 't4y-capability-hub/client',
+  id: 't4y-capability-hub',
   factory: (require) => {
+    /** Capability cards shown on this settings tab. Edit here when adding a package. */
+    const CAPABILITY_PACKAGES = [
+      {
+        name: 't4y-review',
+        commands: ['/leave', '/travel', '/office', '/brand-review', '/brand-review-guidance'],
+        title: { zh: '办公事务表单', en: 'Office forms' },
+        description: {
+          zh: '智能助手：办公申请卡片、审查任务与审查指导（/brand-review）。可在本页启用或禁用。',
+          en: 'Assistant: office request cards, review tasks, and review guidance (/brand-review). Enable or disable on this page.',
+        },
+      },
+      {
+        name: 't4y-bilibili-search',
+        commands: ['/bilibili', 'bilibili_video_search'],
+        title: { zh: 'B站视频搜索', en: 'Bilibili video search' },
+        description: {
+          zh: '内置 Playwright，搜索 B站视频（工具 bilibili_video_search）。',
+          en: 'Built-in Playwright Bilibili search (tool bilibili_video_search).',
+        },
+      },
+    ]
     const module = { exports: {} }
     const exports = module.exports
     Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' })

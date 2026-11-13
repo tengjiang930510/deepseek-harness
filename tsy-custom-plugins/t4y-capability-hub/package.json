@@ -1,6 +1,6 @@
 {
   "name": "t4y-capability-hub",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "能力插件设置页，统一管理办公申请和视频搜索等功能。",
   "private": true,
   "type": "module",

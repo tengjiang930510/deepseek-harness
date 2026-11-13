@@ -1,6 +1,6 @@
 {
   "name": "t4y-review",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "办公申请、审查指导与办公平台请假提交。",
   "private": true,
   "type": "module",
