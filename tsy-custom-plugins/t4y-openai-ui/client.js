@@ -22,7 +22,11 @@ window.__ModuleLoader__.load({
       return React.createElement('span', { className: 't4y-openai-api-badge' }, label)
     }
 
-    function RowBadge({ sessionId, readOnly, t }) {
+    function RowBadge({ sessionId, readOnly, refreshTitle, t }) {
+      React.useEffect(() => {
+        if (readOnly !== true || !apiSession(sessionId)) return
+        void refreshTitle(sessionId).catch(error => { console.warn('API history title could not be refreshed', error) })
+      }, [sessionId, readOnly, refreshTitle])
       return readOnly === true && apiSession(sessionId)
         ? React.createElement(Badge, { label: t('api') })
         : null
@@ -64,6 +68,7 @@ window.__ModuleLoader__.load({
         }, 't4y-openai-ui: badge styling')
         ctx.slots.inject('sidebar.session.row.badges', () => ctx.slots.register({
           name: 'sidebar.session.row.badges', id: 't4y-openai-api', order: 0, locale: namespace,
+          inject: () => ({ refreshTitle: sessionId => ctx.sessions.refreshProjections(sessionId) }),
         }, RowBadge))
         ctx.slots.inject('conversation.session.header.readonly.actions', () => ctx.slots.register({
           name: 'conversation.session.header.readonly.actions', id: 't4y-openai-api', order: 0, locale: namespace,

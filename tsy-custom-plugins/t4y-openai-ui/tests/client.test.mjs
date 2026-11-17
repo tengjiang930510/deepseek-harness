@@ -13,8 +13,10 @@ function fixture(t) {
   const bindings = new Map()
   const bindingReads = []
   const stateWrites = []
+  const projectionReads = []
   const React = {
     Fragment: Symbol('Fragment'),
+    useEffect: effect => effect(),
     createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
     useState: value => [value, next => { stateWrites.push(next) }],
   }
@@ -56,7 +58,7 @@ function fixture(t) {
         return dispose
       },
     },
-    sessions: { binding: id => {
+    sessions: { refreshProjections: async id => { projectionReads.push(id) }, binding: id => {
       bindingReads.push(id)
       return bindings.get(id)
     } },
@@ -69,6 +71,7 @@ function fixture(t) {
     sessionId: id, readOnly,
     useSession: select => select({ readOnly, openState: 'open' }),
     useSessions: select => select({ byId: { [id]: { readOnly } } }),
+    refreshTitle: target => ctx.sessions.refreshProjections(target),
     t: key => dictionaries.en[key],
   })
   const render = node => {
@@ -76,7 +79,7 @@ function fixture(t) {
     if (typeof node.type === 'function') return render(node.type(node.props))
     return node
   }
-  return { entries, props, render, styleNodes, bindings, bindingReads, stateWrites, locales, dispose }
+  return { projectionReads, entries, props, render, styleNodes, bindings, bindingReads, stateWrites, locales, dispose }
 }
 
 test('registers passive UI contributions and reverses its dictionaries and CSS on unload', t => {
@@ -104,6 +107,10 @@ test('renders badges from row metadata without retaining or opening a Session', 
   assert.equal(row.Component(f.props('ordinary', true)), null)
   assert.equal(row.Component(f.props('openai-history', false)), null)
   assert.deepEqual(f.bindingReads, [])
+  assert.deepEqual(f.projectionReads, ['openai-history'])
+  const injected = row.options.inject()
+  void injected.refreshTitle('openai-another')
+  assert.deepEqual(f.projectionReads, ['openai-history', 'openai-another'])
 })
 
 test('keeps the header API-only and displays the same private badge', t => {

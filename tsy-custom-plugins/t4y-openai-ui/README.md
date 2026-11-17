@@ -11,6 +11,8 @@ English | [中文](README.zh.md)
 
 Show a blue **API** badge in the Session list and read-only header, and refresh persisted messages without starting an Agent. The package consumes the GUI’s generic read-only Session state; it does not acquire write ownership or change the execution service.
 
+API row badges request missing projections through the public `sessions.refreshProjections()` interface without opening the conversation. The Session manager deduplicates in-flight and completed reads, while the Host reuses revision-cached observations. The first read may prepare the persisted log; no Agent is started or writer lock acquired.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)

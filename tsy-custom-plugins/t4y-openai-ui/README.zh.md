@@ -11,6 +11,8 @@ kind: "package-reference"
 
 在会话列表和只读标题栏中显示蓝色 **API** 标记，并在不启动 Agent 的情况下刷新持久消息。本包使用 GUI 的通用只读 Session 状态，不获取写入所有权，也不修改执行服务。
 
+API 行标记通过公开的 `sessions.refreshProjections()` 接口补读投影，不打开会话。Session manager 会合并正在进行及已完成的读取，Host 则复用按持久版本缓存的观察。首次读取可能准备持久日志，但不会启动 Agent 或获取写锁。
+
 ## 目录
 
 - [使用本包](#use-this-package)
