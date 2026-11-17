@@ -33,7 +33,8 @@
 
 需同时加载 `t4y-identity`（提供 `host-session`）。联调 overlay 见 `tenant-identity.overlay.yml`。
 
-Client 改动后必须：`pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-mobile-cowatch`，再重启 Web。
+Client 源码在 `client-src/`（按端拆分）；改完后先 `node scripts/bundle-client.mjs` 生成 `client.js`，再执行：
+`pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-mobile-cowatch`，然后重启 Web。
 
 ## 接口
 

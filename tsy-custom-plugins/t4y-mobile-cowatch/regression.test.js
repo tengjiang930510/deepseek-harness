@@ -30,11 +30,33 @@ describe('mobile-cowatch hardening regressions', () => {
 
   it('client switcher uses handoff mint and can reseed switchAuth', () => {
     const client = read('client.js')
+    const switcher = read(join('client-src', 'phone-switcher.js'))
+    assert.match(client, /GENERATED FILE/)
     assert.doesNotMatch(client, /location\.assign\([^\n]*#resume=/)
     assert.match(client, /handoff-mint/)
     assert.match(client, /ensureSwitchAuth/)
     assert.match(client, /switch-auth-seed/)
     assert.doesNotMatch(client, /localStorage\.setItem\(SWITCH_AUTH_KEY/)
+    assert.match(switcher, /handoff-mint/)
+    assert.match(switcher, /ensureSwitchAuth/)
+  })
+
+  it('client.js stays in sync with client-src parts', () => {
+    const client = read('client.js')
+    for (const part of [
+      'shared.js',
+      'phone-styles.js',
+      'phone-waitgate.js',
+      'phone-idle.js',
+      'desktop-access.js',
+      'phone-switcher.js',
+      'apply.js',
+    ]) {
+      assert.match(client, new RegExp(`client-src/${part.replace('.', '\\.')}`))
+      assert.ok(read(join('client-src', part)).length > 100, part)
+    }
+    assert.match(client, /installEnterpriseMobileAccessSimplify/)
+    assert.match(read(join('client-src', 'desktop-access.js')), /installEnterpriseMobileAccessSimplify/)
   })
 
   it('identity never sends placeholder token to Host enterprise APIs', () => {

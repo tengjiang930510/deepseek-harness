@@ -1,4 +1,7 @@
 /**
+ * GENERATED FILE — edit client-src/*.js then run:
+ *   node scripts/bundle-client.mjs
+ *
  * Mobile co-watch client: treat the phone as a remote control of the PC Host.
  * Desktop browsers must stay inert — no wait gate, no fetch hooks, no layout rewrite.
  */
@@ -11,6 +14,7 @@ window.__ModuleLoader__.load({
 
     const React = require('react')
 
+    // --- client-src/shared.js ---
     const SESSION_KEY = 't4y.identity.session.v1'
     const SESSION_EVENT = 't4y-identity:session'
     const STYLE_ID = 't4y-mobile-cowatch-style'
@@ -549,6 +553,7 @@ window.__ModuleLoader__.load({
       rev: '2026-11-13-idle-15m',
     }
 
+    // --- client-src/phone-styles.js ---
     function installStyles() {
       if (document.getElementById(STYLE_ID)) return
       const style = document.createElement('style')
@@ -798,7 +803,8 @@ window.__ModuleLoader__.load({
     /**
      * Best-effort: rename dsh-mobile device label to enterprise displayName (Codex-style user binding).
      * @param {object} session
-     */
+
+    // --- client-src/phone-waitgate.js ---
     function bindDeviceLabel(session) {
       const displayName = typeof session?.displayName === 'string' ? session.displayName.trim() : ''
       if (displayName === '') return
@@ -972,7 +978,8 @@ window.__ModuleLoader__.load({
      * After enter: 15 min with no tap/typing → close live WebSockets (free channel).
      * Device pairing cookies stay;「继续使用」reload 免登续连.
      * Page merely open in foreground does not count as activity.
-     */
+
+    // --- client-src/phone-idle.js ---
     function installIdleWatchdog() {
       if (typeof window === 'undefined' || typeof document === 'undefined') return
       /** @type {Set<WebSocket>} */
@@ -1076,7 +1083,8 @@ window.__ModuleLoader__.load({
      * - 侧栏入口隐藏，改放到账号菜单「移动访问」
      * - 面板内只留一行勾选开关
      * - 启动后默认拉起 FRP；失败静默重试 2 次后再 toast
-     */
+
+    // --- client-src/desktop-access.js ---
     function installEnterpriseMobileAccessSimplify() {
       if (typeof document === 'undefined') return
       // Phone / enter 会话只遥控 PC，不得注入「移动访问」开关。
@@ -1844,7 +1852,7 @@ window.__ModuleLoader__.load({
       installRemoteAutoEnsure()
     }
 
-    /** Phone: account-menu「切换电脑」+ bottom sheet host picker. */
+    // --- client-src/phone-switcher.js ---
     function installDeviceSwitcher() {
       if (typeof document === 'undefined') return
       const SWITCH_MENU_ATTR = 'data-t4y-mobile-switch-item'
@@ -2210,6 +2218,7 @@ window.__ModuleLoader__.load({
       } catch { /* ignore */ }
     }
 
+    // --- client-src/apply.js ---
     exports.inject = ['slots', 'locale']
     exports.apply = (ctx) => {
       // Desktop also needs the FRP-only simplify for「移动访问」.
@@ -2235,7 +2244,6 @@ window.__ModuleLoader__.load({
         locale: false,
       }, () => React.createElement(WaitGate)))
     }
-
     return module.exports
   },
 })

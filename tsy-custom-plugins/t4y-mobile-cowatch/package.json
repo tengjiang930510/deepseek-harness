@@ -13,6 +13,8 @@
   "files": [
     "index.js",
     "client.js",
+    "client-src",
+    "scripts/bundle-client.mjs",
     "enter-page.js",
     "enter-login.js",
     "handoff.js",
@@ -21,6 +23,7 @@
     "README.zh.md"
   ],
   "scripts": {
+    "bundle:client": "node scripts/bundle-client.mjs",
     "test": "node --test handoff.test.js regression.test.js"
   },
   "dsh": {
