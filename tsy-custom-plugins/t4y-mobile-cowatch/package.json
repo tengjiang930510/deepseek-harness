@@ -15,10 +15,14 @@
     "client.js",
     "enter-page.js",
     "enter-login.js",
+    "handoff.js",
     "cordis.patch.yml",
     "README.md",
     "README.zh.md"
   ],
+  "scripts": {
+    "test": "node --test handoff.test.js regression.test.js"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

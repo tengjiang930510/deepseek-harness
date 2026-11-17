@@ -10,8 +10,11 @@
 |------|-----|------|
 | 电脑 `host-session` | 真企业 accessToken | 电脑侧企业 API、模型 Key |
 | 手机身份会话 | 占位 `mobile-cowatch` | 跳过登录门、展示已登录 |
-| 手机 `switchAuth` | 真企业 accessToken（若有） | 仅「切换电脑 / 入口选机赎回」 |
-| 配对 Cookie | 设备凭证 | 经 FRP 访问本机网关 |
+| 手机 `switchAuth` | 真企业 accessToken（若有） | 仅 sessionStorage；入口登录 / `switch-auth-seed` / handoff redeem |
+| 配对 Cookie | 设备凭证 | 经 FRP 访问本机网关；杀进程后可再拉 seed |
+
+`GET /api/t4y-identity/host-session` 对手机只返回占位会话；真 token 留在电脑磁盘，由 Host 代理切换项目 / 扫码 seed。
+跨电脑切换用一次性 `handoff` 码（约 2 分钟），**禁止**把 accessToken 放进 URL hash。
 
 进主界面依赖：配对成功 + 种子会话 + `entered` 标记。模型与企业调用仍在电脑 Host 执行。
 
@@ -39,6 +42,12 @@ Client 改动后必须：`pnpm dsh plugin --profile web add ./tsy-custom-plugins
 | `GET /api/t4y-mobile-cowatch/credential-status` | Host 是否已有 `T4Y_NEW_API_KEY` |
 | `POST /api/t4y-mobile-cowatch/bind-device-label` | 将当前/最近 dsh-mobile 设备名改为企业 `displayName` |
 | `GET/POST /api/t4y-mobile-cowatch/accepting` | 软开/软关（关时 revoke 已配对设备） |
+| `GET /api/t4y-mobile-cowatch/switch-auth-seed` | 扫码后 / 配对态回填 session-only `switchAuth` |
+| `POST /api/t4y-mobile-cowatch/handoff-mint` | 目标电脑签发一次性切换码（CORS，无 Cookie） |
+| `POST /api/t4y-mobile-cowatch/handoff-redeem` | 兑换 handoff 码为 `switchAuth`（一次性） |
+| `POST /api/t4y-mobile-cowatch/switch-module` | 手机切项目：Host 用磁盘真 token 改电脑会话 |
+
+本地回归：`node --test tsy-custom-plugins/t4y-mobile-cowatch/handoff.test.js tsy-custom-plugins/t4y-mobile-cowatch/regression.test.js`
 
 扫码页 `/mobile-access/pair`：自动配对并种子会话，免企业登录直进本机。
 

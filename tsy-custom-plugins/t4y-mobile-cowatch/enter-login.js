@@ -380,6 +380,9 @@ function originFromRequest(request) {
  */
 export async function handleEnterLogin(ctx, request, _accessControllers, options = {}) {
   const isAccepting = typeof options.isAccepting === 'function' ? options.isAccepting : () => true
+  if (!isAccepting()) {
+    return enterJson(503, { error: 'remote_off' })
+  }
   const peer = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
     || request.headers.get('x-real-ip')
     || 'local'

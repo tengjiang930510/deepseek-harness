@@ -2,6 +2,7 @@
  * Host half for mobile co-watch: expose whether the PC already holds the model key,
  * and bind dsh-mobile device labels to the enterprise displayName (Codex-style).
  */
+import { readFileSync } from 'node:fs'
 import { readFile, writeFile, rename as renameFile, mkdir, access } from 'node:fs/promises'
 import http from 'node:http'
 import https from 'node:https'
@@ -11,7 +12,18 @@ import { homedir } from 'node:os'
 import { dirname, join, basename } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { enterpriseEnterPage, enterpriseOfflinePage } from './enter-page.js'
-import { handleEnterLogin, handleEnterSelect, handleHostCard, buildPublicHostReady } from './enter-login.js'
+import {
+  handleEnterLogin,
+  handleEnterSelect,
+  handleHostCard,
+  buildPublicHostReady,
+  accountKeyOf,
+} from './enter-login.js'
+import {
+  mintHandoffTicket,
+  redeemHandoffTicket,
+  sanitizeHandoffPayload,
+} from './handoff.js'
 
 export const name = 't4y-mobile-cowatch'
 export const inject = {
@@ -40,9 +52,10 @@ let enterSelectHandler = null
 /**
  * Soft-off: FRP stays up so the public URL can show an offline page;
  * phone enter/pair is refused until accepting === true.
+ * Fail closed until apply() loads the durable flag (avoids a short open window).
  * @type {boolean}
  */
-let acceptingEngagements = true
+let acceptingEngagements = false
 
 /** Raise above stock 64 so one FRP phone + asset burst cannot trip the hard reject. */
 const GATEWAY_MAX_CONNECTIONS = 256
@@ -151,17 +164,59 @@ function isAccepting() {
 }
 
 /**
- * @returns {Promise<boolean>}
+ * Synchronous boot load so public intercepts never race an open default.
+ * Missing file → first install defaults to accepting.
+ * @returns {boolean}
  */
-async function loadAccepting() {
+function loadAcceptingSync() {
   try {
-    const raw = await readFile(acceptingPath(), 'utf8')
-    const parsed = JSON.parse(raw)
+    const parsed = JSON.parse(readFileSync(acceptingPath(), 'utf8'))
     acceptingEngagements = parsed?.accepting !== false
   } catch {
     acceptingEngagements = true
   }
   return acceptingEngagements
+}
+
+/**
+ * @returns {Promise<boolean>}
+ */
+async function loadAccepting() {
+  return loadAcceptingSync()
+}
+
+/**
+ * @returns {boolean}
+ */
+function isAnyPairingOpen() {
+  for (const controller of [...accessControllers]) {
+    try {
+      if (typeof controller.pairingStatus === 'function' && controller.pairingStatus()?.open === true) {
+        return true
+      }
+    } catch {
+      // try next
+    }
+  }
+  return false
+}
+
+/**
+ * Loopback base for Host-only follow-up calls (set-context / workspace / apply-module).
+ * @param {import('cordis').Context} ctx
+ * @returns {string}
+ */
+function hostLoopbackBase(ctx) {
+  let port = 3080
+  try {
+    const webServer = ctx.get('webServer')
+    if (webServer && typeof webServer.port === 'number' && webServer.port > 0) {
+      port = webServer.port
+    }
+  } catch {
+    // keep default
+  }
+  return `http://127.0.0.1:${port}`
 }
 
 /**
@@ -245,14 +300,17 @@ function writeHtml(response, html) {
  * @param {import('node:http').IncomingMessage | undefined} request
  * @returns {Record<string, string>}
  */
-function corsHeaders(request) {
-  const origin = typeof request?.headers?.origin === 'string' ? request.headers.origin : '*'
+/**
+ * host-card / enter CORS for cross-origin probes (no credentials).
+ * Fixed `*` — do not reflect arbitrary Origin.
+ * @returns {Record<string, string>}
+ */
+function corsHeaders() {
   return {
-    'Access-Control-Allow-Origin': origin || '*',
+    'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'content-type',
     'Access-Control-Max-Age': '86400',
-    Vary: 'Origin',
   }
 }
 
@@ -263,15 +321,145 @@ function corsHeaders(request) {
  * @param {import('node:http').IncomingMessage} [request]
  * @param {boolean} [withCors]
  */
-function writeJson(response, status, value, request, withCors = false) {
+function writeJson(response, status, value, _request, withCors = false) {
   const buffer = Buffer.from(JSON.stringify(value), 'utf8')
   response.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': buffer.length,
     'Cache-Control': 'no-store',
-    ...(withCors ? corsHeaders(request) : {}),
+    ...(withCors ? corsHeaders() : {}),
   })
   response.end(buffer)
+}
+
+/**
+ * Shared public HTTP routes for FRP → Gateway or Host :3080.
+ * @param {import('node:http').IncomingMessage} req
+ * @param {import('node:http').ServerResponse} res
+ * @param {{ pairingOpen?: boolean | null }} [options]
+ *   `pairingOpen: true|false` from Gateway; omit/`null` → any tracked AccessController.
+ * @returns {boolean} true when this plugin fully handled the request
+ */
+function tryHandlePublicMobileHttp(req, res, options = {}) {
+  const pathname = String(req?.url || '').split('?')[0] || '/'
+  const method = req?.method
+  if (method === 'GET' && pathname === '/t4y-mobile-enter') {
+    writeHtml(res, enterHtmlForAccepting())
+    return true
+  }
+  if (
+    method === 'OPTIONS'
+    && (pathname.startsWith('/api/t4y-mobile-enter/')
+      || pathname === '/api/t4y-mobile-cowatch/handoff-mint'
+      || pathname === '/api/t4y-mobile-cowatch/handoff-redeem')
+  ) {
+    res.writeHead(204, corsHeaders())
+    res.end()
+    return true
+  }
+  if (method === 'GET' && pathname === '/api/t4y-mobile-enter/status') {
+    writeJson(res, 200, { accepting: isAccepting() }, req, true)
+    return true
+  }
+  if (method === 'GET' && pathname === '/api/t4y-mobile-enter/host-card') {
+    const origin = typeof req.headers['x-forwarded-proto'] === 'string'
+      && typeof req.headers.host === 'string'
+      ? `${req.headers['x-forwarded-proto']}://${String(req.headers.host).split(',')[0].trim()}`
+      : (typeof req.headers.host === 'string' ? `https://${req.headers.host}` : null)
+    void handleHostCard(isAccepting(), origin).then(async (result) => {
+      const text = await result.text()
+      const buffer = Buffer.from(text, 'utf8')
+      res.writeHead(result.status, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Length': buffer.length,
+        'Cache-Control': 'no-store',
+        ...corsHeaders(),
+      })
+      res.end(buffer)
+    })
+    return true
+  }
+  if (method === 'POST' && pathname === '/api/t4y-mobile-enter/login') {
+    void respondEnterApi(req, res, 'login')
+    return true
+  }
+  if (method === 'POST' && pathname === '/api/t4y-mobile-enter/select') {
+    void respondEnterApi(req, res, 'select')
+    return true
+  }
+  if (method === 'POST' && pathname === '/api/t4y-mobile-cowatch/handoff-mint') {
+    void respondHandoffMint(req, res)
+    return true
+  }
+  if (method === 'POST' && pathname === '/api/t4y-mobile-cowatch/handoff-redeem') {
+    void respondHandoffRedeem(req, res)
+    return true
+  }
+  if (method === 'GET' && (pathname === '/mobile-access/pair' || pathname === '/mobile-access/pair.js')) {
+    if (!isAccepting()) {
+      writeHtml(res, enterpriseOfflinePage())
+      return true
+    }
+    // Gateway passes explicit true/false. Host :3080 Server emit passes null:
+    // - no tracked controllers yet → still serve (FRP often hits Host, not Gateway)
+    // - controllers tracked → require an open pairing window
+    // - closed window on Host → friendly page (Host has no stock /pair → would 404)
+    let pairingOpen = options.pairingOpen
+    if (pairingOpen !== true && pairingOpen !== false) {
+      pairingOpen = accessControllers.size === 0 ? true : isAnyPairingOpen()
+    }
+    if (pairingOpen !== true) {
+      if (options.pairingOpen === false) {
+        // Gateway: defer to stock dsh-mobile pair UI / expiry handling.
+        return false
+      }
+      writeHtml(res, enterprisePairClosedPage())
+      return true
+    }
+    const body = pathname.endsWith('.js') ? enterprisePairScript() : enterprisePairPage()
+    const contentType = pathname.endsWith('.js')
+      ? 'text/javascript; charset=utf-8'
+      : 'text/html; charset=utf-8'
+    const buffer = Buffer.from(body, 'utf8')
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Content-Length': buffer.length,
+      'Cache-Control': 'no-store',
+      Vary: 'Accept-Language, Cookie',
+    })
+    res.end(buffer)
+    return true
+  }
+  return false
+}
+
+/**
+ * Host-side pair when the QR window is closed (no stock /mobile-access/pair on :3080).
+ * @returns {string}
+ */
+function enterprisePairClosedPage() {
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>请刷新二维码</title>
+<style>
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+font-family:system-ui,sans-serif;background:#f3f4f6;color:#111827}
+.card{max-width:22rem;padding:1.5rem;border-radius:1rem;background:#fff;
+box-shadow:0 8px 24px rgba(15,23,42,.08);text-align:center}
+h1{font-size:1.1rem;margin:0 0 .5rem}
+p{margin:0;color:#6b7280;font-size:.9rem;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>配对已过期</h1>
+  <p>请在电脑端账号菜单打开「移动访问」，刷新二维码后再扫。</p>
+</div>
+</body>
+</html>`
 }
 
 /**
@@ -409,10 +597,12 @@ function enterprisePairScript() {
         return
       }
       status.textContent = '正在进入…'
-      // Prefetch PC login + seed enter markers so scan-in skips enterprise login / WaitGate.
+      // Prefetch public hostReady + Host-only switchAuth seed (never from host-session GET).
       try {
         sessionStorage.setItem('t4y.mobile.cowatch', '1')
         sessionStorage.setItem('t4y.mobile.cowatch.entered.v1', '1')
+        let hostLabel = location.host
+        let seededAccountKey = ''
         const ready = await fetch('/api/t4y-identity/host-session', {
           method: 'GET',
           credentials: 'same-origin',
@@ -422,52 +612,55 @@ function enterprisePairScript() {
           const body = await ready.json()
           const session = body?.session && typeof body.session === 'object' ? { ...body.session } : null
           const modelKeyPresent = body?.modelKeyPresent === true
-          sessionStorage.setItem('t4y.mobile.hostReady.v1', JSON.stringify({
-            at: Date.now(),
-            session,
-            modelKeyPresent,
-          }))
           if (session) {
-            // Keep real enterprise token for「切换电脑」; identity UI uses placeholder.
-            const realToken = typeof session.accessToken === 'string'
-              && session.accessToken !== ''
-              && session.accessToken !== 'mobile-cowatch'
-              ? session.accessToken
-              : ''
-            const expiresAt = typeof session.expiresAt === 'number' && session.expiresAt > Date.now()
-              ? session.expiresAt
-              : Date.now() + 8 * 3600_000
-            if (realToken) {
-              const switchAuth = {
-                accessToken: realToken,
-                enterpriseName: session.enterpriseName || '',
-                userName: session.username || '',
-                accountKey: '',
-                expiresAt,
-                at: Date.now(),
-                via: 'qr',
-              }
-              sessionStorage.setItem('t4y.mobile.switchAuth.v1', JSON.stringify(switchAuth))
-              localStorage.setItem('t4y.mobile.switchAuth.v1', JSON.stringify(switchAuth))
-            }
             session.accessToken = 'mobile-cowatch'
             session.needsModulePick = false
             if (typeof session.tenantId !== 'string' || session.tenantId === '') session.tenantId = 'mobile'
+            const expiresAt = typeof session.expiresAt === 'number' && session.expiresAt > Date.now()
+              ? session.expiresAt
+              : Date.now() + 8 * 3600_000
             session.expiresAt = expiresAt
             if (modelKeyPresent && (typeof session.llmApiKeyExpiresAt !== 'number' || session.llmApiKeyExpiresAt <= Date.now())) {
               session.llmApiKeyExpiresAt = Date.now() + 8 * 3600_000
             }
             if (!modelKeyPresent) delete session.llmApiKeyExpiresAt
+            if (typeof session.displayName === 'string' && session.displayName !== '') {
+              hostLabel = session.displayName
+            }
             localStorage.setItem('t4y.identity.session.v1', JSON.stringify(session))
             localStorage.setItem('t4y.identity.fresh-auth.v1', String(Date.now() + 120_000))
           }
-          localStorage.setItem('t4y.mobile.currentHost.v1', JSON.stringify({
-            id: 'scanned',
-            label: session?.displayName || location.host,
-            origin: location.origin.replace(/\\/$/u, ''),
-            accountKey: '',
+          sessionStorage.setItem('t4y.mobile.hostReady.v1', JSON.stringify({
+            at: Date.now(),
+            session,
+            modelKeyPresent,
           }))
         }
+        try {
+          const seed = await fetch('/api/t4y-mobile-cowatch/switch-auth-seed', {
+            method: 'GET',
+            credentials: 'same-origin',
+            signal: timeoutSignal(4000),
+          })
+          if (seed.ok) {
+            const seeded = await seed.json()
+            if (seeded?.switchAuth && typeof seeded.switchAuth.accessToken === 'string') {
+              sessionStorage.setItem('t4y.mobile.switchAuth.v1', JSON.stringify(seeded.switchAuth))
+              try { localStorage.removeItem('t4y.mobile.switchAuth.v1') } catch { /* ignore */ }
+              if (typeof seeded.switchAuth.accountKey === 'string') {
+                seededAccountKey = seeded.switchAuth.accountKey
+              }
+            }
+          }
+        } catch { /* optional for current-PC scan */ }
+        try {
+          localStorage.setItem('t4y.mobile.currentHost.v1', JSON.stringify({
+            id: 'scanned',
+            label: hostLabel,
+            origin: location.origin.replace(/\\/$/u, ''),
+            accountKey: seededAccountKey,
+          }))
+        } catch { /* ignore */ }
       } catch { /* continue into app; WaitGate will retry */ }
       location.replace('/')
     } catch {
@@ -601,66 +794,13 @@ function patchDshMobileModule(mod) {
           mobileGateways.add(this)
           tuneGatewayInstance(this)
         }
-        const rawUrl = typeof request.url === 'string' ? request.url : '/'
-        const pathname = rawUrl.split('?')[0] || '/'
-        if (request.method === 'GET' && pathname === '/t4y-mobile-enter') {
-          writeHtml(response, enterHtmlForAccepting())
-          return
+        let pairingOpen = false
+        try {
+          pairingOpen = this.access.pairingStatus().open === true
+        } catch {
+          pairingOpen = false
         }
-        if (request.method === 'OPTIONS' && pathname.startsWith('/api/t4y-mobile-enter/')) {
-          response.writeHead(204, corsHeaders(request))
-          response.end()
-          return
-        }
-        if (request.method === 'GET' && pathname === '/api/t4y-mobile-enter/status') {
-          writeJson(response, 200, { accepting: isAccepting() }, request, true)
-          return
-        }
-        if (request.method === 'GET' && pathname === '/api/t4y-mobile-enter/host-card') {
-          const origin = typeof request.headers['x-forwarded-proto'] === 'string'
-            && typeof request.headers.host === 'string'
-            ? `${request.headers['x-forwarded-proto']}://${String(request.headers.host).split(',')[0].trim()}`
-            : (typeof request.headers.host === 'string' ? `https://${request.headers.host}` : null)
-          const result = await handleHostCard(isAccepting(), origin)
-          const text = await result.text()
-          const buffer = Buffer.from(text, 'utf8')
-          response.writeHead(result.status, {
-            'Content-Type': 'application/json; charset=utf-8',
-            'Content-Length': buffer.length,
-            'Cache-Control': 'no-store',
-            ...corsHeaders(request),
-          })
-          response.end(buffer)
-          return
-        }
-        if (request.method === 'POST' && pathname === '/api/t4y-mobile-enter/login') {
-          await respondEnterApi(request, response, 'login')
-          return
-        }
-        if (request.method === 'POST' && pathname === '/api/t4y-mobile-enter/select') {
-          await respondEnterApi(request, response, 'select')
-          return
-        }
-        if (request.method === 'GET' && (pathname === '/mobile-access/pair' || pathname === '/mobile-access/pair.js')) {
-          if (!isAccepting()) {
-            writeHtml(response, enterpriseOfflinePage())
-            return
-          }
-          if (!this.access.pairingStatus().open) {
-            return originalHandle.call(this, request, response)
-          }
-          const body = pathname.endsWith('.js') ? enterprisePairScript() : enterprisePairPage()
-          const contentType = pathname.endsWith('.js')
-            ? 'text/javascript; charset=utf-8'
-            : 'text/html; charset=utf-8'
-          const buffer = Buffer.from(body, 'utf8')
-          response.writeHead(200, {
-            'Content-Type': contentType,
-            'Content-Length': buffer.length,
-            'Cache-Control': 'no-store',
-            Vary: 'Accept-Language, Cookie',
-          })
-          response.end(buffer)
+        if (tryHandlePublicMobileHttp(request, response, { pairingOpen })) {
           return
         }
         return originalHandle.call(this, request, response)
@@ -677,7 +817,7 @@ function patchDshMobileModule(mod) {
  */
 async function respondEnterApi(request, response, kind) {
   try {
-    if (kind === 'select' && !isAccepting()) {
+    if (!isAccepting()) {
       writeJson(response, 503, { error: 'remote_off' }, request, true)
       return
     }
@@ -715,7 +855,7 @@ async function respondEnterApi(request, response, kind) {
       'Content-Type': 'application/json; charset=utf-8',
       'Content-Length': buffer.length,
       'Cache-Control': 'no-store',
-      ...corsHeaders(request),
+      ...corsHeaders(),
     })
     response.end(buffer)
   } catch {
@@ -724,79 +864,109 @@ async function respondEnterApi(request, response, kind) {
 }
 
 /**
+ * @param {import('node:http').IncomingMessage} request
+ * @param {import('node:http').ServerResponse} response
+ */
+async function respondHandoffMint(request, response) {
+  try {
+    if (!isAccepting()) {
+      writeJson(response, 503, { error: 'remote_off' }, request, true)
+      return
+    }
+    const chunks = []
+    for await (const chunk of request) chunks.push(chunk)
+    let body
+    try {
+      body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+    } catch {
+      writeJson(response, 400, { error: 'invalid_request' }, request, true)
+      return
+    }
+    const payload = sanitizeHandoffPayload(body)
+    if (!payload) {
+      writeJson(response, 400, { error: 'invalid_request' }, request, true)
+      return
+    }
+    const minted = mintHandoffTicket(payload)
+    writeJson(response, 200, { ok: true, ...minted }, request, true)
+  } catch {
+    writeJson(response, 500, { error: 'handoff_mint_failed' }, request, true)
+  }
+}
+
+/**
+ * @param {import('node:http').IncomingMessage} request
+ * @param {import('node:http').ServerResponse} response
+ */
+async function respondHandoffRedeem(request, response) {
+  try {
+    if (!isAccepting()) {
+      writeJson(response, 503, { error: 'remote_off' }, request, true)
+      return
+    }
+    const chunks = []
+    for await (const chunk of request) chunks.push(chunk)
+    let body
+    try {
+      body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+    } catch {
+      writeJson(response, 400, { error: 'invalid_request' }, request, true)
+      return
+    }
+    const code = typeof body?.code === 'string' ? body.code.trim() : ''
+    const payload = redeemHandoffTicket(code)
+    if (!payload) {
+      writeJson(response, 404, { error: 'handoff_expired' }, request, true)
+      return
+    }
+    writeJson(response, 200, { ok: true, switchAuth: payload }, request, true)
+  } catch {
+    writeJson(response, 500, { error: 'handoff_redeem_failed' }, request, true)
+  }
+}
+
+/**
  * Intercept pair HTML/JS at the Node HTTP(S) server so QR opens the enterprise auto-bind page
  * even when dsh-mobile was loaded from a different module instance than this plugin.
+ * Stores originals so plugin unload can restore prototypes.
  */
 function installServerPairIntercept() {
   for (const Server of [http.Server, https.Server]) {
-    if (!Server?.prototype || Server.__t4yEnterprisePairIntercept === true) continue
-    Server.__t4yEnterprisePairIntercept = true
+    if (!Server?.prototype) continue
+    if (Server.__t4yEnterprisePairIntercept === true) continue
     const originalEmit = Server.prototype.emit
+    Server.__t4yEnterprisePairOriginalEmit = originalEmit
+    Server.__t4yEnterprisePairIntercept = true
     Server.prototype.emit = function t4yPairEmit(event, ...args) {
       if (event === 'request') {
         const req = args[0]
         const res = args[1]
-        const pathname = String(req?.url || '').split('?')[0]
-        if (req?.method === 'GET' && pathname === '/t4y-mobile-enter') {
-          writeHtml(res, enterHtmlForAccepting())
-          return true
-        }
-        if (req?.method === 'OPTIONS' && pathname.startsWith('/api/t4y-mobile-enter/')) {
-          res.writeHead(204, corsHeaders(req))
-          res.end()
-          return true
-        }
-        if (req?.method === 'GET' && pathname === '/api/t4y-mobile-enter/status') {
-          writeJson(res, 200, { accepting: isAccepting() }, req, true)
-          return true
-        }
-        if (req?.method === 'GET' && pathname === '/api/t4y-mobile-enter/host-card') {
-          const origin = typeof req.headers['x-forwarded-proto'] === 'string'
-            && typeof req.headers.host === 'string'
-            ? `${req.headers['x-forwarded-proto']}://${String(req.headers.host).split(',')[0].trim()}`
-            : (typeof req.headers.host === 'string' ? `https://${req.headers.host}` : null)
-          void handleHostCard(isAccepting(), origin).then(async (result) => {
-            const text = await result.text()
-            const buffer = Buffer.from(text, 'utf8')
-            res.writeHead(result.status, {
-              'Content-Type': 'application/json; charset=utf-8',
-              'Content-Length': buffer.length,
-              'Cache-Control': 'no-store',
-              ...corsHeaders(req),
-            })
-            res.end(buffer)
-          })
-          return true
-        }
-        // FRP often tunnels to Host :3080 (not Gateway). Answer login before Web cookie auth.
-        if (req?.method === 'POST' && pathname === '/api/t4y-mobile-enter/login') {
-          void respondEnterApi(req, res, 'login')
-          return true
-        }
-        if (req?.method === 'POST' && pathname === '/api/t4y-mobile-enter/select') {
-          void respondEnterApi(req, res, 'select')
-          return true
-        }
-        if (req?.method === 'GET' && (pathname === '/mobile-access/pair' || pathname === '/mobile-access/pair.js')) {
-          if (!isAccepting()) {
-            writeHtml(res, enterpriseOfflinePage())
-            return true
-          }
-          const body = pathname.endsWith('.js') ? enterprisePairScript() : enterprisePairPage()
-          const contentType = pathname.endsWith('.js')
-            ? 'text/javascript; charset=utf-8'
-            : 'text/html; charset=utf-8'
-          const buffer = Buffer.from(body, 'utf8')
-          res.writeHead(200, {
-            'Content-Type': contentType,
-            'Content-Length': buffer.length,
-            'Cache-Control': 'no-store',
-          })
-          res.end(buffer)
+        // pairingOpen omitted → require a tracked AccessController open window (same as Gateway).
+        if (tryHandlePublicMobileHttp(req, res, { pairingOpen: null })) {
           return true
         }
       }
       return originalEmit.apply(this, [event, ...args])
+    }
+  }
+}
+
+/**
+ * Undo process-global Server.emit patches installed by this plugin.
+ */
+function uninstallServerPairIntercept() {
+  for (const Server of [http.Server, https.Server]) {
+    if (!Server?.prototype || Server.__t4yEnterprisePairIntercept !== true) continue
+    const original = Server.__t4yEnterprisePairOriginalEmit
+    if (typeof original === 'function') {
+      Server.prototype.emit = original
+    }
+    try {
+      delete Server.__t4yEnterprisePairIntercept
+      delete Server.__t4yEnterprisePairOriginalEmit
+    } catch {
+      Server.__t4yEnterprisePairIntercept = false
+      Server.__t4yEnterprisePairOriginalEmit = undefined
     }
   }
 }
@@ -934,8 +1104,8 @@ async function applyLabelToControllers(displayName, preferredDeviceId) {
  * @param {import('cordis').Context} ctx
  */
 export function apply(ctx) {
+  loadAcceptingSync()
   installServerPairIntercept()
-  void loadAccepting()
   const enterOptions = { isAccepting }
   enterLoginHandler = async (request) => {
     try {
@@ -960,7 +1130,8 @@ export function apply(ctx) {
   ctx.effect(() => () => {
     enterLoginHandler = null
     enterSelectHandler = null
-  }, 't4y-mobile-enter: clear handler')
+    uninstallServerPairIntercept()
+  }, 't4y-mobile-enter: clear handler + server intercept')
 
   void installAccessControllerHooks().then(() => {
     tuneLiveGatewayServers()
@@ -1031,6 +1202,110 @@ export function apply(ctx) {
   })
 
   /**
+   * After QR pair: mint session-only switchAuth from disk host-session.
+   * host-session GET stays public-placeholder; this is the sole phone redeem seed.
+   */
+  ctx.connection.fetch.register({
+    path: '/api/t4y-mobile-cowatch/switch-auth-seed',
+    methods: ['GET'],
+    requestBody: 'buffered',
+    async fetch() {
+      try {
+        if (!isAccepting()) return json(503, { error: 'remote_off' })
+        const file = join(dshHome(), 't4y-identity', 'host-session.json')
+        let parsed
+        try {
+          parsed = JSON.parse(await readFile(file, 'utf8'))
+        } catch {
+          return json(404, { error: 'no_switch_auth' })
+        }
+        const session = parsed?.session && typeof parsed.session === 'object' ? parsed.session : parsed
+        const accessToken = typeof session?.accessToken === 'string' ? session.accessToken.trim() : ''
+        if (accessToken === '' || accessToken === 'mobile-cowatch') {
+          return json(404, { error: 'no_switch_auth' })
+        }
+        const expiresAt = typeof session.expiresAt === 'number' && session.expiresAt > Date.now()
+          ? session.expiresAt
+          : Date.now() + 8 * 3600_000
+        const enterpriseName = typeof session.enterpriseName === 'string' ? session.enterpriseName : ''
+        const userName = typeof session.username === 'string' ? session.username : ''
+        return json(200, {
+          switchAuth: {
+            accessToken,
+            enterpriseName,
+            userName,
+            accountKey: accountKeyOf(enterpriseName, userName),
+            expiresAt,
+            at: Date.now(),
+            via: 'qr-seed',
+          },
+        })
+      } catch (error) {
+        return json(500, {
+          error: error instanceof Error ? error.message : 'switch_auth_seed_failed',
+        })
+      }
+    },
+  })
+
+  /**
+   * Cross-origin enter: mint a one-time code on the *target* Host (CORS, no cookie).
+   * Caller then opens `/t4y-mobile-enter#handoff=<code>` — never puts accessToken in the URL.
+   */
+  ctx.connection.fetch.register({
+    path: '/api/t4y-mobile-cowatch/handoff-mint',
+    methods: ['POST'],
+    requestBody: 'buffered',
+    async fetch(request) {
+      try {
+        if (!isAccepting()) return json(503, { error: 'remote_off' })
+        let body
+        try {
+          body = await request.json()
+        } catch {
+          return json(400, { error: 'invalid_request' })
+        }
+        const payload = sanitizeHandoffPayload(body)
+        if (!payload) return json(400, { error: 'invalid_request' })
+        const minted = mintHandoffTicket(payload)
+        return json(200, { ok: true, ...minted })
+      } catch (error) {
+        return json(500, {
+          error: error instanceof Error ? error.message : 'handoff_mint_failed',
+        })
+      }
+    },
+  })
+
+  /**
+   * Redeem a one-time handoff code into switchAuth (consumed).
+   */
+  ctx.connection.fetch.register({
+    path: '/api/t4y-mobile-cowatch/handoff-redeem',
+    methods: ['POST'],
+    requestBody: 'buffered',
+    async fetch(request) {
+      try {
+        if (!isAccepting()) return json(503, { error: 'remote_off' })
+        let body
+        try {
+          body = await request.json()
+        } catch {
+          return json(400, { error: 'invalid_request' })
+        }
+        const code = typeof body?.code === 'string' ? body.code.trim() : ''
+        const payload = redeemHandoffTicket(code)
+        if (!payload) return json(404, { error: 'handoff_expired' })
+        return json(200, { ok: true, switchAuth: payload })
+      } catch (error) {
+        return json(500, {
+          error: error instanceof Error ? error.message : 'handoff_redeem_failed',
+        })
+      }
+    },
+  })
+
+  /**
    * Phone project switch: update PC host-session + Host workspace context using the
    * real desktop token (never exposed to the phone).
    */
@@ -1040,6 +1315,12 @@ export function apply(ctx) {
     requestBody: 'buffered',
     async fetch(request) {
       try {
+        if (!isAccepting()) return json(503, { error: 'remote_off' })
+        // Paired phone / Host cookie only — reject anonymous callers.
+        const cookie = request.headers.get('cookie') || ''
+        if (cookie.trim() === '') {
+          return json(401, { error: 'authorization_required' })
+        }
         let body
         try {
           body = await request.json()
@@ -1079,6 +1360,7 @@ export function apply(ctx) {
         await renameFile(temporary, file)
 
         const accessToken = typeof nextSession.accessToken === 'string' ? nextSession.accessToken : ''
+        const loopback = hostLoopbackBase(ctx)
         if (accessToken !== '' && accessToken !== 'mobile-cowatch') {
           const headers = {
             Authorization: accessToken,
@@ -1086,7 +1368,7 @@ export function apply(ctx) {
             Accept: 'application/json',
           }
           try {
-            await fetch('http://127.0.0.1:3080/api/t4y-identity/set-context', {
+            await fetch(`${loopback}/api/t4y-identity/set-context`, {
               method: 'POST',
               headers,
               body: JSON.stringify({
@@ -1098,7 +1380,7 @@ export function apply(ctx) {
             })
           } catch { /* best-effort */ }
           try {
-            await fetch('http://127.0.0.1:3080/api/t4y-identity/project-workspace', {
+            await fetch(`${loopback}/api/t4y-identity/project-workspace`, {
               method: 'POST',
               headers,
               body: JSON.stringify({
@@ -1109,7 +1391,7 @@ export function apply(ctx) {
             })
           } catch { /* best-effort */ }
           try {
-            await fetch('http://127.0.0.1:3080/api/t4y-release/apply-module', {
+            await fetch(`${loopback}/api/t4y-release/apply-module`, {
               method: 'POST',
               headers: {
                 'X-T4Y-Access-Token': accessToken,

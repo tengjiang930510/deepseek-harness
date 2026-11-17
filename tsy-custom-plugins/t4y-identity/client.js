@@ -332,6 +332,9 @@ window.__ModuleLoader__.load({
     }
 
     async function issueModelKey(accessToken, expiresIn, context) {
+      if (accessToken === 'mobile-cowatch') {
+        return { ok: false, error: 'desktop_key_required' }
+      }
       const moduleId = typeof context?.moduleId === 'string' ? context.moduleId.trim() : ''
       if (moduleId === '') return { ok: false, message: 'moduleId is required' }
       try {
@@ -373,7 +376,7 @@ window.__ModuleLoader__.load({
     }
 
     async function revokeModelKey(accessToken) {
-      if (typeof accessToken !== 'string' || accessToken === '') return
+      if (typeof accessToken !== 'string' || accessToken === '' || accessToken === 'mobile-cowatch') return
       try {
         await fetch('/api/t4y-identity/revoke-model-key', {
           method: 'POST',
@@ -385,6 +388,8 @@ window.__ModuleLoader__.load({
     /** Push enterprise/project ids into Host t4yTenant (browser events alone do not). */
     async function syncHostContext(session, reason) {
       if (!session?.accessToken || sessionTenantId(session) === '') return
+      // Phone placeholder must never hit Host enterprise APIs as a bearer token.
+      if (session.accessToken === 'mobile-cowatch') return
       try {
         await fetch('/api/t4y-identity/set-context', {
           method: 'POST',
@@ -406,6 +411,7 @@ window.__ModuleLoader__.load({
      */
     async function applyModulePlugins(session) {
       if (!session?.accessToken || typeof session.moduleId !== 'string' || session.moduleId === '') return
+      if (session.accessToken === 'mobile-cowatch') return
       try {
         await fetch('/api/t4y-release/apply-module', {
           method: 'POST',
@@ -676,6 +682,8 @@ window.__ModuleLoader__.load({
         if (sessionStorage.getItem('t4y.mobile.cowatch') === '1') return true
         if (sessionStorage.getItem('t4y.mobile.cowatch.entered.v1') === '1') return true
         if (sessionStorage.getItem('t4y.mobile.hostReady.v1')) return true
+        if (sessionStorage.getItem('t4y.mobile.switchAuth.v1')) return true
+        // Legacy localStorage seed — treat as enter mode, then prefer session-only.
         if (localStorage.getItem('t4y.mobile.switchAuth.v1')) return true
         const raw = localStorage.getItem(SESSION_KEY)
         if (raw) {
@@ -1625,7 +1633,8 @@ window.__ModuleLoader__.load({
                     || (typeof body?.session?.llmApiKeyExpiresAt === 'number'
                       && body.session.llmApiKeyExpiresAt > Date.now())
                   if (body?.session && isShareableHostSession(body.session)) {
-                    existing = body.session
+                    // GET is public-placeholder; never persist a real token if one leaked.
+                    existing = { ...body.session, accessToken: 'mobile-cowatch', needsModulePick: false }
                     fromHost = true
                   }
                 }
@@ -1640,6 +1649,7 @@ window.__ModuleLoader__.load({
               emitTenant(null, 'anonymous')
               return
             }
+            existing = { ...existing, accessToken: 'mobile-cowatch', needsModulePick: false }
             // Ensure project list exists for「切换项目」(older enter seeds omitted modules).
             if (!Array.isArray(existing.modules) || existing.modules.length === 0) {
               try {
@@ -1651,7 +1661,7 @@ window.__ModuleLoader__.load({
                 if (shared.ok) {
                   const body = await shared.json()
                   if (Array.isArray(body?.session?.modules) && body.session.modules.length > 0) {
-                    existing = { ...existing, modules: body.session.modules }
+                    existing = { ...existing, modules: body.session.modules, accessToken: 'mobile-cowatch' }
                   }
                 }
               } catch { /* optional */ }
@@ -1661,11 +1671,7 @@ window.__ModuleLoader__.load({
             writeSession(existing, fromHost ? 'host-sync' : 'restore', { skipHostPush: true })
             setSession(existing)
             setModuleId(existing.moduleId || '')
-            if (keyPresent) {
-              window.setTimeout(() => {
-                void syncHostContext(existing, fromHost ? 'mobile-host-sync' : 'mobile-restore')
-              }, 0)
-            }
+            // Context/plugins stay on the PC Host; phone only holds the placeholder.
             setBootstrapping(false)
             return
           }
@@ -1753,8 +1759,12 @@ window.__ModuleLoader__.load({
         if (!session?.accessToken || session.needsModulePick) return undefined
         // Mobile co-watch: cpolar/iroh gateways may strip X-T4Y-* headers, so
         // session-status returns 401 and would falsely log the phone out. Desktop
-        // Host already owns key/session liveness.
-        if (window.__t4yMobileCowatch?.active) return undefined
+        // Host already owns key/session liveness. Also never probe with the phone placeholder.
+        if (
+          window.__t4yMobileCowatch?.active
+          || session.accessToken === 'mobile-cowatch'
+          || isMobileEnterMode()
+        ) return undefined
         let cancelled = false
         const verify = async () => {
           if (typeof session.expiresAt === 'number' && Date.now() >= session.expiresAt) {

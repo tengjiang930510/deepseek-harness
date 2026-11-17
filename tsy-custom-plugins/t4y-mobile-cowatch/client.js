@@ -238,9 +238,12 @@ window.__ModuleLoader__.load({
      */
     function normalizeHostReady(session, modelKeyPresent) {
       const usable = usableHostSession(session)
+      const publicSession = usable
+        ? { ...usable, accessToken: 'mobile-cowatch', needsModulePick: false }
+        : null
       const keyPresent = modelKeyPresent === true
-        || (typeof usable?.llmApiKeyExpiresAt === 'number' && usable.llmApiKeyExpiresAt > Date.now())
-      return { session: usable, modelKeyPresent: Boolean(usable) && keyPresent }
+        || (typeof publicSession?.llmApiKeyExpiresAt === 'number' && publicSession.llmApiKeyExpiresAt > Date.now())
+      return { session: publicSession, modelKeyPresent: Boolean(publicSession) && keyPresent }
     }
 
     /**
@@ -1846,7 +1849,6 @@ window.__ModuleLoader__.load({
       if (typeof document === 'undefined') return
       const SWITCH_MENU_ATTR = 'data-t4y-mobile-switch-item'
       const SWITCH_ROOT_ID = 't4y-mobile-switch-root'
-      const REMEMBER_KEY = 't4y.mobile.hosts.v1'
       const SWITCH_AUTH_KEY = 't4y.mobile.switchAuth.v1'
       const CURRENT_HOST_KEY = 't4y.mobile.currentHost.v1'
       const ENTERED_KEY = 't4y.mobile.cowatch.entered.v1'
@@ -1863,10 +1865,19 @@ window.__ModuleLoader__.load({
       function readSwitchAuth() {
         const fromSession = readJson(sessionStorage, SWITCH_AUTH_KEY)
         const fromLocal = readJson(localStorage, SWITCH_AUTH_KEY)
+        // Prefer sessionStorage; migrate/clear durable localStorage copies.
+        if (fromLocal && !fromSession) {
+          try {
+            sessionStorage.setItem(SWITCH_AUTH_KEY, JSON.stringify(fromLocal))
+            localStorage.removeItem(SWITCH_AUTH_KEY)
+          } catch { /* ignore */ }
+        } else if (fromLocal) {
+          try { localStorage.removeItem(SWITCH_AUTH_KEY) } catch { /* ignore */ }
+        }
         const auth = fromSession || fromLocal
         if (auth && typeof auth.accessToken === 'string') {
           if (typeof auth.expiresAt === 'number' && auth.expiresAt <= Date.now()) {
-            // fall through to scan/enter fallback
+            // fall through to reseed / scan fallback
           } else {
             return auth
           }
@@ -1885,10 +1896,36 @@ window.__ModuleLoader__.load({
           accessToken: 'scan-local',
           enterpriseName: typeof identity?.enterpriseName === 'string' ? identity.enterpriseName : '',
           userName: typeof identity?.username === 'string' ? identity.username : '',
-          accountKey: '',
+          accountKey: typeof identity?.accountKey === 'string' ? identity.accountKey : '',
           expiresAt,
           at: Date.now(),
           via: 'scan-fallback',
+        }
+      }
+
+      /**
+       * Paired phone can re-pull switchAuth from Host after tab kill / sessionStorage loss.
+       * @returns {Promise<object | null>}
+       */
+      async function ensureSwitchAuth() {
+        const existing = readSwitchAuth()
+        if (canRedeemHost(existing)) return existing
+        try {
+          const response = await fetch('/api/t4y-mobile-cowatch/switch-auth-seed', {
+            method: 'GET',
+            credentials: 'same-origin',
+            signal: AbortSignal.timeout(4_000),
+          })
+          if (!response.ok) return existing
+          const body = await response.json()
+          const seeded = body?.switchAuth
+          if (!seeded || typeof seeded.accessToken !== 'string' || !canRedeemHost(seeded)) return existing
+          const next = { ...seeded, at: Date.now(), via: seeded.via || 'qr-seed-refresh' }
+          sessionStorage.setItem(SWITCH_AUTH_KEY, JSON.stringify(next))
+          try { localStorage.removeItem(SWITCH_AUTH_KEY) } catch { /* ignore */ }
+          return next
+        } catch {
+          return existing
         }
       }
 
@@ -1898,11 +1935,6 @@ window.__ModuleLoader__.load({
           && auth.accessToken !== ''
           && auth.accessToken !== 'scan-local'
           && auth.accessToken !== 'mobile-cowatch')
-      }
-
-      function readRemembered() {
-        const parsed = readJson(localStorage, REMEMBER_KEY)
-        return Array.isArray(parsed) ? parsed.filter((item) => item && typeof item.origin === 'string') : []
       }
 
       function readCurrentHost() {
@@ -1934,6 +1966,7 @@ window.__ModuleLoader__.load({
       }
 
       async function collectHosts(auth) {
+        // Product scope: current PC only — do not probe remembered multi-host history.
         const accountKey = auth?.accountKey || ''
         const byId = new Map()
         const current = readCurrentHost()
@@ -1945,23 +1978,25 @@ window.__ModuleLoader__.load({
             accepting: false,
           })
         }
-        // Always include this origin.
         const here = location.origin.replace(/\/$/u, '')
         if (![...byId.values()].some((host) => host.origin === here)) {
           const self = await probeHost(here, accountKey)
           if (self) byId.set(self.id, self)
-        }
-        for (const item of readRemembered()) {
-          if (accountKey && item.accountKey && item.accountKey !== accountKey) continue
-          if ([...byId.values()].some((host) => host.origin === String(item.origin).replace(/\/$/u, ''))) continue
-          const probed = await probeHost(item.origin, accountKey)
-          if (probed) byId.set(probed.id, probed)
-          else {
-            byId.set(item.id || item.origin, {
-              id: item.id || item.origin,
-              label: item.label || item.origin,
-              origin: String(item.origin).replace(/\/$/u, ''),
-              accountKey: item.accountKey || accountKey,
+          else if (!accountKey) {
+            byId.set('current', {
+              id: 'current',
+              label: '当前电脑',
+              origin: here,
+              accountKey,
+              accepting: true,
+              online: true,
+            })
+          } else {
+            byId.set('current', {
+              id: 'current',
+              label: '当前电脑',
+              origin: here,
+              accountKey,
               accepting: false,
               online: false,
             })
@@ -1985,10 +2020,10 @@ window.__ModuleLoader__.load({
         try {
           sessionStorage.removeItem(ENTERED_KEY)
           sessionStorage.setItem(SWITCH_AUTH_KEY, JSON.stringify(auth))
-          localStorage.setItem(SWITCH_AUTH_KEY, JSON.stringify(auth))
+          localStorage.removeItem(SWITCH_AUTH_KEY)
         } catch { /* ignore */ }
         if (origin === here) {
-          // Re-select on this origin via enter page handoff.
+          // Re-select on this origin via enter page handoff (sessionStorage only).
           try {
             sessionStorage.setItem('t4y.mobile.enter.resume.v1', JSON.stringify({
               ...auth,
@@ -1999,20 +2034,37 @@ window.__ModuleLoader__.load({
           location.assign('/t4y-mobile-enter#switch=1')
           return
         }
-        const payload = btoa(unescape(encodeURIComponent(JSON.stringify({
-          accessToken: auth.accessToken,
-          enterpriseName: auth.enterpriseName,
-          userName: auth.userName,
-          accountKey: auth.accountKey,
-          expiresAt: auth.expiresAt,
-          preferSelect: true,
-        }))))
-        location.assign(`${origin}/t4y-mobile-enter#resume=${encodeURIComponent(payload)}`)
+        try {
+          const response = await fetch(`${origin}/api/t4y-mobile-cowatch/handoff-mint`, {
+            method: 'POST',
+            credentials: 'omit',
+            mode: 'cors',
+            cache: 'no-store',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              accessToken: auth.accessToken,
+              enterpriseName: auth.enterpriseName,
+              userName: auth.userName,
+              accountKey: auth.accountKey,
+              expiresAt: auth.expiresAt,
+              preferSelect: true,
+            }),
+            signal: AbortSignal.timeout(6_000),
+          })
+          const data = await response.json().catch(() => null)
+          if (!response.ok || typeof data?.code !== 'string' || data.code === '') {
+            location.assign('/t4y-mobile-enter')
+            return
+          }
+          location.assign(`${origin}/t4y-mobile-enter#handoff=${encodeURIComponent(data.code)}`)
+        } catch {
+          location.assign('/t4y-mobile-enter')
+        }
       }
 
       async function openSwitcher() {
         closeSwitcher()
-        const auth = readSwitchAuth()
+        const auth = await ensureSwitchAuth()
         const redeemable = canRedeemHost(auth)
         const root = document.createElement('div')
         root.id = SWITCH_ROOT_ID

@@ -87,6 +87,32 @@ function sanitizeSharedSession(raw) {
 }
 
 /**
+ * Phone-visible host-session view: never expose the desktop enterprise accessToken.
+ * Real token stays on disk for Host-side proxy / switch-module / soft redeem.
+ * @param {object} session
+ * @returns {object}
+ */
+function toPublicHostSession(session) {
+  const expiresAt = typeof session.expiresAt === 'number' && session.expiresAt > Date.now()
+    ? session.expiresAt
+    : Date.now() + 8 * 3600_000
+  const publicSession = {
+    ...session,
+    accessToken: 'mobile-cowatch',
+    needsModulePick: false,
+    expiresAt,
+    tenantId: typeof session.tenantId === 'string' && session.tenantId !== ''
+      ? session.tenantId
+      : 'mobile',
+  }
+  // Expired llmApiKeyExpiresAt would make phone identity wipe the session.
+  if (typeof publicSession.llmApiKeyExpiresAt === 'number' && publicSession.llmApiKeyExpiresAt <= Date.now()) {
+    delete publicSession.llmApiKeyExpiresAt
+  }
+  return publicSession
+}
+
+/**
  * @returns {Promise<object | null>}
  */
 async function readHostSessionFile() {
@@ -763,7 +789,8 @@ export function apply(ctx, config = {}) {
 
   /**
    * Shared enterprise session for paired Mobile clients.
-   * Desktop PUT after login/project pick; Mobile GET on cold boot to skip the gate.
+   * Desktop PUT stores the full session on disk; GET always returns the public
+   * placeholder view so phones never receive the real enterprise accessToken.
    * Only authenticated DSH peers (cookie / pairing) can call these routes.
    */
   ctx.connection.fetch.register({
@@ -781,7 +808,13 @@ export function apply(ctx, config = {}) {
           const resolved = await ctx.credentials.resolve(MODEL_CREDENTIAL_REF)
           modelKeyPresent = typeof resolved?.value === 'string' && resolved.value !== ''
         } catch { /* treat as missing */ }
-        return json(200, { session, modelKeyPresent })
+        const publicSession = toPublicHostSession(session)
+        if (modelKeyPresent
+          && (typeof publicSession.llmApiKeyExpiresAt !== 'number'
+            || publicSession.llmApiKeyExpiresAt <= Date.now())) {
+          publicSession.llmApiKeyExpiresAt = Date.now() + 8 * 3600_000
+        }
+        return json(200, { session: publicSession, modelKeyPresent })
       }
       if (request.method === 'DELETE') {
         await writeHostSessionFile(null)

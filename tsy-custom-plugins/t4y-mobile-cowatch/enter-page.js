@@ -138,7 +138,8 @@ export function enterpriseEnterPage() {
       })
       if (!response.ok) return null
       const card = await response.json()
-      if (!card || card.accountKey !== accountKey) return null
+      // Only enforce accountKey when the session actually carries one (QR seed may be empty).
+      if (!card || (accountKey && card.accountKey !== accountKey)) return null
       return {
         id: card.id,
         label: card.label || origin,
@@ -154,24 +155,48 @@ export function enterpriseEnterPage() {
 
   async function collectHosts() {
     if (!auth) return []
+    // Current-PC scope: login hosts + probe this origin.
+    // Resume /「选机列表」handoff seeds hosts:[]; must still show the PC we are on.
     const byId = new Map()
+    const accountKey = typeof auth.accountKey === 'string' ? auth.accountKey : ''
     for (const host of auth.hosts || []) {
-      if (host?.id) byId.set(host.id, { ...host, online: true })
+      if (host?.id) byId.set(host.id, { ...host, online: host.online !== false })
     }
-    const remembered = readRemembered().filter((item) => !item.accountKey || item.accountKey === auth.accountKey)
-    await Promise.all(remembered.map(async (item) => {
-      if ([...byId.values()].some((host) => host.origin === item.origin)) return
-      const probed = await probeHost(item.origin, auth.accountKey)
-      if (probed) byId.set(probed.id, probed)
-      else byId.set(item.id || item.origin, {
-        id: item.id || item.origin,
-        label: item.label || item.origin,
-        origin: item.origin,
-        accountKey: auth.accountKey,
-        accepting: false,
-        online: false,
-      })
-    }))
+    const here = location.origin.replace(/\\/$/u, '')
+    if (![...byId.values()].some((host) => String(host.origin || '').replace(/\\/$/u, '') === here)) {
+      const self = await probeHost(here, accountKey)
+      if (self) {
+        byId.set(self.id, self)
+        if (!auth.accountKey && self.accountKey) auth.accountKey = self.accountKey
+      } else if (!accountKey) {
+        // Empty accountKey (QR seed before fill): keep UI usable on this origin.
+        byId.set('current', {
+          id: 'current',
+          label: '当前电脑',
+          origin: here,
+          accountKey,
+          accepting: true,
+          online: true,
+        })
+      } else {
+        // accountKey present but probe missed — show non-enterable row, not a fake ready host.
+        byId.set('current', {
+          id: 'current',
+          label: '当前电脑',
+          origin: here,
+          accountKey,
+          accepting: false,
+          online: false,
+        })
+      }
+    } else {
+      // Refresh accepting/online for the host we already know on this origin.
+      const existing = [...byId.values()].find((host) => String(host.origin || '').replace(/\\/$/u, '') === here)
+      if (existing) {
+        const probed = await probeHost(here, accountKey || existing.accountKey || '')
+        if (probed) byId.set(probed.id, probed)
+      }
+    }
     return [...byId.values()]
   }
 
@@ -289,7 +314,7 @@ export function enterpriseEnterPage() {
           at: Date.now(),
         }
         sessionStorage.setItem(SWITCH_AUTH_KEY, JSON.stringify(switchAuth))
-        localStorage.setItem(SWITCH_AUTH_KEY, JSON.stringify(switchAuth))
+        try { localStorage.removeItem(SWITCH_AUTH_KEY) } catch { /* ignore */ }
       }
       if (data._selectedHost) {
         localStorage.setItem(CURRENT_HOST_KEY, JSON.stringify(data._selectedHost))
@@ -298,31 +323,48 @@ export function enterpriseEnterPage() {
     location.replace(typeof data.redirect === 'string' && data.redirect.startsWith('/') ? data.redirect : '/')
   }
 
+  async function mintCrossOriginHandoff(targetOrigin, preferSelect) {
+    const response = await fetch(String(targetOrigin).replace(/\\/$/u, '') + '/api/t4y-mobile-cowatch/handoff-mint', {
+      method: 'POST',
+      credentials: 'omit',
+      mode: 'cors',
+      cache: 'no-store',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        accessToken: auth.accessToken,
+        enterpriseName: auth.enterpriseName,
+        userName: auth.userName,
+        accountKey: auth.accountKey,
+        expiresAt: auth.expiresAt,
+        preferSelect: preferSelect === true,
+      }),
+      signal: AbortSignal.timeout(6_000),
+    })
+    const data = await response.json().catch(() => null)
+    if (!response.ok || typeof data?.code !== 'string' || data.code === '') {
+      const code = data && data.error
+      throw new Error(code === 'remote_off' ? 'remote_off' : 'handoff_mint_failed')
+    }
+    return data.code
+  }
+
   async function enterHost(host) {
     if (!auth || !host) return
     const origin = String(host.origin || '').replace(/\\/$/u, '')
     const here = location.origin.replace(/\\/$/u, '')
     writeRemembered([...(auth.hosts || []), host, ...readRemembered()])
     if (origin && origin !== here) {
+      setStatus('正在切换到目标电脑…', 'info')
       try {
-        sessionStorage.setItem(RESUME_KEY, JSON.stringify({
-          accessToken: auth.accessToken,
-          enterpriseName: auth.enterpriseName,
-          userName: auth.userName,
-          accountKey: auth.accountKey,
-          expiresAt: auth.expiresAt,
-          at: Date.now(),
-        }))
-      } catch { /* ignore */ }
-      // Cross-origin: hand off via fragment (not sent to server logs as path).
-      const payload = btoa(unescape(encodeURIComponent(JSON.stringify({
-        accessToken: auth.accessToken,
-        enterpriseName: auth.enterpriseName,
-        userName: auth.userName,
-        accountKey: auth.accountKey,
-        expiresAt: auth.expiresAt,
-      }))))
-      location.assign(origin + '/t4y-mobile-enter#resume=' + encodeURIComponent(payload))
+        const code = await mintCrossOriginHandoff(origin, false)
+        location.assign(origin + '/t4y-mobile-enter#handoff=' + encodeURIComponent(code))
+      } catch (error) {
+        setStatus(
+          error && error.message === 'remote_off'
+            ? '该电脑未开启移动访问'
+            : '无法切换到目标电脑，请确认对方已开启移动访问后重试',
+        )
+      }
       return
     }
     setStatus('正在连接电脑…', 'info')
@@ -363,18 +405,50 @@ export function enterpriseEnterPage() {
     }
   }
 
+  async function redeemHandoffCode(code) {
+    const response = await fetch('/api/t4y-mobile-cowatch/handoff-redeem', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code }),
+      signal: AbortSignal.timeout(6_000),
+    })
+    const data = await response.json().catch(() => null)
+    if (!response.ok || !data?.switchAuth || typeof data.switchAuth.accessToken !== 'string') {
+      return null
+    }
+    return data.switchAuth
+  }
+
   async function resumeFromHandoff() {
     let payload = null
     let forceSelect = false
+    let fromHandoffCode = false
     try {
       const hash = location.hash || ''
       if (/(?:^|[&#])switch=1(?:&|$)/.test(hash)) forceSelect = true
-      const match = hash.match(/resume=([^&]+)/)
-      if (match) {
-        payload = JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(match[1])))))
+      const handoffMatch = hash.match(/handoff=([^&]+)/)
+      if (handoffMatch) {
+        const code = decodeURIComponent(handoffMatch[1])
+        history.replaceState(null, '', location.pathname + location.search)
+        setStatus('正在恢复登录…', 'info')
+        payload = await redeemHandoffCode(code)
+        fromHandoffCode = true
+        if (!payload) {
+          setStatus('切换凭证已过期，请重新登录')
+          return true
+        }
+      } else if (hash) {
+        // Drop unknown hash fragments; only #handoff / #switch are supported.
+        history.replaceState(null, '', location.pathname + location.search)
       }
-      if (hash) history.replaceState(null, '', location.pathname + location.search)
-    } catch { payload = null }
+    } catch {
+      if (fromHandoffCode) {
+        setStatus('切换失败，请重新登录')
+        return true
+      }
+      payload = null
+    }
     if (!payload) {
       try {
         const raw = sessionStorage.getItem(RESUME_KEY)
@@ -403,6 +477,18 @@ export function enterpriseEnterPage() {
       userName: payload.userName || '',
       hosts: [],
     }
+    try {
+      sessionStorage.setItem(SWITCH_AUTH_KEY, JSON.stringify({
+        accessToken: auth.accessToken,
+        enterpriseName: auth.enterpriseName,
+        userName: auth.userName,
+        accountKey: auth.accountKey,
+        expiresAt: auth.expiresAt,
+        at: Date.now(),
+        via: fromHandoffCode ? 'handoff' : 'resume',
+      }))
+      localStorage.removeItem(SWITCH_AUTH_KEY)
+    } catch { /* ignore */ }
     showSelect()
     // Switching devices or explicit preferSelect: always show the picker.
     if (forceSelect || payload.preferSelect === true) {

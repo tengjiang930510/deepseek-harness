@@ -10,7 +10,7 @@
 
 浏览器不直连 `apiBaseUrl`：经 Host `POST /api/t4y-identity/enterprise-proxy` 转发（手机走 cpolar/iroh 时由本机访问企业登录口，避开分裂 DNS / 公网端口不可达）。
 
-电脑登录并选好项目后，完整企业会话经 `PUT /api/t4y-identity/host-session` 落到 Host（`~/.dsh/t4y-identity/host-session.json`）。已配对手机冷启动 `GET` 同一接口即可继承，无需再登；退出时 `DELETE` / revoke 清掉。
+电脑登录并选好项目后，完整企业会话经 `PUT /api/t4y-identity/host-session` 落到 Host（`~/.dsh/t4y-identity/host-session.json`）。已配对手机冷启动 `GET` 同一接口可继承公开占位会话（`accessToken: mobile-cowatch`，不下发真 token），无需再登；退出时 `DELETE` / revoke 清掉。
 
 ## 统一企业网关（方案 B）
 
