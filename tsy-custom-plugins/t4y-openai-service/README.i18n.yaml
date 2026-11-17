@@ -1,0 +1,61 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write tsy-custom-plugins/t4y-openai-service/README.md
+/:
+  en: a2830f967cb0f893
+  zh: 9df271627f5ccc66
+/t4y-openai-service:
+  en: eb0a0613172251a8
+  zh: e13dd8734d672020
+/t4y-openai-service/summary:
+  en: 410b1f8dc200f3e3
+  zh: 02061d8212fb8093
+/t4y-openai-service/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 09388d293f9be9cb
+/t4y-openai-service/use-this-package:
+  en: 2b53edac43f6f7bb
+  zh: 0f40a5561e3b86e2
+/t4y-openai-service/use-this-package/http-protocol:
+  en: d7591168e4c25b85
+  zh: e2057fe9ed01b326
+/t4y-openai-service/use-this-package/conversation-reuse:
+  en: 5de32a5530207663
+  zh: c23f74d15a553e13
+/t4y-openai-service/use-this-package/deployment-and-failures:
+  en: 514f1981c85229d0
+  zh: 6f45f3677e4cddec
+/t4y-openai-service/use-this-package/fastgpt:
+  en: 39036301cf82ac68
+  zh: 8104f6532e6f7933
+/t4y-openai-service/understand-the-implementation:
+  en: 38de0f26bc05fc37
+  zh: a93e84afc72e4385
+/t4y-openai-service/understand-the-implementation/verification:
+  en: 080002caffca3974
+  zh: 91c3ed8d9760f2a2
+/t4y-openai-service/further-exploration:
+  en: 9d720d9457eafad5
+  zh: a0fb519ebffc81a3
+/t4y-openai-service/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/t4y-openai-service/model-experience/client-messages:
+  en: ed22405c37784466
+  zh: 1987ebf5dc91f9c3
+/t4y-openai-service/model-experience/client-messages/what-the-model-sees:
+  en: ef2c92c73ba012b1
+  zh: 172098301ea04269
+/t4y-openai-service/model-experience/client-messages/token-effect:
+  en: b13a35f60e98fca9
+  zh: ca785465feeff8f1
+/t4y-openai-service/model-experience/client-messages/kv-cache-effect:
+  en: d03f86da5ea3c359
+  zh: 586183c51b6c4563
+/t4y-openai-service/known-limitations-and-deferred-work:
+  en: eb69acf70210350b
+  zh: 937de6b5f0efde36
+/t4y-openai-service/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: 8ec3e73528ddb1a6

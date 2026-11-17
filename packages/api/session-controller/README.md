@@ -101,6 +101,8 @@ A successful `selectModel` response acknowledges the recorded Session selection 
 <a id="configuration"></a>
 ## Configuration
 
+`readOnlySessionIdPrefixes` identifies Session namespaces whose execution belongs to another service. Matching list rows and history-opening headers carry `readOnly: true`; follow ignores activation requests, and Agent acquisition, named Session reuse, and cancellation reject with `session/read-only`. The policy applies before opening a writer. Passive history and refresh remain available; prefixes classify deployment ownership, not user identity or authorization.
+
 | Field | Default | Meaning |
 |---|---:|---|
 | `nativeOpen` | platform-detected | Whether Session workspace paths can be handed to a native desktop opener |

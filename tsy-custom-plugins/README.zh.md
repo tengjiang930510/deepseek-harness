@@ -16,7 +16,7 @@ pnpm run dev:desktop
 
 profile 路径、重复启动行为和跳过构建的启动命令见 [Desktop 开发](../apps/desktop/README.zh.md#develop)。Windows 打包会自动携带这些 bundle 和仓库根目录可选的 `.env`；首次启动默认值、显式资源覆盖、浏览器要求，以及无需 `.env.windows` 的未签名本地打包见 [Windows 安装器资源](../apps/desktop/README.zh.md#windows-installer-interface)。内嵌凭据可以从安装包中提取。
 
-## 源码 Web 启动
+## 源码 Web 与 OpenAI 启动
 
 在新机器的仓库根目录运行：
 
@@ -24,13 +24,26 @@ profile 路径、重复启动行为和跳过构建的启动命令见 [Desktop �
 pnpm install
 pnpm run build
 pnpm dsh web
+pnpm dsh openai
 ```
 
-产物构建会为此目录下的每个 bundle 准备依赖，并执行其声明的构建脚本。依赖的生命周期脚本不会执行；使用浏览器的能力可能仍需要按各插件文档安装浏览器。源码 Web 启动器在启动前，将新发现的 bundle 注册到当前 `$DSH_HOME/profiles/web`（默认为 `~/.dsh/profiles/web`）。`start:web` 和 `dev:web` 使用相同的注册流程。
+产物构建会为此目录下的每个 bundle 准备依赖，并执行其声明的构建脚本。依赖的生命周期脚本不会执行；使用浏览器的能力可能仍需要按各插件文档安装浏览器。源码 Web 和 OpenAI 启动器在启动前，将新发现的 bundle 注册到当前 `$DSH_HOME/profiles/web` 或 `$DSH_HOME/profiles/openai`。源码 Desktop 在其选定的开发 home 中使用同一套发现和注册流程。三端均链接到同一份仓库插件代码，启停与配置仍分别属于各自的 profile。`start:web` 和 `dev:web` 使用相同的注册流程。
+
+OpenAI 注册包含仓库内的 bundle，不包含 GUI 默认 npm 清单。将允许调用的自定义工具加入 `openai-server.models[].tools`；加载插件不会绕过路由白名单。客户端页面与交互卡片仅在 Web 和 Desktop 中可用。
 
 注册流程在仓库移动后更新保留的本地链接，保留用户禁用和移除插件的选择，并且不修改从注册表安装的副本。`source-plugins.json` 标记文件分别保存在各 profile 中。要恢复主动移除的 Web 插件，可执行 `pnpm dsh plugin --profile web add ./tsy-custom-plugins/<name>`。发布后的安装不使用源码注册机制。
 
 源码 Web 和 Desktop 还会读取 [`apps/desktop/packaged-plugins.json`](../apps/desktop/packaged-plugins.json) 中的默认 npm bundle，其中包含 `dsh-wechat-plugin`。各 profile 在启动前，以 `@latest` 安装尚未注册过的缺失 bundle；首次安装需要访问注册表。后续启动保留已安装版本、禁用状态和主动移除的选择。安装失败会阻止启动，下次启动时重试。Windows 打包使用同一清单，并在每次构建时单独解析最新版本。
+
+bundle 可用非空的 `dsh.profiles` 列表指定适用 profile；不声明时仍共享加载。OpenAI 服务仅用于 `openai`，API 历史界面仅用于 `web` 和 `desktop`。
+
+如果此前使用过项目内的 OpenAI bundle，构建后执行一次现有 profile 迁移：
+
+```sh
+node tsy-custom-plugins/scripts/setup-openai-profile.mjs
+```
+
+该操作备份旧 package manifest，替换 bundle 引用并安装本地服务链接，保留 `cordis.patch.yml`、凭据和 Session id。完成后重启 `pnpm dsh openai` 与 `pnpm dsh web`。同步 Harness 源码时检查[上游兼容说明](OPENAI-UPSTREAM.md)。
 
 ## 开发 overlay（不安装到 profile）
 
@@ -44,6 +57,8 @@ pnpm dsh web --patch ./tsy-custom-plugins/t4y-review/cordis.yml
 
 | 目录 | 包 | 用途 |
 |---|---|---|
+| `t4y-openai-service/` | `t4y-openai-service` | OpenAI 兼容 HTTP 服务、多轮 Session 和调用进度 |
+| `t4y-openai-ui/` | `t4y-openai-ui` | API 标记和只读历史刷新 |
 | `t4y-brand/` | `t4y-brand` | 武汉地铁 logo 与侧栏名称**武汉地铁智能助手** |
 | `t4y-capability-hub/` | `t4y-capability-hub` | 设置页签**武汉地铁能力插件**（启停列表） |
 | `t4y-review/` | `t4y-review` | 办公表单与审查命令 |

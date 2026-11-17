@@ -25,6 +25,8 @@ import type { SessionListEntry } from './lineage.ts'
 
 /** Session list row projected from the host list RPC plus live stream increments. */
 export interface SessionSummary {
+  /** UI access is read-only because execution belongs to an external writer. */
+  readOnly?: true
   id: SessionId
   /** Latest durable log-backed title, absent until the host projects one. */
   title?: string
@@ -658,6 +660,7 @@ export class ClientSessions implements ISessions {
         ...(entry.title !== undefined ? { title: entry.title } : {}),
         ...(entry.cwd !== undefined ? { cwd: entry.cwd } : {}),
         ...(entry.parentSessionId !== undefined ? { parentId: entry.parentSessionId } : {}),
+        ...(entry.readOnly === true ? { readOnly: true as const } : {}),
         ...(entry.origin !== undefined ? { origin: entry.origin } : {}),
       }
     }

@@ -16,7 +16,7 @@ const manifestSchema = z.object({
 }).passthrough()
 
 function packagedPlugins(root: string, installedDirectory: string) {
-  const plugins = discoverCustomPlugins(root).map(plugin => ({ ...plugin, installed: false }))
+  const plugins = discoverCustomPlugins(root, 'desktop').map(plugin => ({ ...plugin, installed: false }))
   const names = new Set(plugins.map(plugin => plugin.name))
   for (const name of readDefaultNpmPlugins(root)) {
     if (names.has(name)) throw new Error(`desktop source resources: duplicate packaged bundle ${name}`)

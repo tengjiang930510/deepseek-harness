@@ -1,0 +1,85 @@
+/** Recorded-session replay through the real dsh openai profile and its public HTTP protocol. */
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { expect, it } from 'vitest'
+import { startOpenAiProfile } from './profile/fixture.ts'
+import { parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
+import {
+  formatSystemPromptSnapshot, formatToolSchemasSnapshot, latestPersistedSessionPaths,
+  materializeProfilePatch, normalizeSessionLog, normalizedSystemPrompts, normalizedToolSchemas, redactSessionSnapshotIds, scrubSessionSnapshot,
+} from '@deepseek-ai/dsh-session-snapshot'
+
+const scenario = fileURLToPath(new URL('./fixtures/tool-turn/', import.meta.url))
+
+it('openai: resumes one conversation over HTTP and preserves tool history and the external file effect', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-openai-snapshot-'))
+  const sessionFile = join(scenario, 'session.v4.jsonl')
+  const canonical = await readFile(sessionFile, 'utf8')
+  const task = parseSessionLog(canonical).find(event => event.type === 'user/message')
+  if (task?.type !== 'user/message') throw new Error('OpenAI snapshot lacks its user task')
+  const prompt = task.data.content.filter(block => block.type === 'text').map(block => block.text).join('')
+  let server: Awaited<ReturnType<typeof startOpenAiProfile>> | undefined
+  try {
+    const patch = materializeProfilePatch(join(scenario, 'cordis.snapshot.yml'), root, 'openai', root, 0)
+    server = await startOpenAiProfile(root, patch, {
+      DSH_HOME: join(root, '.dsh'), DSH_AGENTS_HOME: join(root, '.agents'), DSH_TELEMETRY_DISABLED: '1',
+      DEEPSEEK_API_KEY: 'snapshot-replay-key',
+      DSH_PERMISSION_MODE: 'workspace-write', DSH_OPENAI_REPLAY_FILE: sessionFile,
+    })
+    const base = server.base
+    const response = await fetch(`${base}/v1/chat/completions`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'harness', metadata: { conversation_id: 'snapshot-conversation' }, messages: [{ role: 'user', content: prompt }], stream: true, stream_options: { include_usage: true } }),
+      signal: AbortSignal.timeout(60000),
+    })
+    const wire = await response.text()
+    expect(response.status, wire + server.output()).toBe(200)
+    expect(wire).toContain('"content":"DONE"')
+    expect(wire).toContain('"reasoning_content":')
+    expect(wire).toMatch(/✓ 完成：Write the snapshot marker\. · \d+\.\d 秒/)
+    expect(wire).not.toContain('调用工具：bash')
+    expect(wire).toContain('data: [DONE]\r\n\r\n')
+    expect(wire).not.toContain('tool_calls')
+    expect(await readFile(join(root, 'marker.txt'), 'utf8')).toBe(await readFile(join(scenario, 'workspace.expected/marker.txt'), 'utf8'))
+    const followup = await fetch(`${base}/v1/chat/completions`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'harness', metadata: { conversation_id: 'snapshot-conversation' },
+        messages: [{ role: 'user', content: 'Confirm the earlier tool result without calling another tool.' }] }),
+      signal: AbortSignal.timeout(60000),
+    })
+    expect(followup.status).toBe(200)
+    expect(await followup.json()).toMatchObject({ choices: [{ message: { content: 'TOOL_HISTORY_OK' } }] })
+    expect(followup.headers.get('x-dsh-session-id')).toBe(response.headers.get('x-dsh-session-id'))
+    const sessionRoot = join(root, '.dsh/sessions')
+    const paths = latestPersistedSessionPaths((await readdir(sessionRoot, { recursive: true })).map(path => join(sessionRoot, path)))
+    expect(paths).toHaveLength(1)
+    const selected = paths[0]
+    if (selected === undefined) throw new Error('No persisted HTTP Session')
+    const raw = await readFile(resolve(sessionRoot, selected), 'utf8')
+    const sessionId = response.headers.get('x-dsh-session-id')
+    if (sessionId === null) throw new Error('Missing HTTP request identity')
+    const context = { cwd: root, sessionIds: [sessionId] }
+    const redacted = redactSessionSnapshotIds([raw])[0]
+    if (redacted === undefined) throw new Error('Missing redacted Session')
+    const normalized = scrubSessionSnapshot(normalizeSessionLog(redacted, context, { identityMode: 'preserve' }))
+    if (normalized === undefined) throw new Error('Missing normalized Session')
+    const prompts = normalizedSystemPrompts(raw, context)
+    const schemas = normalizedToolSchemas(raw, context)
+    const promptSidecar = formatSystemPromptSnapshot(prompts[0] ?? '', prompts.slice(1))
+    const schemaSidecar = formatToolSchemasSnapshot(schemas[0] ?? [], schemas.slice(1))
+    if (process.env.DSH_SNAPSHOT === 'refresh') {
+      await writeFile(sessionFile, normalized)
+      await writeFile(join(scenario, 'system-prompt.expected.md'), promptSidecar)
+      await writeFile(join(scenario, 'tool-schemas.expected.json'), schemaSidecar)
+    } else {
+      expect(normalized).toBe(canonical)
+      expect(promptSidecar).toBe(await readFile(join(scenario, 'system-prompt.expected.md'), 'utf8'))
+      expect(schemaSidecar).toBe(await readFile(join(scenario, 'tool-schemas.expected.json'), 'utf8'))
+    }
+  } finally {
+    await server?.close()
+    await rm(root, { recursive: true, force: true })
+  }
+})

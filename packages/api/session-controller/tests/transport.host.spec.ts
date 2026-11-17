@@ -476,6 +476,31 @@ describe('Session history and Web follow', () => {
     await ctx.fiber.dispose()
   })
 
+  it('keeps a configured external Session passive even when activation is requested', async () => {
+    const ctx = new Context()
+    roots.add(ctx)
+    await ctx.plugin(SessionStore)
+    const sessionId = brandString<SessionId>('openai-read-only')
+    const header: SessionHeader = { version: SESSION_FORMAT_VERSION, id: sessionId, createdAt: 1, cwd: '/workspace', isSeeded: false }
+    const retain = vi.fn()
+    const dispose = vi.fn()
+    const source: SessionObservation = {
+      source: 'prepared', header, inheritedEventCount: SessionLogOffset(0), events: [], cursor: -1,
+      projections: { asOfSeq: -1, values: {} }, retain, [Symbol.dispose]: dispose,
+    }
+    const promote = vi.fn()
+    ctx.provide('sessionQuery', { observeSession: () => Promise.resolve(source) } as never)
+    const { history } = controllers(ctx, promote)
+    const web = new WebController(ctx, history, promote, id => id === sessionId)
+    const iterator = web.follow({ address: { kind: 'session', sessionId }, activate: true }, signal())[Symbol.asyncIterator]()
+    try {
+      await expect(iterator.next()).resolves.toMatchObject({ value: { type: 'snapshot', header: { readOnly: true } } })
+      expect(retain).not.toHaveBeenCalled()
+      expect(promote).not.toHaveBeenCalled()
+      expect(dispose).toHaveBeenCalledOnce()
+    } finally { await iterator.return?.(undefined) }
+  })
+
   it('disposes a retained promotion when background activation rejects synchronously', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)

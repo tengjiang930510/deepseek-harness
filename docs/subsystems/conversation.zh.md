@@ -21,6 +21,8 @@ Session Controller 拥有连续的已加载逻辑 event window。每个 `Session
 
 Chat 与 Trajectory 可以识别同一个持久 event family，但各自保留自己的 Definition State 与最终 node payload。共享的 target-neutral 机制只包括 identity routing、有序 replay、Location data、predecessor dependency 与 publication cadence。
 
+Session 列表摘要或已保留 Session 状态任一标记为只读时，shell 都将其视为只读。它隐藏输入区与记录写入控件，并选择[只读标题栏 Slots](slots.zh.md#current-hierarchy)。历史刷新通过注入回调调用已保留 Session 的公共 `refreshHistory()` 操作，不启动 Agent。
+
 ## Target 激活
 
 每个 Session 都保留单调增长的 active target 集合。创建或读取 target source 不会激活它。shell 会显式激活持久化选择或新选择的 View，其他消费者则通过 target source 的首个订阅激活 target。首次激活会创建该 target 的 builder，并从当前按 target 索引的 Context 调用一次 `replace()`。后续 flush 对每个 active target 调用 `apply()`，取消订阅不会移除 target。

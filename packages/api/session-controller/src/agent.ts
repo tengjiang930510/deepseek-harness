@@ -83,7 +83,7 @@ interface ApiSessionComposition {
 }
 
 /** Failures produced while resolving one ordinary Session identity to its live Agent. */
-export type ApiSessionAgentError = RemoteError<'session/not-found' | 'session/agent-busy' | 'session/writer-held' | 'gateway/internal'>
+export type ApiSessionAgentError = RemoteError<'session/read-only' | 'session/not-found' | 'session/agent-busy' | 'session/writer-held' | 'gateway/internal'>
 
 /** Result of resolving one ordinary Session identity to its live Agent. */
 export type ApiSessionAgentResult =
@@ -118,8 +118,11 @@ export class ApiSessionAgentController {
   private readonly claims = new Map<SessionId, Promise<void>>()
   private readonly imageAdmissionChains = new WeakMap<Agent, Promise<void>>()
 
-  /** @param ctx - Host context carrying Agent, model, persistence, and Typert services. */
-  constructor(private readonly ctx: Context) {}
+  /**
+   * @param ctx - Host context carrying Agent, model, persistence, and Typert services.
+   * @param readOnlySession - Deployment policy excluding externally managed Sessions from Agent acquisition.
+   */
+  constructor(private readonly ctx: Context, private readonly readOnlySession: (id: SessionId) => boolean = () => false) {}
 
   /**
    * Configure Session and Agent lookups for Typert.
@@ -165,6 +168,9 @@ export class ApiSessionAgentController {
     sessionId: SessionId,
     observation?: SessionObservation,
   ): Promise<ApiSessionAgentResult> {
+    if (this.readOnlySession(sessionId)) return { error: new RemoteError(
+      'session/read-only', 'This Session is managed by an external API and is read-only in the UI.', { sessionId },
+    ) }
     const live = this.liveAgent(sessionId)
     if (live !== undefined) return live
     const attached = this.ctx.sessions.get(sessionId)
@@ -228,6 +234,7 @@ export class ApiSessionAgentController {
    */
   async createSession(request: ApiSessionCreateRequest): Promise<ApiSessionCreated> {
     const named = request.sessionId
+    if (named !== undefined && this.readOnlySession(named)) throw new RemoteError('session/read-only', 'This Session is read-only in the UI.', { sessionId: named })
     if (named === undefined) return this.created(await this.createMinted(request.cwd, await this.composeAgent(request.agentPreset)))
     return this.inOrder(named, async () => this.created(await this.claim(named, request)))
   }

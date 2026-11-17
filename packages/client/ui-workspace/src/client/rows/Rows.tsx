@@ -46,6 +46,7 @@ type RowTranslate = WorkspaceBrowserProps['t']
  */
 type RowRenderSlots = PropsRenderSlots<
   | 'sidebar.workspaces.session.row.action'
+  | 'sidebar.session.row.badges'
   | 'sidebar.session.row.trailing'
   | 'sidebar.session.row.leading'
   | 'sidebar.session.row.hover'
@@ -618,6 +619,7 @@ export function SessionNodeItem({
   t: RowTranslate
 } & Pick<WorkspaceBrowserProps, 'useSessionAccess'> & PropsRenderSlots<
   | 'sidebar.workspaces.session.row.action'
+  | 'sidebar.session.row.badges'
   | 'sidebar.session.row.trailing'
   | 'sidebar.session.row.leading'
   | 'sidebar.session.row.hover'
@@ -654,6 +656,7 @@ export function SessionNodeItem({
     rowRef.current?.scrollIntoView({ block: 'nearest' })
     onReveal()
   }, [onReveal])
+  const badges = row.blank ? null : renderSlot('sidebar.session.row.badges', { sessionId: node.id, ...(node.readOnly === true ? { readOnly: true } : {}) })
   const ownRow = (
     <div
       ref={rowRef}
@@ -722,7 +725,7 @@ export function SessionNodeItem({
           // One shared function and options: repeated presses add one listener.
           window.addEventListener('blur', disarmRename, { once: true })
         }}
-        onDoubleClick={row.blank || !renamable
+        onDoubleClick={row.blank || node.readOnly === true || !renamable
           ? undefined
           : (e) => {
             e.stopPropagation()
@@ -733,6 +736,7 @@ export function SessionNodeItem({
       >
         {title}
       </span>
+      {badges != null && <span className={css.rowBadges}>{badges}</span>}
       {/* Blank rows have no first prompt, so neither trailing details nor
           actions for existing content are available. */}
       {!row.blank && (

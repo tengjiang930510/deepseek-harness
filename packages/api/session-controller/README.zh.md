@@ -101,6 +101,8 @@ GUI 模型选择要求确切提供方／模型对出现在可用目录中；不�
 <a id="configuration"></a>
 ## 配置
 
+`readOnlySessionIdPrefixes` 指定由其他服务负责执行的 Session 命名范围。匹配的列表行与历史打开响应头携带 `readOnly: true`；follow 忽略激活请求，Agent 获取、指定 Session 复用和取消操作以 `session/read-only` 拒绝。策略在打开写入句柄前生效。只读历史查询和刷新仍可用；前缀用于配置执行归属，不表示用户身份或授权。
+
 | 字段 | 默认值 | 含义 |
 |---|---:|---|
 | `nativeOpen` | 平台探测 | 是否能把 Session 工作区路径交给原生桌面打开器 |

@@ -51,6 +51,7 @@ function fixture(running = false) {
     updateQueue: vi.fn(),
     cancel: vi.fn(),
     rename: vi.fn(),
+    refreshHistory: vi.fn(),
     loadOlder: vi.fn(),
     consumeOlder: vi.fn(),
     loadThrough: vi.fn(),

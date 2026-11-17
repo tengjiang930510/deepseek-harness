@@ -32,10 +32,10 @@
  * they receive the captured row identity and render together before Archive.
  *
  * The browser entry additionally declares `list` seats per Session row
- * (`sidebar.session.row.leading`, `sidebar.session.row.trailing`, and
+ * (`sidebar.session.row.badges`, `sidebar.session.row.leading`, `sidebar.session.row.trailing`, and
  * `sidebar.session.row.hover`) for ambient row decorations. They receive only
- * the row's Session identity; a Session binding would activate and retain
- * every listed Session.
+ * the row's Session identity and optional row metadata; a Session binding
+ * would activate and retain every listed Session.
  */
 import type { ContextMenuTarget } from '@deepseek-ai/dsh-client-ui-context-menu/client'
 import type {
@@ -129,6 +129,14 @@ export interface SessionRowScheduleOwnerProps {
   readonly sessionId: SessionId
 }
 
+/** Owner share of the always-visible badge list; metadata is supplied by the row. */
+export interface SessionRowBadgeOwnerProps {
+  /** Session this row shows. */
+  readonly sessionId: SessionId
+  /** Execution belongs to an external writer. */
+  readonly readOnly?: true
+}
+
 /** Owner share of the trailing icon list; rendering does not bind the Session. */
 export interface SessionRowTrailingOwnerProps {
   /** Session this row shows. */
@@ -159,6 +167,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * seat renders there, and its live status appears on the hover card only.
      */
     'sidebar.session.row.leading': { kind: 'list'; scope: 'root'; inline: true; owner: SessionRowScheduleOwnerProps }
+    /** Always-visible badges after the title; reading a row never binds its Session. */
+    'sidebar.session.row.badges': { kind: 'list'; scope: 'root'; inline: true; owner: SessionRowBadgeOwnerProps }
     /**
      * Non-interactive icons after the row's time label, before its pin marker,
      * in ascending `order`. On hover-capable devices, hidden while the row is
@@ -529,6 +539,7 @@ export type WorkspaceBrowserProps =
   & PropsRenderSlots<
     | 'sidebar.workspaces.directoryFlow'
     | 'sidebar.workspaces.session.row.action'
+    | 'sidebar.session.row.badges'
     | 'sidebar.session.row.trailing'
     | 'sidebar.session.row.leading'
     | 'sidebar.session.row.hover'

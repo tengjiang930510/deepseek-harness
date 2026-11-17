@@ -1,0 +1,4 @@
+{
+  "version": "0.2.2-rc.3",
+  "purpose": "Review baseline for custom OpenAI plugins; not a runtime version lock."
+}

@@ -1,0 +1,16 @@
+- banner:
+  - navigation "Session hierarchy": Use the bash tool to
+  - text: API
+  - button "Refresh records"
+  - button "Open right sidebar"
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+  - button "More conversation views"
+- text: "Use the bash tool to run exactly: printf 'MINIMAL_BASH_CARD_OK\\n'. Then reply exactly MINIMAL_PRESET_REQUEST_OK and stop. 9/1 {{clock}}"
+- button "Copy"
+- status: Completed
+- button "Completed in {{duration}}"
+- paragraph: MINIMAL_PRESET_REQUEST_OK
+- button "Copy"
+- text: 9/1 {{clock}}

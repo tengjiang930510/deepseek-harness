@@ -180,6 +180,7 @@ export class Session implements SessionFace {
 
   /** Contiguous history and live tail consumed by Conversation assembly. */
   readonly eventSource = new MutableSessionEventSource()
+  private readOnly = false
   private snapshotCache: SessionSnapshot
   private readonly notifier: Notifier
   /**
@@ -579,9 +580,11 @@ export class Session implements SessionFace {
     return this.jumpPromise
   }
 
+  /** @inheritdoc */
+  async refreshHistory(): Promise<void> { await this.resync() }
+
   /** Rebuild an opened history source after address replacement.
-   *  Invalidates any in-flight open first; projection state belongs to the independently
-   *  reconnecting control stream and remains untouched. */
+   * Invalidates in-flight history; the independent control stream retains its projections. */
   async resync(): Promise<void> {
     if (this.openState === 'cold') return // never opened: no window to rebuild (doOpen flips to 'loading' synchronously, so cold implies no in-flight open)
     this.openGeneration++
@@ -735,6 +738,7 @@ export class Session implements SessionFace {
   private acceptEventChange(change: SessionJournalChange): void {
     switch (change.type) {
       case 'replace':
+        this.readOnly = change.page.readOnly === true
         this.installWindow(
           change.entries,
           change.hasMore,
@@ -1001,6 +1005,7 @@ export class Session implements SessionFace {
     const identity = this.projections.values().subagent
     return {
       sessionId: this.sessionId,
+      ...(this.readOnly ? { readOnly: true as const } : {}),
       pendingSubmissions: this.acceptedSubmissions,
       running: this.running,
       subagent: this.address === undefined

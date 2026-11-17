@@ -33,6 +33,7 @@ const wid = (id: string) => id as WorkspaceId
 type RowSlotName =
   | 'sidebar.workspaces.session.menu.item'
   | 'sidebar.workspaces.session.row.action'
+  | 'sidebar.session.row.badges'
   | 'sidebar.session.row.trailing'
   | 'sidebar.session.row.leading'
   | 'sidebar.session.row.hover'
@@ -359,6 +360,27 @@ describe('workspace browser rows', () => {
     expect(onToggle).not.toHaveBeenCalled()
     fireEvent.click(screen.getByText('Project'))
     expect(onToggle).toHaveBeenCalledOnce()
+  })
+
+  it('renders external row badges and opens read-only history without title editing', () => {
+    const node: SessionNode = {
+      id: sid('external-history'), title: 'External history', readOnly: true, blank: false, running: false,
+      runningSubagentCount: 0, completed: false, failed: false, updatedAt: 0, pinned: false, archived: false,
+    }
+    const onOpen = vi.fn()
+    const onRenameRequest = vi.fn()
+    const renderBadge: RowRenderSlot = (name: string, owner: object) => name === 'sidebar.session.row.badges'
+      ? <span>{'readOnly' in owner && owner.readOnly === true ? 'External' : 'Ordinary'}</span>
+      : null
+    render(<SessionNodeItem
+      node={node} currentId={node.id} now={0} onOpen={onOpen}
+      onRenameRequest={onRenameRequest} renderSlot={renderBadge} t={t}
+    />)
+    expect(screen.getByText('External')).toBeTruthy()
+    fireEvent.click(screen.getByRole('treeitem'))
+    expect(onOpen).toHaveBeenCalledWith(node.id)
+    realDoubleClick(screen.getByText('External history'))
+    expect(onRenameRequest).not.toHaveBeenCalled()
   })
 
   it('renders and opens a selected running Session row', () => {
@@ -1415,7 +1437,7 @@ describe('session row decoration seats', () => {
    */
   function seatSpy(): RowRenderSlot {
     return vi.fn((key: RowSlotName, owner: object) => {
-      if (!('sessionId' in owner) || typeof owner.sessionId !== 'string') return null
+      if (key === 'sidebar.session.row.badges' || !('sessionId' in owner) || typeof owner.sessionId !== 'string') return null
       return <span key={key} data-seat={key} data-owner={owner.sessionId} />
     })
   }

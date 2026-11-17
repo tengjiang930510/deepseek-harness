@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
 
-it.each(['web', 'desktop'])('registers local and npm bundles through the source %s profile operation', (profileName) => {
+it.each(['web', 'desktop', 'openai'])('registers local and npm bundles through the source %s profile operation', (profileName) => {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'desktop-source-plugins-')))
   try {
     const root = join(directory, 'checkout')
@@ -25,13 +25,17 @@ it.each(['web', 'desktop'])('registers local and npm bundles through the source 
         process.stdout.write(JSON.stringify({ name: 'dsh-wechat-plugin', version: '1.0.0' }))
         process.exit(0)
       }
+      if (process.cwd() !== ${JSON.stringify(join(home, 'profiles', profileName))}
+        || process.env.DSH_HOME !== ${JSON.stringify(home)}) {
+        throw new Error('Refusing package writes outside the isolated test profile')
+      }
       writeFileSync(${JSON.stringify(invocation)}, JSON.stringify({
         args: process.argv.slice(2), cwd: process.cwd(), home: process.env.DSH_HOME,
       }))
       const file = join(process.cwd(), 'package.json')
       const manifest = JSON.parse(readFileSync(file, 'utf8'))
       manifest.dependencies['custom-a'] = ${JSON.stringify(`link:${plugin}`)}
-      manifest.dependencies['dsh-wechat-plugin'] = '^1.0.0'
+      if (${JSON.stringify(profileName !== 'openai')}) manifest.dependencies['dsh-wechat-plugin'] = '^1.0.0'
       const wechat = join(process.cwd(), 'node_modules', 'dsh-wechat-plugin')
       mkdirSync(wechat, { recursive: true })
       writeFileSync(join(wechat, 'package.json'), JSON.stringify({
@@ -48,26 +52,26 @@ it.each(['web', 'desktop'])('registers local and npm bundles through the source 
       import { registerSourceDesktopPlugins } from ${JSON.stringify(new URL('../scripts/source-plugins.ts', import.meta.url).href)}
       await registerSourceDesktopPlugins(${JSON.stringify(root)}, ${JSON.stringify(home)})
     ` : `
-      import { registerSourceWebPlugins } from ${JSON.stringify(new URL('../../../scripts/custom-plugins.ts', import.meta.url).href)}
-      await registerSourceWebPlugins(${JSON.stringify(root)})
+      import { registerSourceProfilePlugins } from ${JSON.stringify(new URL('../../../scripts/custom-plugins.ts', import.meta.url).href)}
+      await registerSourceProfilePlugins(${JSON.stringify(root)}, ${JSON.stringify(profileName)})
     `)
     const inherited = Object.fromEntries(Object.entries(process.env)
       .filter(([name]) => !['npm_execpath', 'dsh_home', 'tsx_tsconfig_path'].includes(name.toLowerCase())))
     const result = spawnSync(process.execPath, ['--import', import.meta.resolve('tsx/esm'), runner], {
       encoding: 'utf8', timeout: 30_000,
-      env: { ...inherited, npm_execpath: manager, dsh_home: profileName === 'desktop' ? join(directory, 'wrong-home') : home,
+      env: { ...inherited, npm_execpath: manager, DSH_HOME: profileName === 'desktop' ? join(directory, 'wrong-home') : home,
         TSX_TSCONFIG_PATH: fileURLToPath(new URL('../../../tsconfig.json', import.meta.url)) },
     })
     expect(result.error).toBeUndefined()
     expect(result.signal).toBeNull()
     expect(result.status, result.stderr).toBe(0)
     expect(JSON.parse(readFileSync(invocation, 'utf8'))).toEqual({
-      args: ['add', 'dsh-wechat-plugin@latest', `link:${plugin}`], cwd: join(home, 'profiles', profileName), home,
+      args: ['add', ...profileName === 'openai' ? [] : ['dsh-wechat-plugin@latest'], `link:${plugin}`], cwd: join(home, 'profiles', profileName), home,
     })
     expect(JSON.parse(readFileSync(join(home, 'profiles', profileName, 'package.json'), 'utf8')))
-      .toMatchObject({ dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'custom-a', 'dsh-wechat-plugin'] } } })
+      .toMatchObject({ dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', ...profileName === 'openai' ? [] : ['@deepseek-ai/dsh-web-app'], 'custom-a', ...profileName === 'openai' ? [] : ['dsh-wechat-plugin']] } } })
     expect(JSON.parse(readFileSync(join(home, 'profiles', profileName, 'source-plugins.json'), 'utf8')))
-      .toEqual({ packages: ['custom-a', 'dsh-wechat-plugin'] })
+      .toEqual({ packages: ['custom-a', ...profileName === 'openai' ? [] : ['dsh-wechat-plugin']] })
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }

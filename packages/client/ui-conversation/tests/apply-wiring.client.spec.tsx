@@ -47,6 +47,12 @@ function entry(
 }
 
 describe('target-neutral Conversation apply wiring', () => {
+  it('declares separate Session-scoped action and utility lists for read-only headers', async () => {
+    const b = await bench()
+    expect(b.runtime.slots.spec('conversation.session.header.readonly.actions')).toEqual({ kind: 'list', scope: 'session' })
+    expect(b.runtime.slots.spec('conversation.session.header.readonly.utilities')).toEqual({ kind: 'list', scope: 'session' })
+  })
+
   it('hands every Session header the same in-memory View pins without restoring saved choices', async () => {
     localStorage.setItem('dsh.slot.manual-order.conversation.view.v1', JSON.stringify({ unpinned: ['trajectory'] }))
     try {

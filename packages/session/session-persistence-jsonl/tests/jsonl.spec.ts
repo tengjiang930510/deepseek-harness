@@ -1434,6 +1434,33 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
   })
   afterEach(async () => { await ctx.fiber.dispose() })
 
+  it('a live checkpoint joins close after its buffered events become durable', async () => {
+    await ctx.plugin(SessionStore)
+    const session = ctx.sessions.create(brandString<SessionId>('checkpoint-close'))
+    const handle = await ctx.sessionPersistence.create(session.header) as JsonlSessionHandle
+    session.append('turn/start', { turn: 1 })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    const drain = handle.drainLive.bind(handle)
+    vi.spyOn(handle, 'drainLive').mockImplementationOnce(async () => {
+      await drain()
+      entered.resolve(undefined)
+      await release.promise
+    })
+    const checkpoint = ctx.sessions.flush(session)
+    try {
+      await entered.promise
+      await handle.close()
+    } finally {
+      release.resolve(undefined)
+    }
+    await expect(checkpoint).resolves.toBe(true)
+    await expect(readAll(ctx.sessionPersistence, session.id)).resolves.toMatchObject({
+      events: [{ type: 'turn/start' }, { type: 'turn/end' }],
+    })
+  })
+
   it('lazy materialization: create() writes no file until the first append', async () => {
     const m = meta('lazy', '/work')
     const handle = await ctx.sessionPersistence.create(m)

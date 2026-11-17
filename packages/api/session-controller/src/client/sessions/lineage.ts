@@ -20,6 +20,8 @@ export interface TitledSessionSummary extends SessionSummary {
 
 /** One flattened session-list row with lineage depth. */
 export interface SessionListEntry {
+  /** UI access is read-only because execution belongs to an external writer. */
+  readOnly?: true
   sessionId: SessionId
   title?: string
   updatedAt: number

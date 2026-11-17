@@ -2,7 +2,7 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { z } from 'zod'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { resolveProfileDir } from '@deepseek-ai/dsh-app-boot'
@@ -13,7 +13,10 @@ const manifestSchema = z.object({
   name: z.string().regex(/^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/),
   dependencies: z.record(z.string(), z.string()).optional(),
   scripts: z.record(z.string(), z.string()).optional(),
-  dsh: z.object({ bundle: z.object({ patch: z.union([z.string(), z.array(z.string())]) }).optional() }).optional(),
+  dsh: z.object({
+    profiles: z.array(z.string().min(1)).min(1).optional(),
+    bundle: z.object({ patch: z.union([z.string(), z.array(z.string())]) }).optional(),
+  }).optional(),
 })
 const markerSchema = z.object({ packages: z.array(z.string()) })
 
@@ -38,14 +41,17 @@ export interface CustomPlugin {
   readonly directory: string
   readonly dependencies: Readonly<Record<string, string>>
   readonly build: boolean
+  /** Optional application profiles allowed to install this bundle. */
+  readonly profiles?: readonly string[]
 }
 
 /**
  * Discover bundle packages immediately below the checkout's custom plugin directory.
  * @param root - Checkout root; a missing custom directory contributes no bundles.
+ * @param profile - Optional application profile; omission discovers every bundle for building.
  * @returns Packages in directory-name order, with duplicate package names rejected.
  */
-export function discoverCustomPlugins(root: string): CustomPlugin[] {
+export function discoverCustomPlugins(root: string, profile?: string): CustomPlugin[] {
   const directory = join(root, 'tsy-custom-plugins')
   if (!existsSync(directory)) return []
   const plugins: CustomPlugin[] = []
@@ -63,7 +69,9 @@ export function discoverCustomPlugins(root: string): CustomPlugin[] {
     for (const patch of typeof patches === 'string' ? [patches] : patches) {
       if (!existsSync(resolve(packageDir, patch))) throw new Error(`custom plugins: missing patch ${patch} in ${packageDir}`)
     }
+    if (profile !== undefined && manifest.dsh.profiles !== undefined && !manifest.dsh.profiles.includes(profile)) continue
     plugins.push({
+      ...(manifest.dsh.profiles === undefined ? {} : { profiles: manifest.dsh.profiles }),
       name: manifest.name,
       directory: packageDir,
       dependencies: manifest.dependencies ?? {},
@@ -99,6 +107,8 @@ export function prepareCustomPlugins(root: string): void {
 /** Registration inputs; isolated callers can supply their own profile and package operation. */
 export interface CustomPluginRegistration {
   readonly profileDir: string
+  /** Include GUI application npm defaults when omitted or true; false registers checkout bundles only. */
+  readonly includeNpmDefaults?: boolean
   /** Adds local links and npm specs through the profile's ordinary package manager; rejects on failure. */
   readonly install: (specs: readonly string[]) => Promise<void>
 }
@@ -112,8 +122,8 @@ export interface CustomPluginRegistration {
  * @throws On invalid metadata, missing prepared dependencies, installation failure, or marker write failure.
  */
 export async function registerCustomPlugins(root: string, options: CustomPluginRegistration): Promise<void> {
-  const plugins = discoverCustomPlugins(root)
-  const npmPlugins = readDefaultNpmPlugins(root)
+  const plugins = discoverCustomPlugins(root, basename(options.profileDir))
+  const npmPlugins = options.includeNpmDefaults === false ? [] : readDefaultNpmPlugins(root)
   for (const name of npmPlugins) {
     if (plugins.some(plugin => plugin.name === name)) throw new Error(`custom plugins: duplicate local and npm package ${name}`)
   }
@@ -137,7 +147,7 @@ export async function registerCustomPlugins(root: string, options: CustomPluginR
       if (previous !== undefined && !/^(?:link|file):/.test(previous)) continue
       for (const dependency of Object.keys(plugin.dependencies)) {
         if (!existsSync(join(plugin.directory, 'node_modules', dependency, 'package.json'))) {
-          throw new Error(`custom plugins: ${plugin.name} needs ${dependency}; run pnpm run build before starting Web or Desktop`)
+          throw new Error(`custom plugins: ${plugin.name} needs ${dependency}; run pnpm run build before starting the application`)
         }
       }
       const target = join(options.profileDir, 'node_modules', plugin.name)
@@ -155,18 +165,20 @@ export async function registerCustomPlugins(root: string, options: CustomPluginR
 }
 
 /**
- * Register checkout-owned bundles through the official Web profile package operations.
+ * Register checkout-owned bundles through the selected source application's package operations.
  * @param root - Checkout root whose sources are being launched.
- * @returns After the current Harness home's Web profile is ready to load.
+ * @param profile - Application profile; only Web includes GUI npm defaults.
+ * @returns After the current Harness home's selected profile is ready to load.
  */
-export async function registerSourceWebPlugins(root: string): Promise<void> {
+export async function registerSourceProfilePlugins(root: string, profile: string): Promise<void> {
   await registerCustomPlugins(root, {
-    profileDir: resolveProfileDir('web'),
+    profileDir: resolveProfileDir(profile),
+    includeNpmDefaults: profile === 'web',
     async install(specs) {
-      console.log('custom plugins: registering source bundles in the Web profile')
+      console.log(`custom plugins: registering source bundles in the ${profile} profile`)
       const invocation = pnpmInvocation([])
-      const result = await runPlugin('web', ['add', ...specs], { command: invocation.command, args: invocation.args, env: {} })
-      if (result !== 0) throw new Error('custom plugins: Web profile registration failed; fix the package-manager error and restart pnpm dsh web')
+      const result = await runPlugin(profile, ['add', ...specs], { command: invocation.command, args: invocation.args, env: {} })
+      if (result !== 0) throw new Error(`custom plugins: ${profile} profile registration failed; fix the package-manager error and restart pnpm dsh ${profile}`)
     },
   })
 }

@@ -256,6 +256,18 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       scope: 'session'
       owner: ConversationHeaderActionOwnerProps
     }
+    /** Title-adjacent contributions for externally managed read-only Sessions; occupants must not start Agent execution. */
+    'conversation.session.header.readonly.actions': {
+      kind: 'list'
+      scope: 'session'
+      owner: ConversationHeaderActionOwnerProps
+    }
+    /** Right-aligned read-only Session utilities; occupants may reread history but must not mutate the Session. */
+    'conversation.session.header.readonly.utilities': {
+      kind: 'list'
+      scope: 'session'
+      owner: ConversationHeaderActionOwnerProps
+    }
     /** Right-aligned Session utilities in ascending order. */
     'conversation.session.header.utilities': {
       kind: 'list'
@@ -729,6 +741,8 @@ export type ConversationSessionHeaderSlotProps =
     'conversation.session.header.lineage'
     | 'conversation.session.header.actions'
     | 'conversation.session.header.utilities'
+    | 'conversation.session.header.readonly.actions'
+    | 'conversation.session.header.readonly.utilities'
     | 'conversation.session.header.corner'
     | 'conversation.session.header.views.actions'
   >

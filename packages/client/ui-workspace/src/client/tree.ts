@@ -43,6 +43,8 @@ function mainSessionId(list: SessionListState): SessionId | undefined {
 
 /** One top-level session row in a group or the flat list. */
 export interface SessionNode {
+  /** Execution is owned by an external writer; opening only reads history. */
+  readOnly?: true
   id: SessionId
   /** Stored title, or empty; the renderer localizes blank and unnamed row labels. */
   title: string
@@ -401,6 +403,7 @@ function sessionNode(
   const pendingInteraction = visiblePendingKind(status?.pendingInteraction?.kind)
   return {
     id: s.id,
+    ...(s.readOnly === true ? { readOnly: true as const } : {}),
     title: sessionTitle(s),
     blank: s.blank,
     running: status?.running ?? s.running,

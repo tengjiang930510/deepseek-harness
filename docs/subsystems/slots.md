@@ -138,6 +138,8 @@ Use owner props for values already known at one render occurrence, registration 
 
 The following Conversation paths distinguish declaration owners from reusable Factory roots; unrelated shell positions are omitted. An entry owns its declared children, while a Factory owns its child declarations for the lifetime of its registered definition. Bracketed names identify the default React components; a plain React descendant can render its owner's Slot. Factory calls are references to independent reusable definitions, not new Slot declarations.
 
+Read-only Session headers render `conversation.session.header.readonly.actions` and `.readonly.utilities` instead of their ordinary action and utility lists. Their Session-scoped contributions may inspect history or refresh persisted data, but must not start execution or write to the Session. The sidebar’s `sidebar.session.row.badges` list remains visible beside the title during hover; its root-scoped entries receive the row’s `sessionId` and optional `readOnly: true` without retaining a Session.
+
 ```text
 root [AppFrame]
 └─ main[key=conversation] [ConversationPanel]
@@ -148,6 +150,8 @@ root [AppFrame]
       │     ├─ conversation.session.header.lineage
       │     ├─ conversation.session.header.actions
       │     ├─ conversation.session.header.utilities
+      │     ├─ conversation.session.header.readonly.actions
+      │     ├─ conversation.session.header.readonly.utilities
       │     ├─ conversation.session.header.views.actions
       │     └─ conversation.session.header.corner
       └─ calls Factory: conversation.content

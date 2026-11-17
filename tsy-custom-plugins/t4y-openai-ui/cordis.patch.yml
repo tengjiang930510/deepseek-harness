@@ -1,0 +1,8 @@
+- insert:
+    - id: t4y-openai-ui
+      name: t4y-openai-ui
+      disabled: !!js "!['web', 'desktop'].includes(ctx.get('profileContext')?.name)"
+
+- id: session-controller
+  config:
+    readOnlySessionIdPrefixes: ['openai-']

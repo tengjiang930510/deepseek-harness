@@ -140,6 +140,8 @@ Renderer 还会根据声明的 store 创建 `useStore`，并根据声明的 loca
 
 下面的 Conversation 路径区分声明所有者与可复用 Factory 根，省略无关的外壳位置。条目拥有其声明的子 Slot；Factory 在其定义注册期间拥有子 Slot 声明。方括号标出默认 React 组件，普通 React 后代组件可以渲染其所有者的 Slot。Factory 调用指向独立的可复用定义，不是新的 Slot 声明。
 
+只读 Session 标题栏使用 `conversation.session.header.readonly.actions` 和 `.readonly.utilities`，替代普通操作与工具列表。Session 作用域内的贡献可查看历史或刷新持久数据，但不得启动执行或写入 Session。侧栏的 `sidebar.session.row.badges` 列表位于标题旁，悬停时保持可见；其 root 作用域条目接收行的 `sessionId` 和可选的 `readOnly: true`，不保留 Session。
+
 ```text
 root [AppFrame]
 └─ main[key=conversation] [ConversationPanel]
@@ -150,6 +152,8 @@ root [AppFrame]
       │     ├─ conversation.session.header.lineage
       │     ├─ conversation.session.header.actions
       │     ├─ conversation.session.header.utilities
+      │     ├─ conversation.session.header.readonly.actions
+      │     ├─ conversation.session.header.readonly.utilities
       │     ├─ conversation.session.header.views.actions
       │     └─ conversation.session.header.corner
       └─ calls Factory: conversation.content

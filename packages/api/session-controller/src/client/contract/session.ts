@@ -130,6 +130,11 @@ export interface ISession {
    */
   rename(title: string): Promise<RemoteResult<{ title: string; seq: SessionSeq }>>
   /**
+   * Reread durable history without requesting Agent execution.
+   * @returns when the refreshed window opens.
+   */
+  refreshHistory(): Promise<void>
+  /**
    * Extend history by at least 50 messages and two Turn starts, including a
    * partial Turn at the window's beginning. Stop at 500 messages or history
    * exhaustion even when those minima cannot be met. At most one page may be

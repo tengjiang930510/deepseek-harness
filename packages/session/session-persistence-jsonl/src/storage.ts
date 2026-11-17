@@ -292,6 +292,22 @@ export class JsonlSessionHandle implements SessionHandle {
     })
   }
 
+  /**
+   * Fulfil a live durability checkpoint, joining retirement if close overlaps its drain.
+   * @returns settlement after the log is durable, rejecting any drain or close failure.
+   */
+  async checkpointLive(): Promise<void> {
+    await this.drainLive()
+    try {
+      await this.flush()
+    } catch (error) {
+      // Successful close drains and syncs the same events; its failure must
+      // still reject the checkpoint rather than report durable storage.
+      if (!(error instanceof SessionHandleClosedError) || this.closing === undefined) throw error
+      await this.closing
+    }
+  }
+
   private async drainBuffered(): Promise<void> {
     if (this.batchTimer !== undefined) {
       clearTimeout(this.batchTimer)
@@ -555,10 +571,7 @@ export class JsonlBackendTracker {
       yield ctx.on('session/flush', (session: Session) => {
         const writer = writers.get(session.id)
         if (writer === null || writer === undefined) return undefined
-        return (async () => {
-          await writer.drainLive()
-          await writer.flush()
-        })()
+        return writer.checkpointLive()
       })
       yield ctx.on('session/disposed', (session: Session) => {
         const writer = writers.get(session.id)

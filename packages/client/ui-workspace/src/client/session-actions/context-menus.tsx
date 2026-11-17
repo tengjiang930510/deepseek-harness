@@ -31,14 +31,15 @@ export function registerSessionMenus(ctx: Context, actions: Actions): void {
     ctx.effect(() => ctx.contextMenus.register({
       id: `session.${id}`, target: 'session', order,
       observe: ({ sessionId }) => [
-        ctx.workspaces.list, ctx.locale, ...sources,
+        ctx.workspaces.list, ctx.sessions.list, ctx.locale, ...sources,
         ...endpoints.map(action => ctx.remoteAccess.source('session', sessionId, action)),
       ],
       resolve,
     }), `ui-workspace: ${id} menu`)
   }
   const allowed = (target: ContextMenuTargetMap['session'], action: RemoteEndpoint): boolean =>
-    ctx.remoteAccess.source('session', target.sessionId, action).getSnapshot()
+    (action !== 'session/rename' || ctx.sessions.list.getSnapshot().byId[target.sessionId]?.readOnly !== true)
+      && ctx.remoteAccess.source('session', target.sessionId, action).getSnapshot()
   const archived = (target: ContextMenuTargetMap['session']): boolean =>
     ctx.workspaces.list.getSnapshot().archivedSessionIds.includes(target.sessionId)
   register('pin', 100, ['workspace/pinSession', 'workspace/unpinSession'], (target) => {

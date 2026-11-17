@@ -155,7 +155,15 @@ export class FixtureSession implements SessionFace {
   }
 
   /**
-   * Fail-loud stub; supply `loadOlder` on the fixture's session face to exercise it.
+   * Fail-loud stub; provide refreshHistory when exercising explicit history reload.
+   * @returns never — always throws.
+   */
+  refreshHistory(): never {
+    throw new Error(`test session "${this.sessionId}": refreshHistory is not stubbed`)
+  }
+
+  /**
+   * Fail-loud stub; supply loadOlder when exercising pagination.
    * @returns never — always throws.
    */
   loadOlder(): never {

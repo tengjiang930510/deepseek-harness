@@ -111,6 +111,8 @@ function resolveSessionResource({ args, parameters }: TypertResourceResolveInput
 export interface Config {
   /** Override platform desktop-opener detection. */
   readonly nativeOpen?: boolean
+  /** Session id namespaces managed by external writers; Web access remains passive. */
+  readonly readOnlySessionIdPrefixes?: string[]
   /** Positive integral milliseconds of list work before yielding between complete rows. */
   readonly listWorkSliceMs?: number
 }
@@ -152,6 +154,7 @@ export class SessionController extends TypertRemoteService {
 
   static Config: z<Config, ResolvedConfig> = z.object({
     nativeOpen: z.boolean(),
+    readOnlySessionIdPrefixes: z.array(z.string().min(1)).default([]),
     listWorkSliceMs: z.natural().min(1).default(16),
   })
 
@@ -169,6 +172,7 @@ export class SessionController extends TypertRemoteService {
   private readonly revealPath: (path: string, signal: AbortSignal) => Promise<void>
   private readonly canOpenPath: () => boolean
   private readonly listWorkSliceMs: number
+  private readonly readOnlySession: (id: SessionId) => boolean
   private readonly promotions = new Set<Promise<void>>()
 
   /**
@@ -178,7 +182,9 @@ export class SessionController extends TypertRemoteService {
    */
   constructor(ctx: Context, config: Config, internals: SessionControllerInternals = {}) {
     super(ctx, 'sessionController', { namespace: 'session' })
-    this.listWorkSliceMs = SessionController.Config(config).listWorkSliceMs
+    const resolved = SessionController.Config(config)
+    this.listWorkSliceMs = resolved.listWorkSliceMs
+    this.readOnlySession = id => resolved.readOnlySessionIdPrefixes?.some(prefix => id.startsWith(prefix)) === true
     this.fileApplications = internals.fileApplications ?? nativeFileApplications
     this.openFileApplication = internals.openFileApplication ?? openNativeFileApplication
     this.openPath = internals.openPath ?? openNativeAssociatedPath
@@ -190,7 +196,7 @@ export class SessionController extends TypertRemoteService {
   protected async [Service.init](): Promise<void> {
     const ctx = this.ctx
     ctx.typert.resources.register('session', { resolve: resolveSessionResource })
-    this.agents = new ApiSessionAgentController(ctx)
+    this.agents = new ApiSessionAgentController(ctx, this.readOnlySession)
     this.agents.initialize()
     this.commands = new SessionCommandController(ctx, this.agents, process.cwd())
     ctx.effect(() => ctx.fileUploads.registerAgentResolver(async (sessionId) => {
@@ -208,8 +214,9 @@ export class SessionController extends TypertRemoteService {
     // opening frame arriving during that await would otherwise have no listener.
     this.historyController = new HistoryController(ctx)
     this.stateController = new StateController(ctx, this.historyController)
-    this.webController = new WebController(ctx, this.historyController, (observation) => { this.promote(observation) })
-    this.listState = new ApiSessionList(ctx, this.listWorkSliceMs)
+    this.webController = new WebController(ctx, this.historyController,
+      (observation) => { this.promote(observation) }, this.readOnlySession)
+    this.listState = new ApiSessionList(ctx, this.listWorkSliceMs, this.readOnlySession)
     await this.commands.initialize()
     ctx.fiber.assertActive()
     await this.listState.initialize()
@@ -520,6 +527,7 @@ export class SessionController extends TypertRemoteService {
    */
   @Remote('cancel')
   cancel(request: SessionCancelRequest): SessionCancelValue {
+    if (this.readOnlySession(request.sessionId)) throw new RemoteError('session/read-only', 'This Session is read-only in the UI.', { sessionId: request.sessionId })
     return this.commands.cancel(request)
   }
 

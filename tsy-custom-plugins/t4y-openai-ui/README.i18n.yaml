@@ -1,0 +1,25 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write tsy-custom-plugins/t4y-openai-ui/README.md
+/:
+  en: b10ed29394675450
+  zh: bbe476d01f3d0c2c
+/t4y-openai-ui:
+  en: 014a3039dd8c44dd
+  zh: 7aee50bd722db44d
+/t4y-openai-ui/summary:
+  en: 972e94c585d87f06
+  zh: 2a3f039a32d38437
+/t4y-openai-ui/table-of-contents:
+  en: 587d48cdc677f3b8
+  zh: c7cff75196c1be74
+/t4y-openai-ui/use-this-package:
+  en: f0cc1052c439602f
+  zh: 0037701f83294446
+/t4y-openai-ui/understand-the-implementation:
+  en: ae33b2295967304c
+  zh: f0e28b323456c196
+/t4y-openai-ui/known-limitations:
+  en: 58b0b3f516507f5b
+  zh: 8f30d59c5d16655f

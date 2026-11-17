@@ -21,6 +21,8 @@ The Session Controller owns the contiguous loaded logical-event window. Each `Se
 
 Chat and Trajectory may recognize the same durable event family, but each keeps its own Definition State and final node payload. Shared target-neutral machinery is limited to identity routing, ordered replay, Location data, predecessor dependencies, and publication cadence.
 
+The shell treats a Session as read-only when either its list summary or retained Session state marks it so. It hides the composer and transcript write controls, and selects the [read-only header Slots](slots.md#current-hierarchy). History refresh is an injected callback to the retained Session’s public `refreshHistory()` operation; it does not start an Agent.
+
 ## Target activation
 
 Each Session keeps a monotonic set of active targets. Creating or reading a target source does not activate it. The shell explicitly activates its persisted or newly selected View, while another consumer activates a target through its first source subscription. First activation creates that target's builder and calls `replace()` once from the current target-indexed Contexts. Later flushes call `apply()` for every active target, and unsubscription does not remove one.

@@ -159,6 +159,21 @@ describe.each(['web', 'desktop'])('source %s custom plugin registration', (profi
     expect(f.installs).toEqual([])
   })
 
+  it('builds all bundles but only installs a scoped bundle in its declared profile', async (context) => {
+    const f = await fixture(context, profileName)
+    await writeFile(f.packageFile, JSON.stringify({ ...f.manifest,
+      dsh: { ...f.manifest.dsh, profiles: ['openai'] },
+    }))
+    expect(discoverCustomPlugins(f.checkout)).toHaveLength(1)
+    expect(discoverCustomPlugins(f.checkout, profileName)).toEqual([])
+    expect(discoverCustomPlugins(f.checkout, 'openai')).toMatchObject([{ name: 'custom-a', profiles: ['openai'] }])
+    await registerCustomPlugins(f.checkout, { profileDir: f.profileDir, install: f.install })
+    expect(f.installs).toEqual([])
+    await expect(writeFile(f.packageFile, JSON.stringify({ ...f.manifest, dsh: { ...f.manifest.dsh, profiles: [] } })))
+      .resolves.toBeUndefined()
+    expect(() => discoverCustomPlugins(f.checkout)).toThrow()
+  })
+
   it('rejects duplicate package names and missing declared patches', async (context) => {
     const f = await fixture(context, profileName)
     const duplicate = join(f.checkout, 'tsy-custom-plugins', 'custom-b')
@@ -168,4 +183,11 @@ describe.each(['web', 'desktop'])('source %s custom plugin registration', (profi
     await writeFile(join(duplicate, 'package.json'), JSON.stringify({ ...f.manifest, name: 'custom-b' }))
     expect(() => discoverCustomPlugins(f.checkout)).toThrow('missing patch')
   })
+})
+
+it('installs a service-scoped bundle in its custom profile', async (context) => {
+  const f = await fixture(context, 'openai')
+  await writeFile(f.packageFile, JSON.stringify({ ...f.manifest, dsh: { ...f.manifest.dsh, profiles: ['openai'] } }))
+  await registerCustomPlugins(f.checkout, { profileDir: f.profileDir, includeNpmDefaults: false, install: f.install })
+  expect(f.installs).toEqual([[`link:${f.directory}`]])
 })

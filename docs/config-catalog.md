@@ -269,6 +269,8 @@ export interface Config {
 export interface Config {
   /** Override platform desktop-opener detection. */
   readonly nativeOpen?: boolean
+  /** Session id namespaces managed by external writers; Web access remains passive. */
+  readonly readOnlySessionIdPrefixes?: string[]
   /** Positive integral milliseconds of list work before yielding between complete rows. */
   readonly listWorkSliceMs?: number
 }

@@ -107,8 +107,10 @@ function equalBreadcrumbs(left: readonly Breadcrumb[], right: readonly Breadcrum
  */
 export function ConversationSessionHeader({
   sessionId, hideChrome, useSessions, useConversationViews, useStore,
-  renderSlot, renderFactorySlot, open, useContextMenu, selectView, setPinned, t, useEntryPins, useEntryActions,
+  renderSlot, renderFactorySlot, open, useContextMenu, selectView, setPinned, t, useEntryPins, useEntryActions, useSession,
 }: ConversationSessionHeaderProps) {
+  const summaryReadOnly = useSessions(s => s.byId[sessionId]?.readOnly === true)
+  const readOnly = useSession(s => s.readOnly === true) || summaryReadOnly
   const { getTriggerProps } = useContextMenu()
   const tabs = useConversationViews(value => value)
   const selectedId = useStore(s => s.view)
@@ -203,12 +205,16 @@ export function ConversationSessionHeader({
                 {ancestry.length === 0 && <span className={css.crumbCurrent}>{sessionId}</span>}
               </nav>
               <div className={css.headerActions}>
-                {renderSlot('conversation.session.header.actions', {})}
+                {readOnly
+                  ? renderSlot('conversation.session.header.readonly.actions', {})
+                  : renderSlot('conversation.session.header.actions', {})}
               </div>
             </div>
             <div className={css.headerUtilities}>
-              {renderSlot('conversation.session.header.utilities', {})}
-              {renderFactorySlot('contextMenu.button', {
+              {readOnly
+                ? renderSlot('conversation.session.header.readonly.utilities', {})
+                : renderSlot('conversation.session.header.utilities', {})}
+              {!readOnly && renderFactorySlot('contextMenu.button', {
                 target: { kind: 'sessionHeader', value: { sessionId } },
                 label: t('header.more'), className: css.headerMenuButton, size: 'sm',
               })}

@@ -1,0 +1,32 @@
+{
+  "name": "t4y-openai-ui",
+  "version": "0.1.0",
+  "description": "API session badges and passive history refresh for the Harness GUI.",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": ["index.js", "client.js", "cordis.patch.yml", "README.md", "README.zh.md"],
+  "scripts": {
+    "build": "node --check client.js",
+    "test": "node --test tests/client.test.mjs"
+  },
+  "dsh": {
+    "profiles": ["web", "desktop"],
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-workspace"
+      ],
+      "platform": "web"
+    }
+  },
+  "license": "MIT"
+}

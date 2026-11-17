@@ -64,6 +64,30 @@ describe('SessionController facade', () => {
     await frames.return?.(undefined)
   })
 
+  it('marks external Sessions read-only and rejects execution before acquiring an Agent', async () => {
+    const ctx = new Context()
+    onTestFinished(() => ctx.fiber.dispose())
+    await mountAgentLoopTestDependencies(ctx)
+    await mountAgentLoopTestHarness(ctx)
+    const gateway: Partial<TypertGatewayService> = { getPendingRemoteEvents: () => [] }
+    ctx.provide('typertGateway', gateway as TypertGatewayService)
+    const controller = await createSessionTestController(ctx, { ...defaults, readOnlySessionIdPrefixes: ['openai-'] })
+    const sessionId = brandString<SessionId>('openai-read-only')
+    const ordinaryId = brandString<SessionId>('ordinary')
+    ctx.sessions.create(sessionId, { meta: { cwd: '/workspace' } })
+    ctx.sessions.create(ordinaryId, { meta: { cwd: '/workspace' } })
+    const signal = new AbortController().signal
+    const list = await controller.list({}, signal)
+    expect(list.items.find(item => item.sessionId === sessionId)).toMatchObject({ readOnly: true, agentAvailable: false })
+    expect(list.items.find(item => item.sessionId === ordinaryId)).not.toHaveProperty('readOnly')
+    const resume = vi.spyOn(ctx.agents, 'resume')
+    await expect(controller.rename({ sessionId, title: 'changed' })).rejects.toMatchObject({ code: 'session/read-only' })
+    await expect(controller.selectModel({ sessionId, provider: 'fixture', model: 'fixture-model' })).rejects.toMatchObject({ code: 'session/read-only' })
+    expect(() => controller.cancel({ sessionId })).toThrow(expect.objectContaining({ code: 'session/read-only' }))
+    await expect(controller.create({ sessionId, cwd: '/workspace' })).rejects.toMatchObject({ code: 'session/read-only' })
+    expect(resume).not.toHaveBeenCalled()
+  })
+
   it('serves passive reads, subscriptions and waits through its plain controllers', async () => {
     const ctx = new Context()
     onTestFinished(() => ctx.fiber.dispose())

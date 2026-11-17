@@ -202,6 +202,11 @@ type AssistantStreamFrame =
  * Persona belongs to system-prompt sections.
  */
 interface AgentOptions {
+  /**
+   * Pure control selection before adapter defaults on every model attempt;
+   * omission keeps proposed controls. Resolved values are logged in request headers.
+   */
+  configureCall?: import('@deepseek-ai/dsh-llm').ConfigureCall
   /** Provider route (must have a registered adapter at call time). */
   provider?: string
   /** Model id interpreted by the selected provider adapter. */

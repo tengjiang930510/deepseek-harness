@@ -1,0 +1,30 @@
+# HTTP agent serving over the shared base capabilities.
+- id: hmr
+  disabled: true
+- id: session-title-llm
+  disabled: true
+- insert:
+    - id: openai-console
+      name: '@deepseek-ai/cordis-plugin-logger-console'
+      inject: [openaiAppStartup]
+      config:
+        levels:
+          default: 2
+    - id: openai-app-startup
+      name: 't4y-openai-service/app'
+    - id: openai-webserver
+      name: '@deepseek-ai/dsh-host-webserver'
+      inject: [openaiAppStartup]
+      config:
+        host: !!js process.env.DSH_OPENAI_HOST ?? '127.0.0.1'
+        port: !!js Number(process.env.DSH_OPENAI_PORT ?? '34221')
+    - id: openai-server
+      name: 't4y-openai-service'
+      config:
+        models:
+          - id: harness
+            provider: !!js process.env.DSH_OPENAI_PROVIDER ?? 'deepseek-official'
+            model: !!js process.env.DSH_OPENAI_MODEL ?? 'deepseek-flash'
+            cwd: !!js process.cwd()
+            tools: []
+            maxTokens: 8192

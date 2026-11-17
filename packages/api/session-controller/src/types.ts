@@ -152,6 +152,8 @@ export type QueueAction =
 
 /** One Session list entry. */
 export interface SessionSummary {
+  /** External writer owns execution; UI readers must not activate an Agent. */
+  readonly readOnly?: true
   /** Whether this Session currently owns a live Agent. */
   readonly agentAvailable: boolean
   /** Current for attached Sessions; otherwise the persistence format status when reported. */
@@ -193,6 +195,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
       readonly existingCwd?: string
     }
     'session/projections-unavailable': Record<string, never>
+    'session/read-only': { readonly sessionId: SessionId }
     'session/writer-held': { readonly sessionId: SessionId }
     'session/agent-busy': { readonly reason: string }
     'session/invalid-time-zone': { readonly value: string }
@@ -432,6 +435,8 @@ export interface SessionEventEntry {
 
 /** Current logical Session metadata carried on the browser wire. */
 export interface SessionWireHeader {
+  /** Deployment-owned read policy, not persisted Session metadata. */
+  readonly readOnly?: true
   readonly version: number
   readonly id: SessionId
   readonly createdAt: number

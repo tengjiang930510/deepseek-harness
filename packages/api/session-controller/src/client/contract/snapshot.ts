@@ -67,6 +67,8 @@ export interface PromptError {
 
 /** Immutable Session lifecycle and control snapshot. */
 export interface SessionSnapshot {
+  /** External writer owns execution; this window only reads durable history. */
+  readonly readOnly?: true
   readonly sessionId: SessionId
   /** Local prompt-submission echoes the Host accepted and that are not yet observed as durable events or queue occurrences. */
   readonly pendingSubmissions: readonly PendingSubmission[]

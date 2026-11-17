@@ -81,8 +81,12 @@ export class ApiSessionList {
   /**
    * @param ctx - Host context carrying Session, query, persistence, and projection services.
    * @param workSliceMs - Resolved positive integral list-work budget in milliseconds.
+   * @param readOnlySession - Deployment policy for externally managed Session ids.
    */
-  constructor(private readonly ctx: Context, private readonly workSliceMs: number) {}
+  constructor(
+    private readonly ctx: Context, private readonly workSliceMs: number,
+    private readonly readOnlySession: (id: SessionId) => boolean = () => false,
+  ) {}
 
   /**
    * Acquire projection readers before exposing dependent operations.
@@ -127,6 +131,7 @@ export class ApiSessionList {
     const projections = this.projectionsFor(session.header, session)
     return {
       sessionId: session.id,
+      ...(this.readOnlySession(session.id) ? { readOnly: true as const } : {}),
       updatedAt: updatedAt(session.header, metadata),
       agentAvailable: this.ctx.agents.get(session.id)?.session === session,
       formatStatus: 'current',
@@ -182,6 +187,7 @@ export class ApiSessionList {
     const metadata = projections?.values.sessionListMetadata
     return {
       sessionId: header.id,
+      ...(this.readOnlySession(header.id) ? { readOnly: true as const } : {}),
       updatedAt: updatedAt(header, metadata),
       agentAvailable: false,
       ...(formatStatus === undefined ? {} : { formatStatus }),

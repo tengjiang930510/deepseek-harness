@@ -489,3 +489,15 @@
     transition: none;
   }
 }
+
+.rowBadges {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  margin-inline-end: 6px;
+}
+
+.rowBadges:empty {
+  display: none;
+}

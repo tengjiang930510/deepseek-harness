@@ -43,6 +43,7 @@ export type SessionRemote = ClientRemote['session']
 
 /** Opening metadata carried only by a follow snapshot, never by loadOlder pages. */
 interface SessionJournalPage extends SessionPage {
+  readonly readOnly?: true
   readonly projections?: SessionProjectionBaseline
   readonly assistantStream?: SessionAssistantStreamBaseline
 }
@@ -197,6 +198,7 @@ export class SessionEventStream extends RemoteJournalStream<
           type: 'opened',
           cursor: frame.cursor,
           page: {
+            ...(frame.header.readOnly === true ? { readOnly: true as const } : {}),
             records: frame.records,
             hasMore: frame.hasMore,
             projections: frame.projections,

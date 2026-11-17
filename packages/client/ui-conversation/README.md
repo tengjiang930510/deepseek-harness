@@ -69,6 +69,8 @@ The existing semantic `DraftSnapshot` retains quote text and clipboard-coordinat
 <a id="shell-and-standard-props"></a>
 ## Shell and standard props
 
+Read-only Sessions omit the composer and editing controls. Their header uses `conversation.session.header.readonly.actions` and `conversation.session.header.readonly.utilities` instead of the ordinary action seats; contributions may inspect history or call the Session’s `refreshHistory()` method, but must not start Agent execution or mutate the Session. Refresh rereads durable history, including records written by another process; the view does not subscribe to that process’s live progress.
+
 The root-scoped `conversation.hero.frame` hoc Slot wraps the scroll body in every phase, so its layers never remount the composer when the home ends. Its owner props carry `hero`, true only for the blank home of a standalone Conversation. Layers keep the scroll body a direct flex item of the body, for example with `display: contents`. On the home, the Conversation root, which paints the background, isolates stacking: a layer decoration at negative `z-index` paints above that background and below all Conversation content, including composer takeovers. Other phases leave the root out of the stacking order, so unportaled Conversation popovers can still rise above AppFrame chrome that floats over the column. Layers own their own input handling. With no occupant, the body is unchanged.
 
 Below 768px, Web view tabs align with the header's 20px left inset. Desktop and wider Web windows retain the additional 8px tab inset.

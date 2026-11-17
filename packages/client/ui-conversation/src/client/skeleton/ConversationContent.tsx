@@ -26,6 +26,8 @@ export function ConversationContent(props: ConversationContentProps) {
     selectWorkspace, t, useFactorySlot,
   } = props
   const session = useSession(snapshot => snapshot)
+  const summaryReadOnly = useSessions(s => sessionId !== undefined && s.byId[sessionId]?.readOnly === true)
+  const readOnly = session?.readOnly === true || summaryReadOnly
   const Views = useFactorySlot('views', ConversationSessionView)
   const WidthControls = useFactorySlot('widthControls', NoConversationWidthControls)
   const [body, setBody] = useState<HTMLDivElement | null>(null)
@@ -171,7 +173,7 @@ export function ConversationContent(props: ConversationContentProps) {
     </div>
   )
 
-  const composer = renderSlotChain(
+  const composer = readOnly ? null : renderSlotChain(
     'conversation.composer',
     { sessionId, session, pendingInteraction },
     { fallback: composerBar, fallbackOnly: sessionId === undefined, overlay: true },
@@ -201,7 +203,7 @@ export function ConversationContent(props: ConversationContentProps) {
         children: (
           <div className={css.scrollBody} data-conversation-scroll="">
             {sessionId === undefined ? null : <Views />}
-            {composerSeat}
+            {!readOnly && composerSeat}
           </div>
         ),
       })}

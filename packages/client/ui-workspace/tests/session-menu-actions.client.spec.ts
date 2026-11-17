@@ -23,6 +23,8 @@ function bench() {
     items: [], pinnedSessionIds: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
   })
   ctx.provide('workspaces', { list } as never)
+  const sessionList = createSnapshotStore<{ byId: Record<string, { readOnly?: true }> }>({ byId: {} })
+  ctx.provide('sessions', { list: sessionList } as never)
   const status = provideSessionStatus(ctx)
   const permissions = new Map<string, ReturnType<typeof createSnapshotStore<boolean>>>()
   const access = (action: string) => {
@@ -36,7 +38,7 @@ function bench() {
   const fiber = ctx.plugin({ apply: (plugin: Context) => { registerSessionMenus(plugin, actions) } })
   const target = { kind: 'session' as const, value: { sessionId: brandString<SessionId>('background'), displayTitle: 'Background' } }
   const open = () => registry.resolve(target)
-  return { ctx, fiber, registry, locale, list, status, access, actions, target, open }
+  return { ctx, fiber, registry, locale, list, sessionList, status, access, actions, target, open }
 }
 
 it('preserves built-in order, groups, icons, command identities, and captured action targets', async () => {
@@ -133,4 +135,16 @@ it('updates reading labels and availability while retaining the captured Session
   restricted.select('session.read-state/mark')
   expect(b.actions.markSession).toHaveBeenCalledOnce()
   restricted.dispose()
+})
+
+it('withdraws rename for an API-owned Session while keeping local organization actions', async () => {
+  const b = bench()
+  await b.fiber.await()
+  const menu = b.open()
+  try {
+    expect(menu.source.getSnapshot().some(item => item.id === 'session.rename/rename')).toBe(true)
+    b.sessionList.set({ byId: { background: { readOnly: true } } })
+    expect(menu.source.getSnapshot().some(item => item.id === 'session.rename/rename')).toBe(false)
+    expect(menu.source.getSnapshot().some(item => item.id === 'session.pin/pin')).toBe(true)
+  } finally { menu.dispose() }
 })

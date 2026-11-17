@@ -1,0 +1,3 @@
+# The direct test host uses profileContext.name=scaffold instead of the Web launcher.
+- id: t4y-openai-ui
+  disabled: false

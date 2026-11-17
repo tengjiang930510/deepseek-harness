@@ -98,6 +98,7 @@ export interface TestSessionRemote {
 
 /** Dependencies and policy supplied by a Session Controller unit harness. */
 export interface TestSessionRemoteDefaults {
+  readonly readOnlySessionIdPrefixes?: string[]
   readonly defaultModelSelection: () => AgentModelSelection
   readonly cwd: string
   readonly nativeOpen?: boolean
@@ -308,6 +309,7 @@ async function installControllers(
     controller = new TestController(
       ctx,
       {
+        ...defaults.readOnlySessionIdPrefixes === undefined ? {} : { readOnlySessionIdPrefixes: defaults.readOnlySessionIdPrefixes },
         ...defaults.nativeOpen === undefined ? {} : { nativeOpen: defaults.nativeOpen },
         ...defaults.listWorkSliceMs === undefined ? {} : { listWorkSliceMs: defaults.listWorkSliceMs },
       },

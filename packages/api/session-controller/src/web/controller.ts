@@ -1,5 +1,6 @@
 /** Web opening aggregation over one observation and a shared transforming buffer. */
 
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { Context } from '@deepseek-ai/cordis'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
@@ -16,11 +17,13 @@ export class WebController {
    * @param ctx - Host context carrying Session queries and identity projections.
    * @param historyController - passive reading and listener construction.
    * @param promote - background activation requested before an opening snapshot is delivered.
+   * @param readOnlySession - Deployment policy excluding externally managed Sessions from activation.
    */
   constructor(
     private readonly ctx: Context,
     private readonly historyController: HistoryController,
     private readonly promote: (observation: SessionObservation) => void,
+    private readonly readOnlySession: (id: SessionId) => boolean = () => false,
   ) {}
 
   /**
@@ -46,7 +49,7 @@ export class WebController {
     validateObservationAddress(request.address, observation)
     let opening: SessionFollowFrame = {
       type: 'snapshot',
-      header: { ...observation.header },
+      header: { ...observation.header, ...(this.readOnlySession(sessionId) ? { readOnly: true as const } : {}) },
       projections: projections(observation),
       ...history(observation, spec),
     }
@@ -59,7 +62,7 @@ export class WebController {
     // Increments come from the queue, so the opening ends this lease in every branch;
     // activation continues on its own retained lease. Promotion starts before the opening is
     // delivered, so a consumer that stops after the snapshot still gets the activation it asked for.
-    if (request.activate === true && !signal.aborted
+    if (request.activate === true && !this.readOnlySession(sessionId) && !signal.aborted
       && observation.header.origin !== 'subagent' && observation.source === 'prepared') {
       const promotion = observation.retain()
       observation[Symbol.dispose]()

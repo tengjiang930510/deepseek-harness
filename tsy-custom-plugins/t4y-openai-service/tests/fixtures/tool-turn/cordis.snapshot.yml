@@ -1,0 +1,35 @@
+- id: llm-deepseek
+  disabled: true
+- id: plugin-package-inventory-deepseek
+  disabled: true
+- id: session-log-deepseek
+  config:
+    enabled: false
+- id: agent-instructions
+  disabled: true
+- id: openai-webserver
+  config:
+    host: 127.0.0.1
+    port: 0
+- id: openai-server
+  config:
+    models:
+      - id: harness
+        provider: deepseek-official
+        model: deepseek-v4-flash
+        cwd: !!js process.cwd()
+        tools: [bash]
+        maxTokens: 8192
+- id: session-persistence-jsonl
+  config:
+    root: !!js dshHomePath('sessions')
+    compression: none
+- insert:
+    - id: llm-replay
+      name: '@deepseek-ai/dsh-llm-replay'
+      config:
+        file: !!js process.env.DSH_OPENAI_REPLAY_FILE
+        providers:
+          - id: deepseek-official
+            models:
+              - id: deepseek-v4-flash
