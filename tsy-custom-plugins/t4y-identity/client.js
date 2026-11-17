@@ -669,6 +669,26 @@ window.__ModuleLoader__.load({
       })
     }
 
+    /** Phone enter / paired WebView — never treat as a fresh desktop identity login. */
+    function isMobileEnterMode() {
+      try {
+        if (window.__t4yMobileCowatch?.active === true) return true
+        if (sessionStorage.getItem('t4y.mobile.cowatch') === '1') return true
+        if (sessionStorage.getItem('t4y.mobile.cowatch.entered.v1') === '1') return true
+        if (sessionStorage.getItem('t4y.mobile.hostReady.v1')) return true
+        if (localStorage.getItem('t4y.mobile.switchAuth.v1')) return true
+        const raw = localStorage.getItem(SESSION_KEY)
+        if (raw) {
+          const session = JSON.parse(raw)
+          if (session && session.accessToken === 'mobile-cowatch') return true
+        }
+        const ua = typeof navigator !== 'undefined' ? (navigator.userAgent || '') : ''
+        if (/Android|iPhone|iPad|iPod|Mobile|HarmonyOS|MicroMessenger|OpenHarmony/i.test(ua)) return true
+        if (navigator.userAgentData && navigator.userAgentData.mobile === true) return true
+      } catch { /* ignore */ }
+      return false
+    }
+
     function readSession() {
       try {
         const raw = localStorage.getItem(SESSION_KEY)
@@ -680,7 +700,13 @@ window.__ModuleLoader__.load({
           localStorage.removeItem(SESSION_KEY)
           return null
         }
-        if (typeof parsed.llmApiKeyExpiresAt === 'number' && Date.now() >= parsed.llmApiKeyExpiresAt) {
+        // Mobile co-watch uses a placeholder token; an expired PC model-key timestamp
+        // must not wipe the session or the enter flow reopens the identity login gate.
+        if (
+          parsed.accessToken !== 'mobile-cowatch'
+          && typeof parsed.llmApiKeyExpiresAt === 'number'
+          && Date.now() >= parsed.llmApiKeyExpiresAt
+        ) {
           localStorage.removeItem(SESSION_KEY)
           return null
         }
@@ -762,6 +788,7 @@ window.__ModuleLoader__.load({
     /** Push Desktop login onto Host so paired Mobile can inherit it. */
     async function pushHostSession(session) {
       if (!isShareableHostSession(session)) return
+      if (session.accessToken === 'mobile-cowatch') return
       try {
         await fetch('/api/t4y-identity/host-session', {
           method: 'PUT',
@@ -777,7 +804,23 @@ window.__ModuleLoader__.load({
     /** @returns {Promise<object | null>} */
     async function pullHostSession() {
       try {
-        const response = await fetch('/api/t4y-identity/host-session', { method: 'GET' })
+        const raw = sessionStorage.getItem('t4y.mobile.hostReady.v1')
+        if (raw) {
+          const cached = JSON.parse(raw)
+          if (cached
+            && typeof cached.at === 'number'
+            && Date.now() - cached.at < 60_000
+            && isShareableHostSession(cached.session)) {
+            return cached.session
+          }
+        }
+      } catch { /* fall through to network */ }
+      try {
+        const response = await fetch('/api/t4y-identity/host-session', {
+          method: 'GET',
+          credentials: 'same-origin',
+          signal: AbortSignal.timeout(5_000),
+        })
         if (!response.ok) return null
         const data = await response.json()
         return isShareableHostSession(data?.session) ? data.session : null
@@ -805,7 +848,10 @@ window.__ModuleLoader__.load({
       emitTenant(session, reason)
       // Keep Host t4yTenant aligned whenever the browser session changes.
       // Logout clears Host via revoke-model-key → identity.logout().
-      if (session) void syncHostContext(session, reason)
+      // Phone placeholder token must not call Host context APIs.
+      if (session && session.accessToken !== 'mobile-cowatch' && !options.skipHostPush) {
+        void syncHostContext(session, reason)
+      }
       if (options.skipHostPush) return
       if (session) void pushHostSession(session)
       else void clearHostSession()
@@ -842,6 +888,43 @@ window.__ModuleLoader__.load({
      * 管理员若要把推理费用改记到另一企业：退出登录（revoke）后再选目标项目签发。
      */
     async function commitModule(session, moduleId) {
+      // Phone enter uses a placeholder token — ask the PC Host to switch the real project.
+      if (session?.accessToken === 'mobile-cowatch' || isMobileEnterMode()) {
+        const response = await fetch('/api/t4y-mobile-cowatch/switch-module', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ moduleId }),
+        })
+        let data = null
+        try { data = await response.json() } catch { data = null }
+        if (!response.ok || !data?.session) {
+          throw new Error(typeof data?.error === 'string' ? data.error : 'switch-module failed')
+        }
+        const next = {
+          ...data.session,
+          accessToken: 'mobile-cowatch',
+          needsModulePick: false,
+          modules: Array.isArray(data.session.modules) ? data.session.modules : (session.modules || []),
+        }
+        writePrefs({ moduleId: next.moduleId })
+        rememberLoginPrefs(next)
+        writeSession(next, 'module-switch', { skipHostPush: true })
+        try {
+          sessionStorage.setItem('t4y.mobile.hostReady.v1', JSON.stringify({
+            at: Date.now(),
+            session: next,
+            modelKeyPresent: data.modelKeyPresent === true
+              || (typeof next.llmApiKeyExpiresAt === 'number' && next.llmApiKeyExpiresAt > Date.now()),
+          }))
+        } catch { /* ignore */ }
+        emitBrand(next)
+        emitTenant(next, 'module-switch')
+        // Reload so the paired shell picks up the PC workspace switch.
+        window.setTimeout(() => { location.reload() }, 120)
+        return next
+      }
+
       const next = selectModule(session, moduleId)
       if (next === session) return session
       const hasUsableKey = typeof session.llmApiKeyExpiresAt === 'number'
@@ -1183,7 +1266,20 @@ window.__ModuleLoader__.load({
         if (session !== null) setLeadingIcon(authItem, ICON_LOGOUT, 'logout')
         else setLeadingIcon(authItem, ICON_USER, 'user')
 
-        const canSwitch = Boolean(session && (session.modules || []).length > 1)
+        // Prefer modules from session; if enter-seed omitted them, hydrate from hostReady stash.
+        let modules = Array.isArray(session?.modules) ? session.modules : []
+        if (session && modules.length <= 1 && isMobileEnterMode()) {
+          try {
+            const raw = sessionStorage.getItem('t4y.mobile.hostReady.v1')
+            const cached = raw ? JSON.parse(raw) : null
+            if (Array.isArray(cached?.session?.modules) && cached.session.modules.length > modules.length) {
+              modules = cached.session.modules
+              session.modules = modules
+              localStorage.setItem(SESSION_KEY, JSON.stringify(session))
+            }
+          } catch { /* ignore */ }
+        }
+        const canSwitch = Boolean(session && modules.length > 1)
         if (canSwitch) {
           if (switchItem === null || !switchItem.isConnected) {
             if (switchItem !== null && !switchItem.isConnected) switchItem = null
@@ -1199,8 +1295,11 @@ window.__ModuleLoader__.load({
             }, { capture: true })
           }
           replaceMenuItemLabel(switchItem, authLabels.concat([t('switchModule'), label]), t('switchModule'))
+          // 每次打开菜单都补文件夹图标，避免克隆/改文案后图标丢失。
+          try { delete switchItem.dataset.t4yIcon } catch { /* ignore */ }
           setLeadingIcon(switchItem, ICON_FOLDER, 'folder')
           switchItem.style.display = ''
+          switchItem.setAttribute('aria-label', t('switchModule'))
           if (switchItem.parentElement !== authItem.parentElement || switchItem.nextSibling !== authItem) {
             authItem.parentElement?.insertBefore(switchItem, authItem)
           }
@@ -1442,14 +1541,39 @@ window.__ModuleLoader__.load({
           const existing = readSession()
           emitBrand(existing)
           emitTenant(existing, 'login')
-          if (existing) void pushHostSession(existing)
+          // Never push the phone placeholder token onto the PC host-session.
+          if (existing && existing.accessToken !== 'mobile-cowatch' && !isMobileEnterMode()) {
+            void pushHostSession(existing)
+          }
           setBootstrapping(false)
           return undefined
         }
         ;(async () => {
           let existing = readSession()
           let fromHost = false
-          if (!existing) {
+          const mobileEnter = isMobileEnterMode()
+
+          // Prefer enter-page stash before any Host round-trip (avoids login flash).
+          if (mobileEnter && (!existing || !isShareableHostSession(existing))) {
+            try {
+              const raw = sessionStorage.getItem('t4y.mobile.hostReady.v1')
+              if (raw) {
+                const cached = JSON.parse(raw)
+                if (cached && typeof cached.at === 'number' && Date.now() - cached.at < 600_000) {
+                  if (cached.session && isShareableHostSession(cached.session)) {
+                    existing = cached.session
+                    fromHost = true
+                    markFreshAuth()
+                    writeSession(existing, 'host-sync', { skipHostPush: true })
+                    setSession(existing)
+                    setModuleId(existing.moduleId || '')
+                  }
+                }
+              }
+            } catch { /* ignore */ }
+          }
+
+          if (!existing && !mobileEnter) {
             const shared = await pullHostSession()
             if (cancelled) return
             if (!shared) {
@@ -1468,15 +1592,32 @@ window.__ModuleLoader__.load({
 
           // Mobile co-watch: phone only remotes the PC — never refresh enterprise
           // profile or hit Broker (those hang or fail over cpolar/iroh).
-          if (window.__t4yMobileCowatch?.active) {
-            let keyPresent = typeof existing.llmApiKeyExpiresAt === 'number'
+          if (mobileEnter) {
+            let keyPresent = typeof existing?.llmApiKeyExpiresAt === 'number'
               && existing.llmApiKeyExpiresAt > Date.now()
+            if (!keyPresent || !isShareableHostSession(existing)) {
+              try {
+                const raw = sessionStorage.getItem('t4y.mobile.hostReady.v1')
+                if (raw) {
+                  const cached = JSON.parse(raw)
+                  if (cached && typeof cached.at === 'number' && Date.now() - cached.at < 600_000) {
+                    if (cached.session && isShareableHostSession(cached.session)) {
+                      existing = cached.session
+                      fromHost = true
+                    }
+                    keyPresent = cached.modelKeyPresent === true
+                      || (typeof existing?.llmApiKeyExpiresAt === 'number'
+                        && existing.llmApiKeyExpiresAt > Date.now())
+                  }
+                }
+              } catch { /* ignore */ }
+            }
             if (!keyPresent) {
               try {
                 const shared = await fetch('/api/t4y-identity/host-session', {
                   method: 'GET',
                   credentials: 'same-origin',
-                  signal: AbortSignal.timeout(8_000),
+                  signal: AbortSignal.timeout(5_000),
                 })
                 if (shared.ok) {
                   const body = await shared.json()
@@ -1485,26 +1626,46 @@ window.__ModuleLoader__.load({
                       && body.session.llmApiKeyExpiresAt > Date.now())
                   if (body?.session && isShareableHostSession(body.session)) {
                     existing = body.session
+                    fromHost = true
                   }
                 }
               } catch { /* treat as missing */ }
             }
             if (cancelled) return
-            if (!keyPresent || !isShareableHostSession(existing)) {
-              // Leave Host session intact; WaitGate tells the user to sign in on PC.
-              writeSession(null, 'mobile-wait', { skipHostPush: true })
-              setSession(null)
+            // Enter flow already authenticated: never bounce to identity login on phone.
+            if (!isShareableHostSession(existing)) {
+              // Keep bootstrapping false but do NOT clear — WaitGate owns wait UX.
               setBootstrapping(false)
               emitBrand(null)
               emitTenant(null, 'anonymous')
               return
+            }
+            // Ensure project list exists for「切换项目」(older enter seeds omitted modules).
+            if (!Array.isArray(existing.modules) || existing.modules.length === 0) {
+              try {
+                const shared = await fetch('/api/t4y-identity/host-session', {
+                  method: 'GET',
+                  credentials: 'same-origin',
+                  signal: AbortSignal.timeout(5_000),
+                })
+                if (shared.ok) {
+                  const body = await shared.json()
+                  if (Array.isArray(body?.session?.modules) && body.session.modules.length > 0) {
+                    existing = { ...existing, modules: body.session.modules }
+                  }
+                }
+              } catch { /* optional */ }
             }
             emitBrand(existing)
             emitTenant(existing, fromHost ? 'host-sync' : 'restore')
             writeSession(existing, fromHost ? 'host-sync' : 'restore', { skipHostPush: true })
             setSession(existing)
             setModuleId(existing.moduleId || '')
-            void syncHostContext(existing, fromHost ? 'mobile-host-sync' : 'mobile-restore')
+            if (keyPresent) {
+              window.setTimeout(() => {
+                void syncHostContext(existing, fromHost ? 'mobile-host-sync' : 'mobile-restore')
+              }, 0)
+            }
             setBootstrapping(false)
             return
           }
@@ -1708,7 +1869,8 @@ window.__ModuleLoader__.load({
       }
 
       let gateLogin = null
-      if (locked && !bootstrapping && !session) {
+      // Phone enter already signed in via /t4y-mobile-enter; WaitGate owns offline/wait UX.
+      if (locked && !bootstrapping && !session && !isMobileEnterMode()) {
         gateLogin = React.createElement(DialogShell, {
           kind: 'login-gate',
           gate: true,

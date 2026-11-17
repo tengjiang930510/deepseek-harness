@@ -18,7 +18,11 @@ const PLUGIN_NAMES = [
   't4y-brand',
   't4y-release-manager',
   't4y-trial-runtime',
+  't4y-mobile-cowatch',
 ]
+
+/** Enterprise mobile channel (npm). Kept out of PLUGIN_NAMES so sync does not `link:` it. */
+const DSH_MOBILE_SPEC = '0.8.2'
 
 const home = process.env.HOME || process.env.USERPROFILE || ''
 const profileDirs = [
@@ -44,9 +48,10 @@ for (const profileDir of profileDirs) {
   for (const name of PLUGIN_NAMES) {
     dependencies[name] = `link:${path.join(pluginsRoot, name)}`
   }
+  dependencies['dsh-mobile'] = DSH_MOBILE_SPEC
   const baseBundles = (pkg.dsh?.profile?.bundles ?? [])
-    .filter(name => typeof name === 'string' && !name.startsWith('t4y-'))
-  const bundles = [...baseBundles, ...PLUGIN_NAMES]
+    .filter(name => typeof name === 'string' && !name.startsWith('t4y-') && name !== 'dsh-mobile')
+  const bundles = [...baseBundles, 'dsh-mobile', ...PLUGIN_NAMES]
   pkg.dependencies = dependencies
   pkg.dsh = { profile: { bundles } }
   fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`)
@@ -57,5 +62,8 @@ for (const profileDir of profileDirs) {
     const linked = path.join(profileDir, 'node_modules', name)
     if (!fs.existsSync(linked)) throw new Error(`link missing after install: ${linked}`)
   }
-  console.log(`installed ${PLUGIN_NAMES.join(', ')} → ${profileDir}`)
+  if (!fs.existsSync(path.join(profileDir, 'node_modules', 'dsh-mobile'))) {
+    throw new Error(`dsh-mobile missing after install: ${profileDir}`)
+  }
+  console.log(`installed dsh-mobile@${DSH_MOBILE_SPEC}, ${PLUGIN_NAMES.join(', ')} → ${profileDir}`)
 }

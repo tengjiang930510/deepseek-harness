@@ -2,22 +2,29 @@
 
 手机同看策略插件：**手机只遥控电脑上的 DSH**，不单独做企业登录，不调用内网 Broker / 大模型。
 
+## 身份与 accessToken（已定口径）
+
+采用「遥控电脑会话」模型，**不要**改成手机全程持有真企业 token 调业务接口。
+
+| 位置 | 值 | 用途 |
+|------|-----|------|
+| 电脑 `host-session` | 真企业 accessToken | 电脑侧企业 API、模型 Key |
+| 手机身份会话 | 占位 `mobile-cowatch` | 跳过登录门、展示已登录 |
+| 手机 `switchAuth` | 真企业 accessToken（若有） | 仅「切换电脑 / 入口选机赎回」 |
+| 配对 Cookie | 设备凭证 | 经 FRP 访问本机网关 |
+
+进主界面依赖：配对成功 + 种子会话 + `entered` 标记。模型与企业调用仍在电脑 Host 执行。
+
 ## 行为
 
 | 端 | 行为 |
 |----|------|
-| 电脑（桌面 UA） | **完全不激活**：清理实验室标记与历史内联样式；`t4y-identity` 负责登录 |
-| 手机（UA 含 Mobile） | 等待电脑 `host-session`；复用 Host 模型 Key |
+| 电脑（桌面） | 账号菜单「移动访问」软开关 + 扫码出码；FRP 保活；软关踢设备但不拆隧道 |
+| 手机（进入会话 / 移动 UA） | WaitGate、闲置断 WS、切换电脑/项目；不签发/撤销电脑模型 Key |
 
-> 桌面「移动访问」不得被等待层或侧栏改写影响。`?t4yMobile=1` **仅真实手机 UA** 生效。
+交付目标以**当前正在登录的电脑**为准；本机历史 origin 记忆非交付项。公网 `/t4y-mobile-enter` 登录选机与扫码免登两条入口并存；软关时隐藏扫码。
 
-手机侧当前仅保留：
-
-- 等待电脑登录的遮罩（仅手机 UA）
-- 设置 Tab 横滑、菜单快捷键文案隐藏、底栏轻量溢出处理
-- fetch 拦截（不签发/撤销电脑模型 Key、不清 host-session）
-
-**不做** AppFrame 栅格改写、会话宽度覆盖、快捷栏座位迁移（避免误伤桌面 / 发布链路问题）。手机排版另案再议。
+手机侧还保留：设置 Tab 横滑、菜单快捷键隐藏、闲置 15 分钟断实时 WebSocket（配对 Cookie 保留，点「继续使用」免登续连）。
 
 ## 依赖
 
@@ -30,3 +37,16 @@ Client 改动后必须：`pnpm dsh plugin --profile web add ./tsy-custom-plugins
 | 路由 | 说明 |
 |------|------|
 | `GET /api/t4y-mobile-cowatch/credential-status` | Host 是否已有 `T4Y_NEW_API_KEY` |
+| `POST /api/t4y-mobile-cowatch/bind-device-label` | 将当前/最近 dsh-mobile 设备名改为企业 `displayName` |
+| `GET/POST /api/t4y-mobile-cowatch/accepting` | 软开/软关（关时 revoke 已配对设备） |
+
+扫码页 `/mobile-access/pair`：自动配对并种子会话，免企业登录直进本机。
+
+## 手机 WaitGate 阶段
+
+| `data-phase` | 含义 |
+|--------------|------|
+| `checking` | 正在确认电脑登录 |
+| `waiting_login` | 请在电脑登录并选项目 |
+| `waiting_key` | 电脑尚无模型凭据 |
+| `entering` | 已就绪，进入助手 |

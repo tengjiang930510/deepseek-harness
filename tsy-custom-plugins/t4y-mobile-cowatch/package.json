@@ -13,6 +13,8 @@
   "files": [
     "index.js",
     "client.js",
+    "enter-page.js",
+    "enter-login.js",
     "cordis.patch.yml",
     "README.md",
     "README.zh.md"
@@ -27,6 +29,14 @@
         "@deepseek-ai/dsh-client-locale"
       ],
       "platform": "web"
+    }
+  },
+  "peerDependencies": {
+    "dsh-mobile": ">=0.8.0"
+  },
+  "peerDependenciesMeta": {
+    "dsh-mobile": {
+      "optional": true
     }
   },
   "license": "MIT"

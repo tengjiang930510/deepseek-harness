@@ -30,3 +30,8 @@ Requires `t4y-identity` (`host-session`). See `tenant-identity.overlay.yml` for 
 | Route | Purpose |
 |-------|---------|
 | `GET /api/t4y-mobile-cowatch/credential-status` | Whether Host already holds `T4Y_NEW_API_KEY` |
+| `POST /api/t4y-mobile-cowatch/bind-device-label` | Rename the active / recent dsh-mobile device to enterprise `displayName` |
+
+QR pair page auto-binds with no fill-in form; empty pairing labels are filled from `host-session.displayName` when `dsh-mobile` is present. Desktop Mobile access UI keeps only the seeded FRP remote channel.
+
+WaitGate phases: `checking` → `waiting_login` / `waiting_key` → `entering`.

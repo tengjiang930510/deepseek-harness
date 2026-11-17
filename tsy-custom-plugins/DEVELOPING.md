@@ -30,11 +30,13 @@
 | `t4y-capability-hub` | 设置页「授权插件」 | release-manager、identity Token |
 | `t4y-release-manager` | 按授权 + `latest.json` 安装不可变版本 | Host `pluginManager` |
 | `t4y-trial-runtime` | 试用内置模型 / 联网搜索默认 | Desktop 试用包 |
+| `t4y-mobile-cowatch` | 手机同看 WaitGate + 设备名绑企业用户 | 需同 profile 装 `dsh-mobile` |
 | `oa-helper` | 办公表单能力（包名 = 菜单 name） | 经授权页安装，不进默认 trial seed |
 | `t4y-key-broker` | 独立 Key Broker 服务（非 DSH 插件） | New API 管理面 |
 | `hub-projects/` | Hub catalog / latest 本地样板 | 发布到 Gitee Hub |
 
-推荐加载顺序（Web / Desktop sync 脚本一致）：tenant → identity → capability-hub → brand → release-manager → trial-runtime。
+推荐加载顺序（Web / Desktop sync 脚本一致）：tenant → identity → capability-hub → brand → release-manager → trial-runtime → mobile-cowatch；Desktop sync 另装 `dsh-mobile@0.8.2`。企业 FRP 预置：`node ./tsy-custom-plugins/scripts/seed-enterprise-mobile-frp.mjs`。
+手机模块若被裁空导致白屏：`node ./tsy-custom-plugins/scripts/seed-enterprise-mobile-modules.mjs`（默认 reset 回全量），手机整页刷新后再开。激进减负需先做冒烟，勿直接当默认。
 
 ## 日常开发循环（Web）
 
