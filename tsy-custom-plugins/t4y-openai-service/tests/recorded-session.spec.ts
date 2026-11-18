@@ -1,9 +1,12 @@
 /** Recorded-session replay through the real dsh openai profile and its public HTTP protocol. */
-import { mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import { resolveSessionTarget } from '../src/conversation.ts'
+import type { ConversationId } from '../src/request.ts'
 import { startUploadFixture } from './upload-fixture.ts'
 import { startOpenAiProfile } from './profile/fixture.ts'
 import { parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
@@ -15,6 +18,10 @@ import {
 it.each([false, true])('openai: resumes one conversation over HTTP and preserves tool history; file delivery=%s', async fileDelivery => {
   const scenario = fileURLToPath(new URL(fileDelivery ? './fixtures/file-delivery/' : './fixtures/tool-turn/', import.meta.url))
   const root = await mkdtemp(join(tmpdir(), 'dsh-openai-snapshot-'))
+  const conversationId = brandString<ConversationId>('snapshot-conversation')
+  const { id } = resolveSessionTarget('harness', conversationId, 'unused')
+  const workspaceRoot = fileDelivery ? root : join(root, '.openai-service-workspace')
+  const workspace = join(workspaceRoot, id)
   const sessionFile = join(scenario, 'session.v4.jsonl')
   const canonical = await readFile(sessionFile, 'utf8')
   const task = parseSessionLog(canonical).find(event => event.type === 'user/message')
@@ -29,7 +36,8 @@ it.each([false, true])('openai: resumes one conversation over HTTP and preserves
       originals = await mkdtemp(join(tmpdir(), 'dsh-snapshot-original-'))
       const original = join(originals, 'source.txt')
       await writeFile(original, 'Original kept outside the workspace\n')
-      await symlink(original, join(root, 'original-source.txt'))
+      await mkdir(workspace)
+      await symlink(original, join(workspace, 'original-source.txt'))
     }
     const patch = materializeProfilePatch(join(scenario, 'cordis.snapshot.yml'), root, 'openai', root, 0)
     server = await startOpenAiProfile(root, patch, {
@@ -41,7 +49,7 @@ it.each([false, true])('openai: resumes one conversation over HTTP and preserves
     const base = server.base
     const response = await fetch(`${base}/v1/chat/completions`, { method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'harness', metadata: { conversation_id: 'snapshot-conversation' }, messages: [{ role: 'user', content: prompt }], stream: true, stream_options: { include_usage: true } }),
+      body: JSON.stringify({ model: 'harness', metadata: { conversation_id: conversationId }, messages: [{ role: 'user', content: prompt }], stream: true, stream_options: { include_usage: true } }),
       signal: AbortSignal.timeout(60000),
     })
     const wire = await response.text()
@@ -53,10 +61,11 @@ it.each([false, true])('openai: resumes one conversation over HTTP and preserves
     expect(wire).not.toContain('调用工具：bash')
     expect(wire).toContain('data: [DONE]\r\n\r\n')
     expect(wire).not.toContain('tool_calls')
-    expect(await readFile(join(root, 'marker.txt'), 'utf8')).toBe(await readFile(join(scenario, 'workspace.expected/marker.txt'), 'utf8'))
+    expect(await readFile(join(workspace, 'marker.txt'), 'utf8')).toBe(await readFile(join(scenario, 'workspace.expected/marker.txt'), 'utf8'))
+    await expect(readFile(join(workspaceRoot, 'marker.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
     const followup = await fetch(`${base}/v1/chat/completions`, { method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'harness', metadata: { conversation_id: 'snapshot-conversation' },
+      body: JSON.stringify({ model: 'harness', metadata: { conversation_id: conversationId },
         messages: [{ role: 'user', content: 'Confirm the earlier tool result without calling another tool.' }] }),
       signal: AbortSignal.timeout(60000),
     })
@@ -71,10 +80,10 @@ it.each([false, true])('openai: resumes one conversation over HTTP and preserves
     const raw = await readFile(resolve(sessionRoot, selected), 'utf8')
     const sessionId = response.headers.get('x-dsh-session-id')
     if (sessionId === null) throw new Error('Missing HTTP request identity')
-    const context = { cwd: root, sessionIds: [sessionId] }
+    const context = { cwd: workspace, sessionIds: [sessionId] }
     const redacted = redactSessionSnapshotIds([raw])[0]
     if (redacted === undefined) throw new Error('Missing redacted Session')
-    const normalized = scrubSessionSnapshot(normalizeSessionLog(redacted, context, { identityMode: 'preserve' }))
+    const normalized = scrubSessionSnapshot(normalizeSessionLog(redacted, { ...context, cwd: workspaceRoot }, { identityMode: 'preserve' }))
     if (normalized === undefined) throw new Error('Missing normalized Session')
     const prompts = normalizedSystemPrompts(raw, context)
     const schemas = normalizedToolSchemas(raw, context)

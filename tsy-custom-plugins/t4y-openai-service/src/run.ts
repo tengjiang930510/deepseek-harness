@@ -1,4 +1,6 @@
 /** One request owns a fresh Agent over a new or restored Session, output observation, and quiescent cleanup. */
+import { lstat, mkdir } from 'node:fs/promises'
+import { dirname, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import { SessionAlreadyOwnedError } from '@deepseek-ai/dsh-session-persistence'
@@ -10,6 +12,7 @@ import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
 import type { Config, ModelRoute } from './config.ts'
+import { defaultOpenAiWorkspace } from './config.ts'
 import type { ChatRequest } from './request.ts'
 import { ToolProgress } from './progress.ts'
 import { FileDelivery } from './file-delivery.ts'
@@ -60,6 +63,26 @@ export async function runChat(
   ctx: Context, config: Config, route: ModelRoute, request: ChatRequest,
   signal: AbortSignal, emit: (field: 'content' | 'reasoning_content', text: string) => void, target: SessionTarget,
 ): Promise<RunResult> {
+  const maxTokens = request.max_completion_tokens ?? request.max_tokens ?? route.maxTokens
+  if (maxTokens > route.maxTokens) {
+    throw new OpenAiServerError(`Output limit exceeds this model's ${route.maxTokens}-token per-call ceiling.`, 'INVALID_REQUEST', 400)
+  }
+  const stored = target.persistent ? await ctx.sessionPersistence.stat(target.id, { signal }) : undefined
+  const workspaceRoot = resolve(route.cwd)
+  const sessionWorkspace = resolve(workspaceRoot, target.id)
+  const cwd = stored === undefined ? sessionWorkspace : stored.header.cwd
+  // Older default Sessions used the launch directory before the dedicated workspace was introduced.
+  const legacyRoot = workspaceRoot === defaultOpenAiWorkspace ? dirname(defaultOpenAiWorkspace) : workspaceRoot
+  if (cwd !== sessionWorkspace && cwd !== route.cwd && cwd !== legacyRoot) {
+    throw new OpenAiServerError('This conversation belongs to a different workspace. Start a new conversation.', 'SESSION_CONFLICT', 409)
+  }
+  signal.throwIfAborted()
+  if (cwd === sessionWorkspace) {
+    await mkdir(cwd, { recursive: true, mode: 0o700 })
+    if (!(await lstat(cwd)).isDirectory()) {
+      throw new OpenAiServerError('The Session workspace must be a directory.', 'SESSION_CONFLICT', 409)
+    }
+  }
   const output: string[] = []
   const pendingAnswers: string[] = []
   let bufferedAnswerBytes = 0
@@ -88,7 +111,7 @@ export async function runChat(
     target.push(fragment)
   }
   await using delivery = upload === undefined ? undefined : new FileDelivery(
-    route.cwd, upload, signal, name => publish('reasoning_content', `正在上传文件：${name}`),
+    cwd, upload, signal, name => publish('reasoning_content', `正在上传文件：${name}`),
   )
   const globalTools = route.tools.filter(name => name !== DELIVER_FILE_TOOL)
   const allowedTools = delivery === undefined ? globalTools : [...globalTools, DELIVER_FILE_TOOL]
@@ -97,8 +120,6 @@ export async function runChat(
   signal.throwIfAborted()
   signal.addEventListener('abort', abort, { once: true })
   try {
-    const maxTokens = request.max_completion_tokens ?? request.max_tokens ?? route.maxTokens
-    if (maxTokens > route.maxTokens) throw new OpenAiServerError(`Output limit exceeds this model's ${route.maxTokens}-token per-call ceiling.`, 'INVALID_REQUEST', 400)
     const options: Pick<CreateAgentOptions, 'agentOptions' | 'setup' | 'signal'> = {
       signal,
       agentOptions: {
@@ -165,14 +186,10 @@ export async function runChat(
         agentCtx.on('agent/error', ({ error }) => { failure ??= error })
       },
     }
-    const stored = target.persistent ? await ctx.sessionPersistence.stat(target.id, { signal }) : undefined
-    if (stored !== undefined && stored.header.cwd !== route.cwd) {
-      throw new OpenAiServerError('This conversation belongs to a different workspace. Start a new conversation.', 'SESSION_CONFLICT', 409)
-    }
     const acquire = async () => {
       if (stored !== undefined) return ctx.agents.resume({ ...options, resumeSessionId: target.id })
       const seed = historySeed(target.id, request)
-      return ctx.agents.create({ ...options, sessionId: target.id, meta: { cwd: route.cwd },
+      return ctx.agents.create({ ...options, sessionId: target.id, meta: { cwd },
         ...seed === undefined ? {} : { seed } })
     }
     const handle = await acquire().catch((error: unknown) => {

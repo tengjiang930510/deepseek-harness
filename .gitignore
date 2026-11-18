@@ -41,6 +41,7 @@ apps/cli/docs/
 .artifacts/
 .dsh-build/
 .dsh-report/
+/.openai-service-workspace/
 .ui-review/
 .playwright-mcp/
 .orig

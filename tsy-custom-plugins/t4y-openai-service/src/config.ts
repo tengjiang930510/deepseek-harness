@@ -1,8 +1,12 @@
 /** Deployment-owned model routes and HTTP execution limits. */
+import { resolve } from 'node:path'
 import z from '@deepseek-ai/schemastery'
 import { fileDeliveryConfig } from './file-delivery-config.ts'
 import type { FileUploadConfig } from './file-delivery-config.ts'
 export type { FileUploadConfig } from './file-delivery-config.ts'
+
+/** Default model workspace relative to the service launch directory. */
+export const defaultOpenAiWorkspace = resolve(process.cwd(), '.openai-service-workspace')
 
 /** One public model identifier and its server-owned execution settings. */
 export interface ModelRoute {
@@ -12,7 +16,7 @@ export interface ModelRoute {
   provider: string
   /** Exact upstream model identifier. */
   model: string
-  /** Absolute working directory shared by this route's requests. */
+  /** Absolute root for new Session workspaces on this route. */
   cwd: string
   /** Allowlisted Harness tools; an empty list permits no tools. */
   tools: string[]
@@ -61,7 +65,7 @@ export const Config: z<Config> = z.object({
   fileUpload: fileDeliveryConfig,
   models: z.array(z.object({
     id: z.string().required(), provider: z.string().required(), model: z.string().required(),
-    cwd: z.string().required(), tools: z.array(z.string()).required(),
+    cwd: z.string().default(defaultOpenAiWorkspace), tools: z.array(z.string()).required(),
     maxTokens: z.number().step(1).min(1).required(),
   })).required(),
   maxConcurrent: z.number().step(1).min(1).default(8),

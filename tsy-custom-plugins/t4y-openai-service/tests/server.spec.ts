@@ -1,5 +1,5 @@
 /** Real Loader/HTTP/Agent composition; only the upstream model is scripted. */
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { startUploadFixture } from './upload-fixture.ts'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,7 +9,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
-import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -22,6 +22,8 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import * as Server from '../src/index.ts'
 import { Config } from '../src/config.ts'
+import { resolveSessionTarget } from '../src/conversation.ts'
+import type { ConversationId } from '../src/request.ts'
 
 function text(text: string): StreamChunk[] {
   return [{ type: 'block-start', index: 0, blockType: 'text' }, { type: 'text-delta', index: 0, text },
@@ -283,6 +285,36 @@ describe('OpenAI-compatible serving', () => {
     expect(events.filter(event => event.type === 'turn/end')).toHaveLength(2)
   })
 
+  it('resumes legacy Sessions in their original shared workspace', async () => {
+    const h = await fixture([text('original'), text('resumed')])
+    const conversationId = brandString<ConversationId>('legacy-chat')
+    const { id } = resolveSessionTarget('harness', conversationId, 'unused')
+    const agent = await h.ctx.agents.create({
+      sessionId: id, meta: { cwd: h.root }, agentOptions: { provider: 'mock', model: 'model' },
+    })
+    try {
+      agent.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'original question' }], source: { kind: 'user' } }))
+      await agent.agent.whenIdle()
+    } finally { await agent.dispose() }
+    expect((await h.ctx.sessionPersistence.stat(id))?.header.cwd).toBe(h.root)
+    const response = await h.send({ metadata: { conversation_id: conversationId } })
+    expect(response.status).toBe(200)
+    expect(await response.text()).toContain('resumed')
+    expect((await h.ctx.sessionPersistence.stat(id))?.header.cwd).toBe(h.root)
+    expect(await readdir(h.root)).not.toContain(id)
+  })
+
+  it('rejects a Session directory symlink before invoking tools or the model', async () => {
+    const h = await fixture()
+    const conversationId = brandString<ConversationId>('linked-chat')
+    const { id } = resolveSessionTarget('harness', conversationId, 'unused')
+    await symlink(h.root, join(h.root, id), 'junction')
+    const response = await h.send({ metadata: { conversation_id: conversationId } })
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ error: { code: 'SESSION_CONFLICT' } })
+    expect(h.model.requests).toHaveLength(0)
+  })
+
   it('recovers the same conversation after server replacement and seeds initial client history', async () => {
     const h = await fixture([text('first'), text('second')])
     const metadata = { conversation_id: 'restart-chat' }
@@ -365,7 +397,7 @@ describe('OpenAI-compatible serving', () => {
     expect((await fetch(`${h.base}/v1/models`)).status).toBe(404)
   })
 
-  it('keeps simultaneous requests in separate Sessions and histories', async () => {
+  it.each([true, false])('separates simultaneous request workspaces and histories (persistent=%s)', async persistent => {
     const h = await fixture([text('first answer'), text('second answer')])
     const both = Promise.withResolvers<undefined>()
     let started = 0
@@ -373,7 +405,7 @@ describe('OpenAI-compatible serving', () => {
       if (++started === 2) both.resolve(undefined)
       await both.promise
     }
-    const responses = await Promise.all(['first', 'second'].map(question => h.send({ metadata: { conversation_id: question }, messages: [{ role: 'user', content: question }] })))
+    const responses = await Promise.all(['first', 'second'].map(question => h.send({ ...(persistent ? { metadata: { conversation_id: question } } : {}), messages: [{ role: 'user', content: question }] })))
     expect(responses.map(response => response.status)).toEqual([200, 200])
     const bodies: unknown[] = []
     for (const response of responses) bodies.push(await response.json())
@@ -381,6 +413,14 @@ describe('OpenAI-compatible serving', () => {
       choices: [expect.objectContaining({ message: { role: 'assistant', content } })],
     }))))
     expect(new Set(responses.map(response => response.headers.get('x-request-id'))).size).toBe(2)
+    const ids = responses.map(response => response.headers.get('x-dsh-session-id'))
+    expect(new Set(ids).size).toBe(2)
+    for (const id of ids) {
+      if (id === null) throw new Error('Missing Session identifier')
+      const stored = await h.ctx.sessionPersistence.stat(SessionId(id))
+      expect(stored?.header.cwd).toBe(join(h.root, id))
+      expect(await readdir(join(h.root, id))).toEqual([])
+    }
     expect(h.model.requests).toHaveLength(2)
     expect(started).toBe(2)
     expect(h.model.requests.map(request => request.messages.filter(message => message.role === 'user'
@@ -524,6 +564,15 @@ describe('OpenAI-compatible serving', () => {
 })
 
 
+async function seedDeliveryFile(root: string) {
+  const conversationId = brandString<ConversationId>('file-delivery')
+  const workspace = join(root, resolveSessionTarget('harness', conversationId, 'unused').id)
+  await mkdir(workspace)
+  const file = join(workspace, 'report.pdf')
+  await writeFile(file, 'example')
+  return { file, metadata: { conversation_id: conversationId } }
+}
+
 describe('file delivery over OpenAI HTTP', () => {
   it.each([false, true])('uploads a document and returns only its public URL: stream=%s', async stream => {
     const upload = await startUploadFixture()
@@ -532,15 +581,15 @@ describe('file delivery over OpenAI HTTP', () => {
         enabled: true, url: upload.url, businessKey: 'zhjl',
         maxFileBytes: 1024, maxFiles: 2, timeoutMs: 30000, maxResponseBytes: 1024,
       } })
-      await writeFile(join(h.root, 'report.pdf'), 'example')
-      const response = await h.send({ stream })
+      const { file, metadata } = await seedDeliveryFile(h.root)
+      const response = await h.send({ stream, metadata })
       const body = await response.text()
       expect(response.status, body).toBe(200)
       expect(body).toContain('[下载报告](<https://files.example.test/delivery>)')
       expect(body).not.toContain('[下载报告](report.pdf)')
       expect(body).toContain('正在上传文件：report.pdf')
       expect(upload.count()).toBe(1)
-      expect(await readFile(join(h.root, 'report.pdf'), 'utf8')).toBe('example')
+      expect(await readFile(file, 'utf8')).toBe('example')
       if (stream) expect(body).toContain('data: [DONE]')
     } finally {
       await upload.close()
@@ -555,8 +604,8 @@ describe('explicit deliver_file tool', () => {
       const h = await fixture([tool('deliver_file', 0, { path: 'report.pdf' }), text('[下载报告](report.pdf)')], { fileUpload: {
         enabled: true, url: upload.url, businessKey: 'zhjl', maxFileBytes: 1024, maxFiles: 2, timeoutMs: 30000, maxResponseBytes: 1024,
       } })
-      await writeFile(join(h.root, 'report.pdf'), 'example')
-      const response = await h.send({ stream })
+      const { metadata } = await seedDeliveryFile(h.root)
+      const response = await h.send({ stream, metadata })
       const body = await response.text()
       expect(response.status, body).toBe(200)
       expect(body).toContain('https://files.example.test/delivery')
@@ -612,8 +661,8 @@ it.each([false, true])('preserves a successful delivery when the answer mentions
     const h = await fixture([tool('deliver_file', 0, { path: 'report.pdf' }), text(answer)], { fileUpload: {
       enabled: true, url: upload.url, businessKey: 'zhjl', maxFileBytes: 1024, maxFiles: 2, timeoutMs: 30000, maxResponseBytes: 1024,
     } })
-    await writeFile(join(h.root, 'report.pdf'), 'example')
-    const response = await h.send({ stream })
+    const { metadata } = await seedDeliveryFile(h.root)
+    const response = await h.send({ stream, metadata })
     const body = await response.text()
     expect(response.status, body).toBe(200)
     expect(body).toContain('https://files.example.test/delivery')

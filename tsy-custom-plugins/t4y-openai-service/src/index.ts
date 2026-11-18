@@ -1,6 +1,7 @@
 /** OpenAI-compatible text Chat Completions over the Harness HTTP and Agent services. */
 import { randomUUID, timingSafeEqual } from 'node:crypto'
-import { isAbsolute } from 'node:path'
+import { mkdir } from 'node:fs/promises'
+import { isAbsolute, resolve } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
@@ -9,7 +10,7 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import { Config } from './config.ts'
+import { Config, defaultOpenAiWorkspace } from './config.ts'
 import { OpenAiServerError, errorBody, publicError } from './error.ts'
 import { parseRequest } from './request.ts'
 import { runChat, type RunResult } from './run.ts'
@@ -50,6 +51,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   }
   if (config.fileUpload?.enabled === true && !['http:', 'https:'].includes(new URL(config.fileUpload.url).protocol)) {
     throw new Error('fileUpload.url must use HTTP or HTTPS')
+  }
+  if ([...models.values()].some(model => resolve(model.cwd) === defaultOpenAiWorkspace)) {
+    await mkdir(defaultOpenAiWorkspace, { recursive: true })
   }
   const conversations = new ConversationQueue()
   const lifetime = new AbortController()

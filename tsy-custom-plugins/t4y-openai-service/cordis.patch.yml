@@ -25,6 +25,5 @@
           - id: harness
             provider: !!js process.env.DSH_OPENAI_PROVIDER ?? 'deepseek-official'
             model: !!js process.env.DSH_OPENAI_MODEL ?? 'deepseek-flash'
-            cwd: !!js process.cwd()
             tools: []
             maxTokens: 8192
