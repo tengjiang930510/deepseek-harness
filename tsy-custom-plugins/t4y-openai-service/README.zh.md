@@ -14,6 +14,7 @@ kind: "package-bundle"
 ## 目录
 
 - [使用本包](#use-this-package)
+- [上传文件交付](#uploaded-file-delivery)
 - [理解实现](#understand-the-implementation)
 - [进一步探索](#further-exploration)
 - [模型体验](#model-experience)
@@ -44,7 +45,7 @@ pnpm dsh openai
 
 生成参数支持 `temperature`、`stop`，以及 `max_tokens` 或 `max_completion_tokens` 之一。输出 token 限制作用于根智能体的每次对话模型调用，且不能超过路由上限。`n` 仅支持 1；`top_p`、频率惩罚与存在惩罚仅支持中性值。仅支持文本响应格式，不支持外部工具。其他字段与不支持的值返回 400，不会被忽略；`user` 仅作为客户端元数据被接收，不赋予身份或权限。
 
-JSON 与 SSE 通过 `content` 返回最终助手文本，通过 `reasoning_content` 返回公开执行进度，答案消息之间以空行分隔，进度条目之间换行。进度优先显示工具参数中的公开用途说明 `description`，缺少时显示工具名称。每次调用结束后增加一条紧凑列表记录，包含状态和耗时；失败时附带结构化错误码。只有超过 `progressDelayMs`（默认 1500 毫秒）的调用才增加执行中提示。完成状态表示调用已返回，不表示找到了所需信息。随工具调用一起提交的助手说明也显示在进度中。其他工具参数、原始结果、模型内部推理和失败尝试不对外发送。SSE 帧使用 CRLF 分隔，让旧版 OpenAI SDK 无需等待下一帧即可解析当前帧。SSE 在已提交的说明与工具事件发生时发送进度；助手消息在该次模型尝试结束后发送，不保证逐 token 交付。答案与进度的合计字节数计入 `maxOutputBytes`。成功流以结束原因块与 `[DONE]` 结束；`stream_options.include_usage` 可增加用量帧。用量汇总根智能体已报告的对话调用，包括重试与缓存输入；报告不完整时省略 JSON 用量，或在所请求的 SSE 用量帧中返回 null。
+JSON 与 SSE 通过 `content` 返回最终助手文本，通过 `reasoning_content` 返回公开执行进度，答案消息之间以空行分隔，进度条目之间换行。进度将 `web_search` 显示为“网页搜索”并附上搜索词，将 `web_fetch` 显示为“网页解析”并附上请求的站点和路径。有结果元数据时，完成提示会附上来源数量或 HTTP 状态。地址省略凭据、查询参数和片段。其他工具优先显示公开用途说明 `description`，缺少时显示工具名称。每次调用结束后增加一条紧凑列表记录，包含状态和耗时；失败时附带结构化错误码。只有超过 `progressDelayMs`（默认 1500 毫秒）的调用才增加执行中提示。完成状态表示调用已返回，不表示找到了所需信息。随工具调用一起提交的助手说明也显示在进度中。其他工具参数、原始结果、模型内部推理和失败尝试不对外发送。SSE 帧使用 CRLF 分隔，让旧版 OpenAI SDK 无需等待下一帧即可解析当前帧。SSE 在已提交的说明与工具事件发生时发送进度；助手消息在该次模型尝试结束后发送，不保证逐 token 交付。答案与进度的合计字节数计入 `maxOutputBytes`。成功流以结束原因块与 `[DONE]` 结束；`stream_options.include_usage` 可增加用量帧。用量汇总根智能体已报告的对话调用，包括重试与缓存输入；报告不完整时省略 JSON 用量，或在所请求的 SSE 用量帧中返回 null。
 
 ### 对话复用
 
@@ -71,6 +72,21 @@ JSON 与 SSE 通过 `content` 返回最终助手文本，通过 `reasoning_conte
 新增自定义语言模型，使其 ID 与公开别名一致，例如 `harness`。选择 OpenAI 渠道，将 `http://<server>:34221/v1` 配置为 Base URL。若客户端允许，API key 留空；否则在服务端未启用鉴权时填写占位值。启用鉴权后填写配置的服务密钥。若填写完整自定义请求地址，则使用 `http://<server>:34221/v1/chat/completions`。关闭该模型的外部函数调用、多模态输入与结构化响应格式。FastGPT 管理检索、工作流与对话历史；Harness 在每次请求内执行配置的工具。复用 Session 需要客户端转发稳定的对话标识，仅开启历史记录不会提供该标识。不要为所有聊天配置同一个固定标识。代理与客户端超时应匹配部署期限。
 
 -----
+
+<a id="uploaded-file-delivery"></a>
+## 上传文件交付
+
+插件 Config schema 默认启用 `openai-server.fileUpload`，即使 profile 用仅含 `models` 的配置替换整个条目，上传仍会启用。它向 `https://jgyw.crfsdi.com.cn:51111/backendapi/file/anonymous-upload` 发送 multipart 字段 `businessKey=zhjl-deepseek-harness` 和 `file`，可用 `DSH_FILE_UPLOAD_URL` 覆盖接口地址。成功响应必须同时满足 HTTP 2xx、数字 `code: 200` 和 HTTP(S) `data.url`。TLS 验证保持开启，上传不会自动重试。
+
+支持图片、PDF、Office 文档、ZIP 及其他单个文件。上传文件使用唯一名称并保留原扩展名，MIME 根据扩展名确定。`src/file-delivery-config.ts` 中经过验证的默认值限制每次回复最多 8 个不同文件、每个文件 20 MiB、每次上传 30 秒、上传响应 64 KiB。可覆盖 `fileUpload: { enabled: false }` 关闭上传；部分上传配置会继承其余经过验证的默认值，显式设置 `enabled: false` 会被保留。接口地址的环境默认值在插件模块加载时读取，修改后需重启。
+
+启用上传后，每个 API Agent 会自动获得作用域内的 `deliver_file` 工具，独立于路由的全局工具白名单。创建文件后使用 `{"path":"report.pdf"}` 调用，工具通过正常持久化的 `tool/result` 记录返回已确认的 `name`、`url`、`size` 和 `mediaType`，模型可以据此在回答中使用真实 URL。关闭上传时不提供交付工具，系统指导要求模型使用此工具，而不是启动本地下载服务器。
+
+可复用的 `FileDelivery` 组件和 `fileDeliveryConfig` 校验器从 `t4y-openai-service/file-delivery` 导出，供 Harness profile 内的插件使用。每个请求创建一个组件，等待 `deliver(path, signal?)`，并通过 `await using` 或 `Symbol.asyncDispose` 关闭，以取消并等待已接收的工作。工具与 Markdown 适配器共享此组件，相同解析路径和字节复用一次上传；字节变化需重新上传；同一请求内不会重试未变化内容的失败上传。不同版本计入同一个文件预算。
+
+最终 Markdown 文件链接、图片目标、引用定义和行内代码路径仍作为兼容措施，调用同一组件。网页链接、代码块、目录和工作目录外的行内代码路径说明保持原样；显式交付工具的路径与 Markdown 文件目标仍须遵守工作目录限制，文件及符号链接目标必须解析到路由 `cwd` 内。优先使用 `deliver_file` 确认的 URL，图片预览使用 Markdown 图片。纯文本提及的文件无法可靠识别为兼容交付物，目录内容不会自动打包或上传。
+
+上传期间会输出公开进度，全部引用文件确认成功后才发送最终正文。工具失败会记录 `FILE_UPLOAD_FAILED`，不返回已确认 URL；兼容转换失败通过 HTTP 错误返回此代码；此前的文件可能已上传，取消不会删除远端文件。本地原文件始终保留。显式工具交付会将 URL 保存到工具记录；兼容转换在 Session 中保留助手原始本地引用，仅在此次 HTTP 回复中替换为上传后的 URL。返回地址的保留期限和访问权限由外部文件服务负责，客户端浏览器必须能够访问它。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现

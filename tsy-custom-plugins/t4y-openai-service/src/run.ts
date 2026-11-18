@@ -12,6 +12,9 @@ import type {} from '@deepseek-ai/dsh-tools'
 import type { Config, ModelRoute } from './config.ts'
 import type { ChatRequest } from './request.ts'
 import { ToolProgress } from './progress.ts'
+import { FileDelivery } from './file-delivery.ts'
+import { DELIVER_FILE_TOOL, registerDeliveryTool } from './delivery-tool.ts'
+import { publishFiles } from './files.ts'
 import { historySeed } from './history.ts'
 import { OpenAiServerError, publicError } from './error.ts'
 
@@ -58,6 +61,9 @@ export async function runChat(
   signal: AbortSignal, emit: (field: 'content' | 'reasoning_content', text: string) => void, target: SessionTarget,
 ): Promise<RunResult> {
   const output: string[] = []
+  const pendingAnswers: string[] = []
+  let bufferedAnswerBytes = 0
+  const upload = config.fileUpload?.enabled === true ? config.fileUpload : undefined
   const progress: string[] = []
   let outputBytes = 0
   let steps = 0
@@ -77,10 +83,15 @@ export async function runChat(
     const separator = field === 'content' ? '\n\n' : '\n'
     const fragment = `${target.length === 0 ? '' : separator}${text}`
     outputBytes += Buffer.byteLength(fragment)
-    if (outputBytes > config.maxOutputBytes) throw new OpenAiServerError('Assistant output exceeds the configured byte limit.', 'OUTPUT_LIMIT', 502)
+    if (outputBytes + bufferedAnswerBytes > config.maxOutputBytes) throw new OpenAiServerError('Assistant output exceeds the configured byte limit.', 'OUTPUT_LIMIT', 502)
     emit(field, fragment)
     target.push(fragment)
   }
+  await using delivery = upload === undefined ? undefined : new FileDelivery(
+    route.cwd, upload, signal, name => publish('reasoning_content', `正在上传文件：${name}`),
+  )
+  const globalTools = route.tools.filter(name => name !== DELIVER_FILE_TOOL)
+  const allowedTools = delivery === undefined ? globalTools : [...globalTools, DELIVER_FILE_TOOL]
   using toolProgress = new ToolProgress(config.progressDelayMs, (text) => { publish('reasoning_content', text) }, fail)
   const abort = (): void => { fail(signal.reason) }
   signal.throwIfAborted()
@@ -98,9 +109,16 @@ export async function runChat(
         }),
       },
       setup: (agentCtx) => {
-        agentCtx.tools.restrict({ allow: route.tools })
-        agentCtx.tools.guard(execution => route.tools.includes(execution.name) ? undefined : {
+        agentCtx.tools.restrict({ allow: globalTools })
+        agentCtx.tools.guard(execution => allowedTools.includes(execution.name) ? undefined : {
           reason: 'This tool is not enabled for this model.', info: { name: 'OpenAiServerError', code: 'TOOL_NOT_ALLOWED' },
+        })
+        if (delivery !== undefined) registerDeliveryTool(agentCtx, delivery)
+        if (delivery !== undefined) agentCtx.systemPrompt.section({
+          name: 'openai-file-delivery', order: 101,
+          text: 'For downloadable files, call deliver_file after creating each finished file and use its confirmed URL in your final response. '
+            + 'Use Markdown image syntax for image previews. Do not invent URLs or start local download servers.',
+          interpolate: false,
         })
         const system = request.system
         if (system !== '') agentCtx.systemPrompt.section({ name: 'openai-client', order: 100, text: system, interpolate: false })
@@ -129,7 +147,14 @@ export async function runChat(
                 .filter(block => block.type === 'text').map(block => block.text).join('')
               if (text === '') return
               const hasToolCalls = event.data.message.content.some(block => block.type === 'tool-call')
-              publish(hasToolCalls ? 'reasoning_content' : 'content', text)
+              if (!hasToolCalls && upload !== undefined) {
+                bufferedAnswerBytes += Buffer.byteLength(text) + (pendingAnswers.length === 0 ? 0 : 2)
+                if (bufferedAnswerBytes + outputBytes > config.maxOutputBytes) {
+                  throw new OpenAiServerError('Assistant output exceeds the configured byte limit.', 'OUTPUT_LIMIT', 502)
+                }
+                pendingAnswers.push(text)
+              }
+              else publish(hasToolCalls ? 'reasoning_content' : 'content', text)
             } else if (event.type === 'tool/call') {
               toolProgress.call(event)
             } else if (event.type === 'tool/result') {
@@ -161,7 +186,14 @@ export async function runChat(
     await handle.agent.whenIdle()
     if (failure !== undefined) throw publicError(failure)
     signal.throwIfAborted()
-    return { text: output.join(''), progress: progress.join(''), finishReason: finishOf(terminal),
+    const finishReason = finishOf(terminal)
+    if (delivery !== undefined && pendingAnswers.length > 0) {
+      const answer = await publishFiles(pendingAnswers.join('\n\n'), delivery)
+      signal.throwIfAborted()
+      bufferedAnswerBytes = 0
+      publish('content', answer)
+    }
+    return { text: output.join(''), progress: progress.join(''), finishReason,
       usage: accounting.complete ? { ...usage, totalTokens } : undefined }
   } finally {
     signal.removeEventListener('abort', abort)

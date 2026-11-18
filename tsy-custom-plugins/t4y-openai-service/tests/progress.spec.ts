@@ -8,9 +8,9 @@ import { ToolProgress } from '../src/progress.ts'
 beforeEach(() => { vi.useFakeTimers() })
 afterEach(() => { vi.useRealTimers() })
 
-function call(args = '{}', id = 'one', time = 100): SessionEvent<'tool/call'> {
+function call(args = '{}', id = 'one', time = 100, name = 'bash'): SessionEvent<'tool/call'> {
   return { type: 'tool/call', seq: SessionSeq(0), time,
-    data: { turn: 1, step: 1, callId: brandString<ToolCallId>(id), name: 'bash', arguments: args } }
+    data: { turn: 1, step: 1, callId: brandString<ToolCallId>(id), name, arguments: args } }
 }
 
 function result(id = 'one', time = 1300, error?: { name: string; code: string }): SessionEvent<'tool/result'> {
@@ -89,4 +89,38 @@ it('hands an asynchronous output failure to the request cancellation owner', () 
   progress.call(call())
   vi.advanceTimersByTime(1500)
   expect(fail).toHaveBeenCalledExactlyOnceWith(error)
+})
+
+
+it('shows actual search terms and the returned source count without exposing result text', () => {
+  const publish = vi.fn()
+  using progress = new ToolProgress(1500, publish, vi.fn())
+  progress.call(call(JSON.stringify({ queries: ['武汉今天的天气', '武汉 气温'] }), 'one', 100, 'web_search'))
+  vi.advanceTimersByTime(1500)
+  const done = result('one', 1700)
+  done.data.meta = { sources: [{ url: 'https://weather.example.test' }], truncated: false, answer: 'private answer' }
+  progress.result(done)
+  expect(publish.mock.calls).toEqual([
+    ['- ⏳ 正在执行：网页搜索「武汉今天的天气、武汉 气温」'],
+    ['- ✓ 完成：网页搜索「武汉今天的天气、武汉 气温」 · 1.6 秒 · 1 条来源'],
+  ])
+})
+
+it('shows the parsed page without URL credentials, query parameters, or fragments', () => {
+  const publish = vi.fn()
+  using progress = new ToolProgress(1500, publish, vi.fn())
+  const args = JSON.stringify({ url: 'https://user:password@weather.example.test/city/wuhan?token=secret#section' })
+  progress.call(call(args, 'one', 100, 'web_fetch'))
+  const done = result()
+  done.data.meta = { url: 'https://weather.example.test/city/wuhan', statusCode: 200, truncated: true }
+  progress.result(done)
+  expect(publish).toHaveBeenCalledExactlyOnceWith('- ✓ 完成：网页解析「weather.example.test/city/wuhan」 · 1.2 秒 · HTTP 200（内容已截断）')
+})
+
+it.each([['web_search', '网页搜索'], ['web_fetch', '网页解析']])('keeps the localized label when %s has invalid arguments', (name, label) => {
+  const publish = vi.fn()
+  using progress = new ToolProgress(1500, publish, vi.fn())
+  progress.call(call('invalid JSON', 'one', 100, name))
+  progress.result(result())
+  expect(publish).toHaveBeenCalledExactlyOnceWith(`- ✓ 完成：${label} · 1.2 秒`)
 })

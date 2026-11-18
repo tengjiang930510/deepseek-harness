@@ -1,5 +1,8 @@
 /** Deployment-owned model routes and HTTP execution limits. */
 import z from '@deepseek-ai/schemastery'
+import { fileDeliveryConfig } from './file-delivery-config.ts'
+import type { FileUploadConfig } from './file-delivery-config.ts'
+export type { FileUploadConfig } from './file-delivery-config.ts'
 
 /** One public model identifier and its server-owned execution settings. */
 export interface ModelRoute {
@@ -19,6 +22,8 @@ export interface ModelRoute {
 
 /** Authentication, public model routes, and finite request limits. */
 export interface Config {
+  /** Multipart publication defaults to enabled when omitted; explicit enabled:false disables it. */
+  fileUpload?: FileUploadConfig | { enabled: false } | undefined
   /**
    * Optional credential reference resolved at startup and per request;
    * omission permits anonymous access. A configured missing credential rejects startup.
@@ -53,6 +58,7 @@ export interface Config {
 /** Validate deployment settings without implicit execution-time defaults. */
 export const Config: z<Config> = z.object({
   apiKeyEnv: z.string(),
+  fileUpload: fileDeliveryConfig,
   models: z.array(z.object({
     id: z.string().required(), provider: z.string().required(), model: z.string().required(),
     cwd: z.string().required(), tools: z.array(z.string()).required(),
@@ -62,7 +68,7 @@ export const Config: z<Config> = z.object({
   maxBodyBytes: z.number().step(1).min(1).default(1048576),
   maxOutputBytes: z.number().step(1).min(1).default(1048576),
   progressDelayMs: z.number().step(1).min(1).default(1500),
-  requestTimeoutMs: z.number().step(1).min(1).default(300000),
+  requestTimeoutMs: z.number().step(1).min(1).default(1200000),
   maxSteps: z.number().step(1).min(1).default(100),
   maxTotalTokens: z.number().step(1).min(1).default(10485760),
   maxBufferedBytes: z.number().step(1).min(1).default(1048576),

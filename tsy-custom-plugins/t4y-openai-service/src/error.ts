@@ -1,4 +1,5 @@
 /** Structured failures translated to the OpenAI-compatible error envelope. */
+import { FileDeliveryError } from './file-delivery-error.ts'
 import { HarnessError } from '@deepseek-ai/dsh-error'
 
 /** HTTP admission, protocol, and Agent execution failure. */
@@ -6,7 +7,7 @@ export class OpenAiServerError extends HarnessError {
   constructor(
     message: string,
     code: 'INVALID_REQUEST' | 'UNAUTHORIZED' | 'MODEL_NOT_FOUND' | 'CAPACITY' | 'BODY_LIMIT'
-      | 'SESSION_CONFLICT' | 'OUTPUT_LIMIT' | 'BUDGET' | 'TIMEOUT' | 'CANCELLED' | 'EXECUTION_FAILED' | 'UNAVAILABLE',
+      | 'FILE_UPLOAD_FAILED' | 'SESSION_CONFLICT' | 'OUTPUT_LIMIT' | 'BUDGET' | 'TIMEOUT' | 'CANCELLED' | 'EXECUTION_FAILED' | 'UNAVAILABLE',
     readonly status: number,
     options?: ErrorOptions,
   ) {
@@ -20,6 +21,7 @@ export class OpenAiServerError extends HarnessError {
  * @returns a safe client-facing structured error.
  */
 export function publicError(error: unknown): OpenAiServerError {
+  if (error instanceof FileDeliveryError) return new OpenAiServerError(error.message, 'FILE_UPLOAD_FAILED', 502, { cause: error })
   return error instanceof OpenAiServerError ? error
     : new OpenAiServerError('Harness execution failed; inspect the server log using the request ID. Effects may have occurred; do not retry automatically.',
       'EXECUTION_FAILED', 500, { cause: error })

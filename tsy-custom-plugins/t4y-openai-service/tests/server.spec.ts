@@ -1,5 +1,6 @@
 /** Real Loader/HTTP/Agent composition; only the upstream model is scripted. */
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { startUploadFixture } from './upload-fixture.ts'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -27,11 +28,12 @@ function text(text: string): StreamChunk[] {
     { type: 'block-end', index: 0, block: { type: 'text', text } },
     { type: 'usage', usage: { inputTokens: 7, outputTokens: 3, cacheReadTokens: 2 } }, { type: 'finish', reason: { kind: 'stop' } }]
 }
-function tool(name = 'echo', index = 0): StreamChunk[] {
-  const id = brandString<ToolCallId>('call-echo')
+function tool(name = 'echo', index = 0, args: Record<string, string> = { value: 'tool output' }): StreamChunk[] {
+  const id = brandString<ToolCallId>(`call-${name}`)
+  const argumentsText = JSON.stringify(args)
   return [{ type: 'block-start', index, blockType: 'tool-call' },
-    { type: 'tool-call-delta', index, id, name, argumentsDelta: '{"value":"tool output"}' },
-    { type: 'block-end', index, block: { type: 'tool-call', id, name, arguments: '{"value":"tool output"}' } },
+    { type: 'tool-call-delta', index, id, name, argumentsDelta: argumentsText },
+    { type: 'block-end', index, block: { type: 'tool-call', id, name, arguments: argumentsText } },
     { type: 'usage', usage: { inputTokens: 5, outputTokens: 2 } }, { type: 'finish', reason: { kind: 'tool-calls' } }]
 }
 
@@ -98,7 +100,7 @@ async function fixture(script: (StreamChunk[] | 'hang')[] = [text('answer')], ov
   ctx.loader.builtins['test-runtime'] = prerequisites
   ctx.loader.builtins.http = WebServer
   ctx.loader.builtins.openai = Server
-  const config: Config = Config({ ...authenticate ? { apiKeyEnv: 'TEST_SERVICE_KEY' } : {},
+  const config: Config = Config({ fileUpload: { enabled: false }, ...authenticate ? { apiKeyEnv: 'TEST_SERVICE_KEY' } : {},
     models: [{ id: 'harness', provider: 'mock', model: 'model', cwd: root, tools: ['echo'], maxTokens: 128 }],
     maxConcurrent: 4, maxBodyBytes: 8192, maxOutputBytes: 8192, progressDelayMs: 1500, requestTimeoutMs: 30000,
     maxSteps: 4, maxTotalTokens: 5000, maxBufferedBytes: 8192, ...overrides })
@@ -119,6 +121,16 @@ async function fixture(script: (StreamChunk[] | 'hang')[] = [text('answer')], ov
 }
 
 describe('OpenAI-compatible serving', () => {
+  it('loads file-publication guidance when upload config is omitted', async () => {
+    const h = await fixture([text('answer')], { fileUpload: undefined })
+    expect(h.config.fileUpload?.enabled).toBe(true)
+    const response = await h.send()
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ choices: [{ message: { content: 'answer' } }] })
+    expect(JSON.stringify(h.model.requests[0]?.messages)).toContain('call deliver_file after creating each finished file')
+    expect(h.ctx.agents.list()).toHaveLength(0)
+  })
+
   it('serves both endpoints without credentials when authentication is omitted', async () => {
     const h = await fixture([text('anonymous'), text('placeholder')], {}, false)
     const resolve = vi.spyOn(h.ctx.credentials, 'resolve')
@@ -509,4 +521,108 @@ describe('OpenAI-compatible serving', () => {
     expect(await response.json()).toMatchObject({ error: { code: 'EXECUTION_FAILED' } })
     expect(h.ctx.agents.list()).toHaveLength(0)
   })
+})
+
+
+describe('file delivery over OpenAI HTTP', () => {
+  it.each([false, true])('uploads a document and returns only its public URL: stream=%s', async stream => {
+    const upload = await startUploadFixture()
+    try {
+      const h = await fixture([text('[下载报告](report.pdf)')], { fileUpload: {
+        enabled: true, url: upload.url, businessKey: 'zhjl',
+        maxFileBytes: 1024, maxFiles: 2, timeoutMs: 30000, maxResponseBytes: 1024,
+      } })
+      await writeFile(join(h.root, 'report.pdf'), 'example')
+      const response = await h.send({ stream })
+      const body = await response.text()
+      expect(response.status, body).toBe(200)
+      expect(body).toContain('[下载报告](<https://files.example.test/delivery>)')
+      expect(body).not.toContain('[下载报告](report.pdf)')
+      expect(body).toContain('正在上传文件：report.pdf')
+      expect(upload.count()).toBe(1)
+      expect(await readFile(join(h.root, 'report.pdf'), 'utf8')).toBe('example')
+      if (stream) expect(body).toContain('data: [DONE]')
+    } finally {
+      await upload.close()
+    }
+  })
+})
+
+describe('explicit deliver_file tool', () => {
+  it.each([false, true])('returns a confirmed tool URL and persists it without uploading again: stream=%s', async stream => {
+    const upload = await startUploadFixture()
+    try {
+      const h = await fixture([tool('deliver_file', 0, { path: 'report.pdf' }), text('[下载报告](report.pdf)')], { fileUpload: {
+        enabled: true, url: upload.url, businessKey: 'zhjl', maxFileBytes: 1024, maxFiles: 2, timeoutMs: 30000, maxResponseBytes: 1024,
+      } })
+      await writeFile(join(h.root, 'report.pdf'), 'example')
+      const response = await h.send({ stream })
+      const body = await response.text()
+      expect(response.status, body).toBe(200)
+      expect(body).toContain('https://files.example.test/delivery')
+      expect(upload.count()).toBe(1)
+      expect(JSON.stringify(h.model.requests[1]?.messages)).toContain('https://files.example.test/delivery')
+      const event = h.events.find(event => event.type === 'tool/result')
+      if (event?.type !== 'tool/result') throw new Error('Missing delivery result')
+      expect(event.data.message.isError).not.toBe(true)
+      expect(JSON.stringify(event.data.message)).toContain('https://files.example.test/delivery')
+      const paths = (await readdir(join(h.root, 'sessions'), { recursive: true })).filter(path => path.endsWith('.jsonl'))
+      const persisted = await readFile(join(h.root, 'sessions', paths[0]!), 'utf8')
+      const recorded = parseSessionLog(persisted).find(event => event.type === 'tool/result')
+      expect(JSON.stringify(recorded)).toContain('https://files.example.test/delivery')
+      expect(h.ctx.agents.list()).toHaveLength(0)
+    } finally { await upload.close() }
+  })
+
+  it('does not register or execute delivery when uploads are disabled', async () => {
+    const h = await fixture([tool('deliver_file', 0, { path: 'report.pdf' }), text('Delivery unavailable')])
+    const response = await h.send()
+    expect(response.status).toBe(200)
+    const error = h.events.find(event => event.type === 'tool/result')
+    if (error?.type !== 'tool/result') throw new Error('Missing denied delivery result')
+    expect(error.data.message.isError).toBe(true)
+    expect(JSON.stringify(h.model.requests[0]?.tools)).not.toContain('deliver_file')
+  })
+})
+
+it('records a failed deliver_file as a structured tool failure without publishing a URL', async () => {
+  const upload = await startUploadFixture()
+  try {
+    const h = await fixture([tool('deliver_file', 0, { path: 'missing.pdf' }), text('File delivery failed')], { fileUpload: {
+      enabled: true, url: upload.url, businessKey: 'zhjl', maxFileBytes: 1024, maxFiles: 2, timeoutMs: 30000, maxResponseBytes: 1024,
+    } })
+    const response = await h.send()
+    expect(response.status).toBe(200)
+    expect(await response.text()).toContain('File delivery failed')
+    const result = h.events.find(event => event.type === 'tool/result')
+    if (result?.type !== 'tool/result') throw new Error('Missing failed delivery result')
+    expect(result.data.message.isError).toBe(true)
+    expect(result.data.error).toMatchObject({ name: 'FileDeliveryError', code: 'FILE_UPLOAD_FAILED' })
+    expect(upload.count()).toBe(0)
+  } finally { await upload.close() }
+})
+
+it.each([false, true])('preserves a successful delivery when the answer mentions an outside original: stream=%s', async stream => {
+  const originals = await mkdtemp(join(tmpdir(), 'dsh-http-original-'))
+  const upload = await startUploadFixture()
+  try {
+    const original = join(originals, '原始文档.pdf')
+    await writeFile(original, 'example')
+    const answer = `[下载报告](https://files.example.test/delivery)\n原文件保留在：\`${original}\``
+    const h = await fixture([tool('deliver_file', 0, { path: 'report.pdf' }), text(answer)], { fileUpload: {
+      enabled: true, url: upload.url, businessKey: 'zhjl', maxFileBytes: 1024, maxFiles: 2, timeoutMs: 30000, maxResponseBytes: 1024,
+    } })
+    await writeFile(join(h.root, 'report.pdf'), 'example')
+    const response = await h.send({ stream })
+    const body = await response.text()
+    expect(response.status, body).toBe(200)
+    expect(body).toContain('https://files.example.test/delivery')
+    expect(body).toContain(original)
+    expect(body).not.toContain('FILE_UPLOAD_FAILED')
+    expect(upload.count()).toBe(1)
+    if (stream) expect(body).toContain('data: [DONE]')
+  } finally {
+    await upload.close()
+    await rm(originals, { recursive: true, force: true })
+  }
 })

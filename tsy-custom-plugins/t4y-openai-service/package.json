@@ -7,7 +7,8 @@
   "exports": {
     ".": "./lib/index.js",
     "./app": "./lib/app.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./file-delivery": "./lib/file-delivery.js"
   },
   "files": [
     "lib",
@@ -17,7 +18,9 @@
   "license": "MIT",
   "dependencies": {
     "zod": "4.6.6",
-    "commander": "^15.0.0"
+    "commander": "^15.0.0",
+    "mdast-util-from-markdown": "2.0.3",
+    "mime-types": "3.0.2"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "*",
@@ -38,7 +41,9 @@
   "devDependencies": {
     "esbuild": "^0.25.12",
     "typescript": "^6.0.0",
-    "tsx": "^4.22.4"
+    "tsx": "^4.22.4",
+    "@types/mdast": "4.0.4",
+    "@types/mime-types": "3.0.1"
   },
   "private": true,
   "dsh": {

@@ -1,9 +1,10 @@
 /** Recorded-session replay through the real dsh openai profile and its public HTTP protocol. */
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
+import { startUploadFixture } from './upload-fixture.ts'
 import { startOpenAiProfile } from './profile/fixture.ts'
 import { parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 import {
@@ -11,9 +12,8 @@ import {
   materializeProfilePatch, normalizeSessionLog, normalizedSystemPrompts, normalizedToolSchemas, redactSessionSnapshotIds, scrubSessionSnapshot,
 } from '@deepseek-ai/dsh-session-snapshot'
 
-const scenario = fileURLToPath(new URL('./fixtures/tool-turn/', import.meta.url))
-
-it('openai: resumes one conversation over HTTP and preserves tool history and the external file effect', async () => {
+it.each([false, true])('openai: resumes one conversation over HTTP and preserves tool history; file delivery=%s', async fileDelivery => {
+  const scenario = fileURLToPath(new URL(fileDelivery ? './fixtures/file-delivery/' : './fixtures/tool-turn/', import.meta.url))
   const root = await mkdtemp(join(tmpdir(), 'dsh-openai-snapshot-'))
   const sessionFile = join(scenario, 'session.v4.jsonl')
   const canonical = await readFile(sessionFile, 'utf8')
@@ -21,11 +21,21 @@ it('openai: resumes one conversation over HTTP and preserves tool history and th
   if (task?.type !== 'user/message') throw new Error('OpenAI snapshot lacks its user task')
   const prompt = task.data.content.filter(block => block.type === 'text').map(block => block.text).join('')
   let server: Awaited<ReturnType<typeof startOpenAiProfile>> | undefined
+  let upload: Awaited<ReturnType<typeof startUploadFixture>> | undefined
+  let originals: string | undefined
   try {
+    if (fileDelivery) {
+      upload = await startUploadFixture()
+      originals = await mkdtemp(join(tmpdir(), 'dsh-snapshot-original-'))
+      const original = join(originals, 'source.txt')
+      await writeFile(original, 'Original kept outside the workspace\n')
+      await symlink(original, join(root, 'original-source.txt'))
+    }
     const patch = materializeProfilePatch(join(scenario, 'cordis.snapshot.yml'), root, 'openai', root, 0)
     server = await startOpenAiProfile(root, patch, {
       DSH_HOME: join(root, '.dsh'), DSH_AGENTS_HOME: join(root, '.agents'), DSH_TELEMETRY_DISABLED: '1',
       DEEPSEEK_API_KEY: 'snapshot-replay-key',
+      ...upload === undefined ? {} : { DSH_FILE_UPLOAD_URL: upload.url },
       DSH_PERMISSION_MODE: 'workspace-write', DSH_OPENAI_REPLAY_FILE: sessionFile,
     })
     const base = server.base
@@ -36,7 +46,8 @@ it('openai: resumes one conversation over HTTP and preserves tool history and th
     })
     const wire = await response.text()
     expect(response.status, wire + server.output()).toBe(200)
-    expect(wire).toContain('"content":"DONE"')
+    expect(wire).toContain(fileDelivery ? 'https://files.example.test/delivery' : '"content":"DONE"')
+    if (fileDelivery) expect(upload?.count()).toBe(1)
     expect(wire).toContain('"reasoning_content":')
     expect(wire).toMatch(/✓ 完成：Write the snapshot marker\. · \d+\.\d 秒/)
     expect(wire).not.toContain('调用工具：bash')
@@ -79,7 +90,11 @@ it('openai: resumes one conversation over HTTP and preserves tool history and th
       expect(schemaSidecar).toBe(await readFile(join(scenario, 'tool-schemas.expected.json'), 'utf8'))
     }
   } finally {
-    await server?.close()
-    await rm(root, { recursive: true, force: true })
+    try { await server?.close() }
+    finally {
+      await upload?.close()
+      await rm(root, { recursive: true, force: true })
+      if (originals !== undefined) await rm(originals, { recursive: true, force: true })
+    }
   }
 })

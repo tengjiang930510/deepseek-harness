@@ -48,6 +48,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       throw new Error('openai-server models require non-empty id/provider/model and an absolute cwd.')
     }
   }
+  if (config.fileUpload?.enabled === true && !['http:', 'https:'].includes(new URL(config.fileUpload.url).protocol)) {
+    throw new Error('fileUpload.url must use HTTP or HTTPS')
+  }
   const conversations = new ConversationQueue()
   const lifetime = new AbortController()
   const pending = new Set<Promise<void>>()
