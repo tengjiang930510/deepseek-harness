@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This bundle selects `qwen-token-plan / deepseek-v4.1-flash` as the default model and uses the same endpoint for Bailian web search. Source Web startup discovers it automatically. Desktop profiles receive it through the custom-plugin sync or staging script. Credentials remain separate from the committed configuration.
+This bundle selects `qwen-token-plan / deepseek-v4.1-flash` as the default model and uses the native DeepSeek Search API for web search. Source Web startup discovers it automatically. Desktop profiles receive it through the custom-plugin sync or staging script. Credentials remain separate from the committed configuration.
 
 ## Table of Contents
 
@@ -23,9 +23,9 @@ This bundle selects `qwen-token-plan / deepseek-v4.1-flash` as the default model
 <a id="use-this-package"></a>
 ## Use this package
 
-From the repository root, copy `.env.example` to the ignored `.env` and fill in `QWEN_TOKEN_PLAN_API_KEY`. Start Web with `pnpm dsh web` after `pnpm install` and `pnpm run build`. The key is required for model calls and Bailian search; a blank value does not authenticate either service.
+From the repository root, use `.env.example` to set `QWEN_TOKEN_PLAN_API_KEY` for model calls and `DEEPSEEK_SEARCH_API_KEY` for web search in your local `.env`. Start Web with `pnpm dsh web` after `pnpm install` and `pnpm run build`.
 
-Transfer `.env` separately when moving by Git, or retain it when copying a private project directory. Source Web reads the invoking directory's `.env`, and source Desktop reads the repository root's `.env`; see [Desktop Host environment](../../../apps/desktop/README.md#host-environment). Packaged Desktop needs the same variable in its launch environment or a credential saved in its own Harness home. Packaged trial builds may use the existing private trial-defaults resource.
+Transfer credentials separately when moving by Git. Source Web reads the invoking directory's `.env`, and source Desktop reads the repository root's `.env`; see [Desktop Host environment](../../../apps/desktop/README.md#host-environment). Packaged Desktop uses the same credential names in its launch environment or its own Harness home. Packaged trial builds may use the existing private trial-defaults resource.
 
 The endpoint and model capacities are stored in [cordis.patch.yml](cordis.patch.yml). A profile's own patch overrides this bundle, so existing local selections remain authoritative. Disable the bundle on the Plugins page to stop applying these defaults.
 
@@ -35,7 +35,7 @@ The endpoint and model capacities are stored in [cordis.patch.yml](cordis.patch.
 <details>
 <summary>Implementation internals</summary>
 
-The bundle configures the existing `llm-pi-ai`, `agent-default-model`, `web`, and `web-search-bailian` rows. It introduces no executable plugin and embeds no API key.
+The bundle configures the existing `llm-pi-ai`, `agent-default-model`, `web`, and `web-deepseek-api` rows with credential references.
 
 </details>
 
@@ -48,7 +48,7 @@ The bundle configures the existing `llm-pi-ai`, `agent-default-model`, `web`, an
 <a id="model-experience"></a>
 ## Model Experience
 
-The configured default selects the model for new Agents. The bundle adds no prompt text or tools; search requests continue through the existing web tool and Bailian provider. Changing a model or provider can change tokenization and cache reuse.
+The configured default selects the model for new Agents. The existing `web_search` tool sends queries to `deepseek-search-api`. Changing a model or provider can change tokenization and cache reuse.
 
 <a id="known-limitations-and-deferred-work"></a>
 ## Known Limitations and Deferred Work

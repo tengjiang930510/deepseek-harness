@@ -7,7 +7,9 @@ export class OpenAiServerError extends HarnessError {
   constructor(
     message: string,
     code: 'INVALID_REQUEST' | 'UNAUTHORIZED' | 'MODEL_NOT_FOUND' | 'CAPACITY' | 'BODY_LIMIT'
-      | 'FILE_UPLOAD_FAILED' | 'SESSION_CONFLICT' | 'OUTPUT_LIMIT' | 'BUDGET' | 'TIMEOUT' | 'CANCELLED' | 'EXECUTION_FAILED' | 'UNAVAILABLE',
+      | 'FILE_UPLOAD_FAILED' | 'IMAGE_DOWNLOAD_FAILED' | 'INVALID_IMAGE' | 'IMAGE_TOO_LARGE' | 'MODEL_IMAGE_UNSUPPORTED'
+      | 'INVALID_FILE_URL' | 'FILE_DOWNLOAD_FAILED' | 'FILE_TOO_LARGE'
+      | 'SESSION_CONFLICT' | 'OUTPUT_LIMIT' | 'BUDGET' | 'TIMEOUT' | 'CANCELLED' | 'EXECUTION_FAILED' | 'UNAVAILABLE',
     readonly status: number,
     options?: ErrorOptions,
   ) {

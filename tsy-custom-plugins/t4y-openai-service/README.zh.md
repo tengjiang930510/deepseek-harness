@@ -33,7 +33,9 @@ pnpm run build
 pnpm dsh openai
 ```
 
-监听地址默认为 `127.0.0.1:34221`。`DSH_OPENAI_HOST` 和 `DSH_OPENAI_PORT` 覆盖监听地址；`DSH_OPENAI_PROVIDER` 和 `DSH_OPENAI_MODEL` 选择上游路由。公开模型别名默认为 `harness`，单次调用输出上限为 8192 Token，工具白名单默认为空。此 profile 使用现有 Harness 凭据；凭据提供方已能解析密钥时，不必单独导出 `DEEPSEEK_API_KEY`。
+监听地址默认为 `127.0.0.1:34221`。`DSH_OPENAI_HOST` 和 `DSH_OPENAI_PORT` 覆盖监听地址，`DSH_OPENAI_PROVIDER` 和 `DSH_OPENAI_MODEL` 选择上游路由。公开模型别名默认为 `harness`，单次调用输出上限为 65536 Token，默认启用 `web_search` 和 `web_fetch`。对话模型使用自己的 Harness 凭据。
+
+网页搜索使用 `deepseek-search-api` 和 `DEEPSEEK_SEARCH_API_KEY` 凭据。每台机器在项目根目录的 `.env` 配置该密钥，然后从项目根目录启动。网页解析使用内置 HTTP 提供方。
 
 在 `$DSH_HOME/profiles/openai/cordis.patch.yml`（默认主目录为 `~/.dsh`）设置部署覆盖。修改 `openai-server` 行并明确配置 `models[].tools`。[配置源码](src/config.ts)定义全部限制与校验。本 bundle 不提供应用二进制入口，源码与构建产物均通过 `dsh` 启动。
 
@@ -41,11 +43,17 @@ pnpm dsh openai
 
 每次 HTTP 请求默认最多执行 100 次根模型调用（`maxSteps`）。每次请求的累计 Token 预算（`maxTotalTokens`）默认为 10,485,760 个已报告 Token，包括缓存读取与写入。预算在根模型调用之间检查；部署可独立于单次调用的输出上限覆盖该值。
 
-默认两个端点都允许无凭据请求，也接受客户端发送的占位 Bearer token。设置 `apiKeyEnv` 后启用鉴权：启动时及每次请求都通过[凭据服务](../../packages/credentials/credentials/README.zh.md)解析该引用，两个端点此时都要求 `Authorization: Bearer <service-key>`。`GET /v1/models` 返回公开别名。`POST /v1/chat/completions` 接收 `model`、`messages` 与可选的 `stream`；消息内容为字符串或文本块数组。开头的系统消息作为字面量提示词段落与 Harness 指令共同生效。创建新 Session 时，此前的用户与助手消息直接进入日志，不执行操作；最后一条非空用户消息启动 Agent。原生斜杠命令保持为普通文本。响应头 `X-Request-ID` 标识请求诊断；`X-DSH-Session-ID` 标识新建或恢复的 Session。
+默认两个端点都允许无凭据请求，也接受客户端发送的占位 Bearer token。设置 `apiKeyEnv` 后启用鉴权：启动时及每次请求都通过[凭据服务](../../packages/credentials/credentials/README.zh.md)解析该引用，两个端点此时都要求 `Authorization: Bearer <service-key>`。`GET /v1/models` 返回公开别名。`POST /v1/chat/completions` 接收 `model`、`messages` 与可选的 `stream`；消息支持文本，用户消息也可按顺序包含 `image_url` 图片块。开头的系统消息作为字面量提示词段落与 Harness 指令共同生效。创建新 Session 时，此前的用户与助手消息直接进入日志，不执行操作；最后一条非空用户消息启动 Agent。原生斜杠命令保持为普通文本。响应头 `X-Request-ID` 标识请求诊断；`X-DSH-Session-ID` 标识新建或恢复的 Session。
+
+用户图片支持直接返回图片字节的绝对 HTTP(S) 地址，也支持 FastGPT 上传本地图片时使用的 Base64 数据 URL。附件服务校验 PNG、JPEG、WebP 和 GIF，并保存图片引用供后续会话复用。`maxInputImageBytes` 默认限制每次请求的图片字节合计为 10 MiB，`maxBodyBytes` 默认限制含 Base64 的整个 JSON 请求体为 15 MiB。HTTP 下载每张还受 `imageDownloadTimeoutMs` 限制，默认 15 秒。系统消息与助手历史使用文本。对于描述图片、识别画面和读取可见文字，提示词要求模型直接使用收到的图片。
+
+用户消息可通过 FastGPT 的 `file_url` 内容块传入原件地址 `url` 和可选文件名 `name`。FastGPT 的 HTTP(S) 地址只要路径含有完整的 `/api/common/file/read` 路径段即可下载，主机、端口和部署前缀可不同。其他下载地址可在 `openai-server` profile 中通过 `fileDownloadOrigins` 配置完整来源，或通过 `fileDownloadPathPrefixes` 配置绝对目录地址。下载需要允许的地址直接返回 HTTP 200。下载默认每请求合计 25 MiB（`maxInputFileBytes`），每文件限时 15 秒（`fileDownloadTimeoutMs`）。附件服务保存原始字节，会话保存文件引用供后续轮次使用。路由上启用的文件工具可读取原件，并在会话工作区写入编辑后的副本。下载被拒绝或失败时，本轮在模型运行前结束。
 
 生成参数支持 `temperature`、`stop`，以及 `max_tokens` 或 `max_completion_tokens` 之一。输出 token 限制作用于根智能体的每次对话模型调用，且不能超过路由上限。`n` 仅支持 1；`top_p`、频率惩罚与存在惩罚仅支持中性值。仅支持文本响应格式，不支持外部工具。其他字段与不支持的值返回 400，不会被忽略；`user` 仅作为客户端元数据被接收，不赋予身份或权限。
 
-JSON 与 SSE 通过 `content` 返回最终助手文本，通过 `reasoning_content` 返回公开执行进度，答案消息之间以空行分隔，进度条目之间换行。进度将 `web_search` 显示为“网页搜索”并附上搜索词，将 `web_fetch` 显示为“网页解析”并附上请求的站点和路径。有结果元数据时，完成提示会附上来源数量或 HTTP 状态。地址省略凭据、查询参数和片段。其他工具优先显示公开用途说明 `description`，缺少时显示工具名称。每次调用结束后增加一条紧凑列表记录，包含状态和耗时；失败时附带结构化错误码。只有超过 `progressDelayMs`（默认 1500 毫秒）的调用才增加执行中提示。完成状态表示调用已返回，不表示找到了所需信息。随工具调用一起提交的助手说明也显示在进度中。其他工具参数、原始结果、模型内部推理和失败尝试不对外发送。SSE 帧使用 CRLF 分隔，让旧版 OpenAI SDK 无需等待下一帧即可解析当前帧。SSE 在已提交的说明与工具事件发生时发送进度；助手消息在该次模型尝试结束后发送，不保证逐 token 交付。答案与进度的合计字节数计入 `maxOutputBytes`。成功流以结束原因块与 `[DONE]` 结束；`stream_options.include_usage` 可增加用量帧。用量汇总根智能体已报告的对话调用，包括重试与缓存输入；报告不完整时省略 JSON 用量，或在所请求的 SSE 用量帧中返回 null。
+JSON 与 SSE 通过 `content` 返回最终助手文本，通过 `reasoning_content` 返回公开执行进度，答案消息之间以空行分隔，进度条目之间换行。进度将 `web_search` 显示为“网页搜索”并附上搜索词，将 `web_fetch` 显示为“网页解析”并附上请求的站点和路径。有结果元数据时，完成提示会附上来源数量或 HTTP 状态。地址省略凭据、查询参数和片段。其他工具优先显示公开用途说明 `description`，缺少时显示工具名称。每次调用结束后增加一条紧凑列表记录，包含状态和耗时；失败时附带结构化错误码。只有超过 `progressDelayMs`（默认 1500 毫秒）的调用才增加执行中提示。完成状态表示调用已返回，不表示找到了所需信息。随工具调用一起提交的助手说明也显示在进度中。其他工具参数、原始结果、模型内部推理和失败尝试不对外发送。SSE 帧使用 CRLF 分隔，让旧版 OpenAI SDK 无需等待下一帧即可解析当前帧。SSE 在已提交的说明与工具事件发生时发送进度。任务结束且文件链接确认后，服务通过多条 `delta.content` 帧分段发送正文，短回答只发一帧。`streamContentDelayMs` 默认为帧间等待 35 毫秒，设为 0 时正文一次发完。答案与进度的合计字节数计入 `maxOutputBytes`。成功流以结束原因块与 `[DONE]` 结束；`stream_options.include_usage` 可增加用量帧。用量汇总根智能体已报告的对话调用，包括重试与缓存输入；报告不完整时省略 JSON 用量，或在所请求的 SSE 用量帧中返回 null。
+
+服务提示模型使用用户当前任务的语言填写工具说明，中文任务使用简短的中文短语。
 
 ### 对话复用
 
@@ -62,6 +70,18 @@ JSON 与 SSE 通过 `content` 返回最终助手文本，通过 `reasoning_conte
 每个模型路由都要求明确的 `tools` 允许列表和上游 provider/model。空列表不允许执行任何工具。作用域执行守卫也会拒绝列表外的调用。同一路由的请求共享凭据和宿主资源。Session 子目录用于管理文件。互不信任的调用方应使用独立部署或隔离的提供方。
 
 工作区根目录默认为启动目录下的 `.openai-service-workspace/`，可通过绝对路径 `models[].cwd` 覆盖。每个新 Session 按 Harness Session ID 创建子目录，工具相对路径和文件交付均以该目录为基准。后续轮次复用该目录，请求结束后文件保留。已绑定到路由根目录的会话继续使用原路径，默认工作区切换前绑定到启动目录的会话也同样适用。未提供 `conversation_id` 的请求各自使用独立的 Session 子目录。
+
+在仓库根目录使用 Python 3.10 或更高版本运行以下命令。它会创建 `.openai-service-workspace/.python-env/`，并安装 `requirements-python.txt` 中的图片、Office 和 PDF 依赖。路由使用其他工作区根目录时，可传入 `--workspace /absolute/path`。
+
+```sh
+pnpm openai:setup-python
+```
+
+共享环境存在时，新请求的 Shell 调用会收到 `DSH_OPENAI_PYTHON`。在 Bash 中用 `"$DSH_OPENAI_PYTHON"` 启动，在 PowerShell 中用 `& $env:DSH_OPENAI_PYTHON` 启动。生成的文件保存在当前 Session 目录。使用安装命令维护共享依赖，额外依赖装到该会话自己的虚拟环境。复制项目到其他电脑时，跳过 `.python-env/` 并在目标电脑重建。
+
+Python 提示要求模型优先使用符合任务要求的标准库和共享包，并在使用第三方模块前确认可以导入。服务启动时读取固定版本的 `name==version` 依赖清单，并将其中的包名写入这条提示。
+
+OpenAI 服务在使用共享解释器的 Bash 或 PowerShell 前台调用报告模块缺失后，写入 `.openai-service-workspace/python-missing.md`。调用用 `2>&1` 把异常堆栈重定向到标准输出时，服务先核实共享环境中确实缺少该顶层模块，再计入报表。表格对每个模块按全部已记录的不同会话累计计数。表中的包名供管理员核对，确认后可更新 `requirements-python.txt`。
 
 配置可限制并发、上传字节、输出字节、耗时、根智能体模型步骤、已报告 token 与响应积压。token 预算在根步骤之间检查，可能超出一次调用量；它不包含辅助调用与子智能体调用，也不是计费上限。客户端断开、超时或插件卸载会取消所属 Agent 并等待释放。Session 持久化由组合的提供方决定；每次请求结束后释放执行资源。
 

@@ -39,10 +39,24 @@ export interface Config {
   maxConcurrent: number
   /** Complete JSON request body byte limit. */
   maxBodyBytes: number
+  /** Aggregate input image bytes per chat request, before attachment normalization. */
+  maxInputImageBytes: number
+  /** Deadline for downloading one input image, in milliseconds. */
+  imageDownloadTimeoutMs: number
+  /** Exact HTTP(S) origins trusted to serve original input files. */
+  fileDownloadOrigins: string[]
+  /** Absolute HTTP(S) URL prefixes ending in a directory slash. */
+  fileDownloadPathPrefixes: string[]
+  /** Aggregate downloaded original-file bytes per request. */
+  maxInputFileBytes: number
+  /** Deadline for downloading and storing one input file. */
+  fileDownloadTimeoutMs: number
   /** Combined UTF-8 byte limit on assistant answers and public execution progress. */
   maxOutputBytes: number
   /** Delay in milliseconds before an unfinished tool call receives a running notice. */
   progressDelayMs: number
+  /** Delay between completed-answer SSE frames. Zero sends the answer in one frame. */
+  streamContentDelayMs: number
   /** Deadline from admission through Agent execution, in milliseconds. */
   requestTimeoutMs: number
   /**
@@ -69,9 +83,16 @@ export const Config: z<Config> = z.object({
     maxTokens: z.number().step(1).min(1).required(),
   })).required(),
   maxConcurrent: z.number().step(1).min(1).default(8),
-  maxBodyBytes: z.number().step(1).min(1).default(1048576),
+  maxBodyBytes: z.number().step(1).min(1).default(15728640),
+  maxInputImageBytes: z.number().step(1).min(1).default(10485760),
+  imageDownloadTimeoutMs: z.number().step(1).min(1).max(2147483647).default(15000),
+  fileDownloadOrigins: z.array(z.string()).default([]),
+  fileDownloadPathPrefixes: z.array(z.string()).default([]),
+  maxInputFileBytes: z.number().step(1).min(1).default(26214400),
+  fileDownloadTimeoutMs: z.number().step(1).min(1).max(2147483647).default(15000),
   maxOutputBytes: z.number().step(1).min(1).default(1048576),
   progressDelayMs: z.number().step(1).min(1).default(1500),
+  streamContentDelayMs: z.number().step(1).min(0).max(1000).default(35),
   requestTimeoutMs: z.number().step(1).min(1).default(1200000),
   maxSteps: z.number().step(1).min(1).default(100),
   maxTotalTokens: z.number().step(1).min(1).default(10485760),

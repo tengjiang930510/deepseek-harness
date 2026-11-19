@@ -7,6 +7,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-system-prompt'
+import type {} from '@deepseek-ai/dsh-shell-env'
+import type { Session } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
@@ -15,7 +17,9 @@ import { OpenAiServerError, errorBody, publicError } from './error.ts'
 import { parseRequest } from './request.ts'
 import { runChat, type RunResult } from './run.ts'
 import { ConversationQueue, resolveSessionTarget } from './conversation.ts'
-import { readBody, sendFrame, sendJson } from './http.ts'
+import { readBody, sendFrame, sendJson, streamAnswer } from './http.ts'
+import { PythonMissingReport } from './python-missing.ts'
+import { loadPythonGuidance } from './python-guidance.ts'
 
 /** Stable Loader plugin identity. */
 export const name = 'openai-server'
@@ -52,10 +56,36 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   if (config.fileUpload?.enabled === true && !['http:', 'https:'].includes(new URL(config.fileUpload.url).protocol)) {
     throw new Error('fileUpload.url must use HTTP or HTTPS')
   }
+  for (const origin of config.fileDownloadOrigins) {
+    const url = URL.parse(origin)
+    if (url === null || !['http:', 'https:'].includes(url.protocol) || origin !== url.origin) {
+      throw new Error('fileDownloadOrigins requires exact HTTP(S) origins without paths or credentials.')
+    }
+  }
+  for (const prefix of config.fileDownloadPathPrefixes) {
+    const url = URL.parse(prefix)
+    if (url === null || !['http:', 'https:'].includes(url.protocol) ||
+        prefix !== url.origin + url.pathname || url.pathname === '/' || !url.pathname.endsWith('/')) {
+      throw new Error('fileDownloadPathPrefixes requires absolute HTTP(S) directory URLs without credentials, queries, or fragments.')
+    }
+  }
+  const pythonGuidance = await loadPythonGuidance()
   if ([...models.values()].some(model => resolve(model.cwd) === defaultOpenAiWorkspace)) {
     await mkdir(defaultOpenAiWorkspace, { recursive: true })
   }
   const conversations = new ConversationQueue()
+  const missingPython = new PythonMissingReport(defaultOpenAiWorkspace)
+  const sessionPython = new WeakMap<Session, string>()
+  ctx.inject(['shellEnv'], (child) => {
+    child.shellEnv.register({
+      name: 'openai-shared-python',
+      variables: { DSH_OPENAI_PYTHON: { description: 'Shared Python interpreter for this OpenAI Session.' } },
+      resolve: ({ agent }): Record<string, string> => {
+        const python = agent === undefined ? undefined : sessionPython.get(agent.session)
+        return python === undefined ? {} : { DSH_OPENAI_PYTHON: python }
+      },
+    })
+  })
   const lifetime = new AbortController()
   const pending = new Set<Promise<void>>()
   let activeChats = 0
@@ -124,7 +154,6 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       res.setHeader('X-DSH-Session-ID', target.id)
       const execute = async (): Promise<void> => {
         await ctx.loader.await()
-        await ctx.llm.resolveModelInfo(route.provider, route.model, signal)
         const id = `chatcmpl-${requestId}`
         const created = Math.floor(Date.now() / 1000)
         const chunk = (delta: object, finishReason: string | null = null) => ({ id, object: 'chat.completion.chunk', created, model: route.id,
@@ -134,14 +163,19 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no' })
           sendFrame(res, chunk({ role: 'assistant' }), config.maxBufferedBytes)
         }
-        const result = await runChat(ctx, config, route, request, signal, (field, text) => {
+        const result = await runChat(ctx, config, route, request, signal, (text) => {
           if (!request.stream) return
           startStream()
-          sendFrame(res, chunk({ [field]: text }), config.maxBufferedBytes)
-        }, target)
+          sendFrame(res, chunk({ reasoning_content: text }), config.maxBufferedBytes)
+        }, target, sessionPython, missingPython, pythonGuidance)
         const usage = wireUsage(result.usage)
         if (request.stream) {
+          signal.throwIfAborted()
           startStream()
+          await streamAnswer(result.text, config.streamContentDelayMs, signal, content => {
+            sendFrame(res, chunk({ content }), config.maxBufferedBytes)
+          })
+          signal.throwIfAborted()
           sendFrame(res, chunk({}, result.finishReason), config.maxBufferedBytes)
           if (request.stream_options?.include_usage === true) sendFrame(res, { id, object: 'chat.completion.chunk', created, model: route.id, choices: [], usage: usage ?? null }, config.maxBufferedBytes)
           sendFrame(res, '[DONE]', config.maxBufferedBytes)

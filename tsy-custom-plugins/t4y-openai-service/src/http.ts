@@ -1,5 +1,6 @@
 /** Bounded HTTP body admission and JSON/SSE response delivery. */
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { setTimeout as delay } from 'node:timers/promises'
 import { OpenAiServerError } from './error.ts'
 
 /**
@@ -70,4 +71,32 @@ export function sendFrame(res: ServerResponse, body: object | '[DONE]', maxBuffe
     throw new OpenAiServerError('Client response buffer is unavailable or exceeds the configured byte limit.', 'OUTPUT_LIMIT', 502)
   }
   res.write(frame)
+}
+
+/**
+ * Send completed answer text in paced fragments, preserving every Unicode code point.
+ * @param text - the confirmed answer, with file references already resolved.
+ * @param delayMs - time between fragments, or zero for a single fragment.
+ * @param signal - request deadline, disconnect, or server teardown.
+ * @param write - synchronous writer applying the response buffer limit.
+ * @returns completion of all content writes.
+ */
+export async function streamAnswer(text: string, delayMs: number, signal: AbortSignal, write: (fragment: string) => void): Promise<void> {
+  signal.throwIfAborted()
+  if (text === '') return
+  if (delayMs === 0) { write(text); return }
+  // Bound playback to 24 frames and keep short replies in a single frame.
+  const width = Math.max(96, Math.ceil(text.length / 24))
+  let start = 0
+  while (start < text.length) {
+    if (start > 0) {
+      try { await delay(delayMs, undefined, { signal }) }
+      catch (error) { signal.throwIfAborted(); throw error }
+      signal.throwIfAborted()
+    }
+    let end = Math.min(start + width, text.length)
+    if ((text.codePointAt(end - 1) ?? 0) > 0xffff) end++
+    write(text.slice(start, end))
+    start = end
+  }
 }

@@ -2,7 +2,15 @@
 import { IncomingMessage, ServerResponse } from 'node:http'
 import { Socket } from 'node:net'
 import { expect, it, vi } from 'vitest'
-import { readBody, sendFrame, sendJson } from '../src/http.ts'
+import { readBody, sendFrame, sendJson, streamAnswer } from '../src/http.ts'
+
+it('stops answer playback after cancellation and preserves the request reason', async () => {
+  const controller = new AbortController()
+  const reason = new Error('client disconnected')
+  const write = vi.fn(() => controller.abort(reason))
+  await expect(streamAnswer('答'.repeat(250), 35, controller.signal, write)).rejects.toBe(reason)
+  expect(write).toHaveBeenCalledTimes(1)
+})
 
 it.each([false, true])('rejects an aborted upload and removes its listeners: already aborted=%s', async (alreadyAborted) => {
   const req = new IncomingMessage(new Socket())

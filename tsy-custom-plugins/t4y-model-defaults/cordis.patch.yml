@@ -21,12 +21,8 @@
 - id: web
   name: '@deepseek-ai/dsh-web'
   config:
-    searchProvider: bailian-responses
+    searchProvider: deepseek-search-api
     fetchProvider: http
-- id: web-search-bailian
-  name: '@deepseek-ai/dsh-web-search-bailian'
-  disabled: false
+- id: web-deepseek-api
   config:
-    apiKeyEnv: QWEN_TOKEN_PLAN_API_KEY
-    baseURL: https://llm-7d9gw5u5aum1zav9.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
-    model: deepseek-v4.1-flash
+    searchApiKeyEnv: DEEPSEEK_SEARCH_API_KEY

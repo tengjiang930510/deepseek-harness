@@ -1,6 +1,7 @@
 /** Real Loader/HTTP/Agent composition; only the upstream model is scripted. */
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { startUploadFixture } from './upload-fixture.ts'
+import { fixtureFile, fixtureImageDataUrl, startImageFixture } from './image-fixture.ts'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -9,6 +10,8 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
+import * as ShellEnv from '@deepseek-ai/dsh-shell-env'
+import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import { createUserMessage, LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { ToolCallId } from '@deepseek-ai/dsh-llm'
@@ -29,6 +32,15 @@ function text(text: string): StreamChunk[] {
   return [{ type: 'block-start', index: 0, blockType: 'text' }, { type: 'text-delta', index: 0, text },
     { type: 'block-end', index: 0, block: { type: 'text', text } },
     { type: 'usage', usage: { inputTokens: 7, outputTokens: 3, cacheReadTokens: 2 } }, { type: 'finish', reason: { kind: 'stop' } }]
+}
+
+function answerFragments(wire: string): string[] {
+  return wire.split('\r\n\r\n').flatMap(frame => {
+    if (!frame.startsWith('data: {')) return []
+    const event: { choices?: { delta?: { content?: string } }[] } = JSON.parse(frame.slice(6))
+    const content = event.choices?.[0]?.delta?.content
+    return content === undefined ? [] : [content]
+  })
 }
 function tool(name = 'echo', index = 0, args: Record<string, string> = { value: 'tool output' }): StreamChunk[] {
   const id = brandString<ToolCallId>(`call-${name}`)
@@ -77,8 +89,11 @@ async function fixture(script: (StreamChunk[] | 'hang')[] = [text('answer')], ov
   const model = new Model(script)
   const events: SessionEvent[] = []
   let executions = 0
+  const pythonBindings: (string | undefined)[] = []
   const prerequisites = { name: 'http-test-runtime', async apply(context: Context) {
     await mountAgentLoopTestDependencies(context)
+    await context.plugin(ShellEnv, { dshHome: root })
+    await context.plugin(LocalAttachmentStore, { dshHome: root })
     await context.plugin(Jsonl, { root: join(root, 'sessions'), compression: 'none' })
     await context.plugin(Credentials, { path: join(root, 'credentials.yml'), dshHome: root, watch: false })
     const credentials = context.get('credentials')
@@ -86,12 +101,17 @@ async function fixture(script: (StreamChunk[] | 'hang')[] = [text('answer')], ov
     await credentials.set(credentialRef('TEST_SERVICE_KEY'), 'test-key')
     const llm = context.get('llm')
     const tools = context.get('tools')
-    if (llm === undefined || tools === undefined) throw new Error('Test prerequisite services did not activate')
+    const shellEnv = context.get('shellEnv')
+    if (llm === undefined || tools === undefined || shellEnv === undefined) throw new Error('Test prerequisite services did not activate')
     context.effect(() => llm.registerAdapter(['mock'], model))
     context.effect(() => tools.register(defineTool({
       name: 'echo', description: 'Return the supplied value.', parameters: { value: { type: 'string', required: true } },
       output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
-      async execute(args) { executions++; return args.value },
+      async execute(args, execution) {
+        executions++
+        pythonBindings.push(shellEnv.collect(execution).DSH_OPENAI_PYTHON)
+        return args.value
+      },
     })))
     context.on('session/event', (_session, event) => { events.push(event) })
     await mountAgentLoopTestHarness(context)
@@ -104,7 +124,9 @@ async function fixture(script: (StreamChunk[] | 'hang')[] = [text('answer')], ov
   ctx.loader.builtins.openai = Server
   const config: Config = Config({ fileUpload: { enabled: false }, ...authenticate ? { apiKeyEnv: 'TEST_SERVICE_KEY' } : {},
     models: [{ id: 'harness', provider: 'mock', model: 'model', cwd: root, tools: ['echo'], maxTokens: 128 }],
-    maxConcurrent: 4, maxBodyBytes: 8192, maxOutputBytes: 8192, progressDelayMs: 1500, requestTimeoutMs: 30000,
+    maxConcurrent: 4, maxBodyBytes: 8192, maxInputImageBytes: 8192, imageDownloadTimeoutMs: 15000,
+    fileDownloadOrigins: [], fileDownloadPathPrefixes: [], maxInputFileBytes: 26214400, fileDownloadTimeoutMs: 15000,
+    maxOutputBytes: 8192, progressDelayMs: 1500, streamContentDelayMs: 35, requestTimeoutMs: 30000,
     maxSteps: 4, maxTotalTokens: 5000, maxBufferedBytes: 8192, ...overrides })
   const path = join(root, 'cordis.yml')
   await writeFile(path, JSON.stringify([
@@ -119,7 +141,7 @@ async function fixture(script: (StreamChunk[] | 'hang')[] = [text('answer')], ov
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-key' },
     body: JSON.stringify({ model: 'harness', messages: [{ role: 'user', content: 'question' }], ...body }), ...options,
   })
-  return { ctx, root, model, events, base, send, config, executions: () => executions }
+  return { ctx, root, model, events, base, send, config, pythonBindings, executions: () => executions }
 }
 
 describe('OpenAI-compatible serving', () => {
@@ -207,6 +229,21 @@ describe('OpenAI-compatible serving', () => {
     expect(body).not.toContain('tool output')
   })
 
+  it.each([1, 0])('sends the completed answer without altering its text with a %i ms stream delay', async streamContentDelayMs => {
+    const answer = '字'.repeat(95) + '🧪\n' + '生成统计图表。'.repeat(40)
+    const h = await fixture([text(answer), text(answer)], { streamContentDelayMs })
+    const wire = await (await h.send({ stream: true })).text()
+    const fragments = answerFragments(wire)
+    expect(fragments.join('')).toBe(answer)
+    if (streamContentDelayMs > 0) {
+      expect(fragments.length).toBeGreaterThan(1)
+      expect(fragments[0]).toBe('字'.repeat(95) + '🧪')
+    } else expect(fragments).toEqual([answer])
+    expect(wire).toMatch(/"finish_reason":"stop"[^\n]+\r\n\r\ndata: \[DONE\]\r\n\r\n$/)
+    const response = await h.send()
+    expect(await response.json()).toMatchObject({ choices: [{ message: { content: answer } }] })
+  })
+
   it('bounds progress and final answers with one combined output limit', async () => {
     const progress = '- ✓ 完成：echo · 0.0 秒'
     const h = await fixture([tool(), text('done')], { maxOutputBytes: Buffer.byteLength(progress) + 3 })
@@ -245,7 +282,7 @@ describe('OpenAI-compatible serving', () => {
 
   it.each([
     { tools: [{ type: 'function', function: { name: 'external' } }] },
-    { messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'https://example.com/x.png' } }] }] },
+    { messages: [{ role: 'user', content: [{ type: 'image_url', image_url: {} }] }] },
     { messages: [{ role: 'user', content: 'x' }, { role: 'system', content: 'late' }, { role: 'user', content: 'y' }] },
     { messages: [{ role: 'assistant', content: 'prefill' }] }, { n: 2 }, { metadata: { conversation_id: ' ' } }, { metadata: { conversation_id: 1 } }, { response_format: { type: 'json_object' } },
     { max_tokens: 129 }, { max_tokens: 10, max_completion_tokens: 10 }, { unexpected: true },
@@ -255,6 +292,117 @@ describe('OpenAI-compatible serving', () => {
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({ error: { code: 'INVALID_REQUEST' } })
     expect(h.model.requests).toHaveLength(0)
+  })
+
+  it('downloads mixed input, stores its ordered attachment and reuses it when the conversation resumes', async () => {
+    const source = await startImageFixture()
+    try {
+      const h = await fixture([text('first'), text('followup')], { maxInputImageBytes: source.bytes })
+      const metadata = { conversation_id: 'image-chat' }
+      const { url, expired } = source
+      const invalid = await h.send({ messages: [{ role: 'user', content: [{ type: 'image_url',
+        image_url: { url: 'file:///not-an-input.png' },
+      }] }] })
+      expect(invalid.status).toBe(400)
+      expect(await invalid.json()).toMatchObject({ error: { code: 'INVALID_IMAGE' } })
+      const user = { role: 'user', content: [
+        { type: 'text', text: '图前' }, { type: 'image_url', image_url: { url } }, { type: 'text', text: '图后' },
+      ] }
+      const first = await h.send({ metadata, messages: [user] })
+      expect(first.status, await first.text()).toBe(200)
+      const imageMessage = h.model.requests[0]?.messages.find(message => message.role === 'user' && message.content.some(part => part.type === 'image'))
+      expect(imageMessage?.content).toMatchObject([
+        { type: 'text', text: '图前' },
+        { type: 'image', attachment: { mediaType: 'image/png', width: 1, height: 1 } },
+        { type: 'text', text: '图后' },
+      ])
+      expect(JSON.stringify(h.model.requests[0]?.messages)).toContain('answer directly from the image supplied in the conversation')
+      expect(JSON.stringify(h.events)).not.toContain('token=fixture')
+      const followup = await h.send({ metadata, messages: [
+        { role: 'user', content: [{ type: 'image_url', image_url: { url: expired } }] },
+        { role: 'assistant', content: 'first' }, { role: 'user', content: '再看图片' },
+      ] })
+      expect(followup.status, await followup.text()).toBe(200)
+      expect(followup.headers.get('x-dsh-session-id')).toBe(first.headers.get('x-dsh-session-id'))
+      expect(h.model.requests[1]?.messages).toContainEqual(imageMessage)
+      expect(JSON.stringify(h.model.requests[1]?.messages)).toContain('answer directly from the image supplied in the conversation')
+      expect(source.count()).toBe(1)
+      const rejected = await h.send({ messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: expired } }] }] })
+      expect(rejected.status).toBe(502)
+      expect(await rejected.json()).toMatchObject({ error: { code: 'IMAGE_DOWNLOAD_FAILED' } })
+      const image = { type: 'image_url', image_url: { url } }
+      const oversized = await h.send({ messages: [{ role: 'user', content: [image, image] }] })
+      expect(oversized.status).toBe(413)
+      expect(await oversized.json()).toMatchObject({ error: { code: 'IMAGE_TOO_LARGE' } })
+      expect(h.model.requests).toHaveLength(2)
+    } finally {
+      await source.close()
+    }
+  })
+
+  it('rejects disallowed original URLs, redirects, and oversized streamed files before model execution', async () => {
+    const source = await startImageFixture()
+    try {
+      const h = await fixture([], { fileDownloadPathPrefixes: [source.origin + '/files/'], maxInputFileBytes: fixtureFile.length - 1 })
+      const send = (url: string) => h.send({ messages: [{ role: 'user', content: [{ type: 'file_url', name: 'original.txt', url }] }] })
+      const denied = await send(source.fileUrl.replace('127.0.0.1', 'localhost'))
+      expect(denied.status).toBe(400)
+      expect(await denied.json()).toMatchObject({ error: { code: 'INVALID_FILE_URL' } })
+      const otherPath = await send(source.origin + '/files-private/original')
+      expect(otherPath.status).toBe(400)
+      expect(await otherPath.json()).toMatchObject({ error: { code: 'INVALID_FILE_URL' } })
+      for (const path of ['/api/common/file/reader/file', '/other?next=/api/common/file/read/file']) {
+        const response = await send(source.origin + path)
+        expect(response.status).toBe(400)
+        expect(await response.json()).toMatchObject({ error: { code: 'INVALID_FILE_URL' } })
+      }
+      const redirected = await send(source.redirect)
+      expect(redirected.status).toBe(502)
+      expect(await redirected.json()).toMatchObject({ error: { code: 'FILE_DOWNLOAD_FAILED' } })
+      expect(source.fileCount()).toBe(0)
+      const oversized = await send(source.fileUrl)
+      expect(oversized.status).toBe(413)
+      expect(await oversized.json()).toMatchObject({ error: { code: 'FILE_TOO_LARGE' } })
+      expect(source.fileCount()).toBe(1)
+      expect(h.model.requests).toHaveLength(0)
+    } finally { await source.close() }
+  })
+
+  it('accepts FastGPT Base64 images, validates them, and persists only an attachment reference', async () => {
+    const h = await fixture()
+    const send = (url: string) => h.send({ messages: [{ role: 'user', content: [
+      { type: 'image_url', image_url: { url } }, { type: 'text', text: '这张图是什么？' },
+    ] }] })
+    const malformed = await send('data:image/png;base64,%%%')
+    expect(malformed.status).toBe(400)
+    expect(await malformed.json()).toMatchObject({ error: { code: 'INVALID_IMAGE' } })
+    const mismatch = await send(fixtureImageDataUrl.replace('image/png', 'image/jpeg'))
+    expect(mismatch.status).toBe(400)
+    expect(await mismatch.json()).toMatchObject({ error: { code: 'INVALID_IMAGE' } })
+    const valid = await send(fixtureImageDataUrl.replace('image/png', 'application/octet-stream'))
+    expect(valid.status, await valid.text()).toBe(200)
+    expect(h.model.requests).toHaveLength(1)
+    expect(h.model.requests[0]?.messages).toEqual(expect.arrayContaining([expect.objectContaining({
+      role: 'user',
+      content: [{ type: 'image', attachment: expect.objectContaining({ mediaType: 'image/png' }) }, { type: 'text', text: '这张图是什么？' }],
+    })]))
+    expect(JSON.stringify(h.events)).not.toContain('base64,')
+  })
+
+  it('shares Python across separate Session workspaces when the environment is present', async () => {
+    const h = await fixture([tool(), text('first'), tool(), text('second'), tool(), text('third')])
+    const pythonDir = join(h.root, '.python-env', process.platform === 'win32' ? 'Scripts' : 'bin')
+    const python = join(pythonDir, process.platform === 'win32' ? 'python.exe' : 'python')
+    const withoutPython = await h.send()
+    expect(withoutPython.status).toBe(200)
+    expect(JSON.stringify(h.model.requests[0]?.messages)).not.toContain('DSH_OPENAI_PYTHON')
+    await mkdir(pythonDir, { recursive: true })
+    await writeFile(python, 'interpreter path fixture', { mode: 0o700 })
+    const responses = await Promise.all([h.send(), h.send()])
+    expect(responses.map(response => response.status)).toEqual([200, 200])
+    expect(new Set(responses.map(response => response.headers.get('x-dsh-session-id'))).size).toBe(2)
+    expect(h.pythonBindings).toEqual([undefined, python, python])
+    expect(JSON.stringify(h.model.requests[2]?.messages)).toContain('DSH_OPENAI_PYTHON')
   })
 
   it('resumes one durable conversation with tool history and imports client history only once', async () => {
@@ -479,7 +627,7 @@ describe('OpenAI-compatible serving', () => {
     expect(response.status).toBeGreaterThanOrEqual(500)
     expect(body).not.toContain('secret failed prefix')
     expect(body).not.toContain('private provider diagnostic')
-    const overflow = await fixture([text('x'.repeat(1200))], { maxBufferedBytes: 1024 })
+    const overflow = await fixture([text('x'.repeat(24000))], { maxOutputBytes: 32000, maxBufferedBytes: 1024 })
     const wire = await (await overflow.send({ stream: true })).text()
     expect(wire).toContain('"code":"OUTPUT_LIMIT"')
     expect(wire).not.toContain('[DONE]')
@@ -595,6 +743,25 @@ describe('file delivery over OpenAI HTTP', () => {
       await upload.close()
     }
   })
+
+  it('reports an upload failure before sending any answer fragments', async () => {
+    const upload = await startUploadFixture(500)
+    try {
+      const answer = '统计结果。'.repeat(50) + '[下载报告](report.pdf)'
+      const h = await fixture([text(answer)], { fileUpload: {
+        enabled: true, url: upload.url, businessKey: 'zhjl',
+        maxFileBytes: 1024, maxFiles: 2, timeoutMs: 30000, maxResponseBytes: 1024,
+      } })
+      const { metadata } = await seedDeliveryFile(h.root)
+      const wire = await (await h.send({ stream: true, metadata })).text()
+      expect(upload.count()).toBe(1)
+      expect(answerFragments(wire)).toEqual([])
+      expect(wire).toContain('"code":"FILE_UPLOAD_FAILED"')
+      expect(wire).not.toContain('[DONE]')
+    } finally {
+      await upload.close()
+    }
+  })
 })
 
 describe('explicit deliver_file tool', () => {
@@ -666,7 +833,7 @@ it.each([false, true])('preserves a successful delivery when the answer mentions
     const body = await response.text()
     expect(response.status, body).toBe(200)
     expect(body).toContain('https://files.example.test/delivery')
-    expect(body).toContain(original)
+    expect(stream ? answerFragments(body).join('') : body).toContain(original)
     expect(body).not.toContain('FILE_UPLOAD_FAILED')
     expect(upload.count()).toBe(1)
     if (stream) expect(body).toContain('data: [DONE]')

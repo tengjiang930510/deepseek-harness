@@ -13,7 +13,8 @@
   "files": [
     "lib",
     "src",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "requirements-python.txt"
   ],
   "license": "MIT",
   "dependencies": {
@@ -25,6 +26,7 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "*",
     "@deepseek-ai/dsh-agent": "*",
+    "@deepseek-ai/dsh-attachment": "*",
     "@deepseek-ai/dsh-brand": "*",
     "@deepseek-ai/dsh-cmdline": "*",
     "@deepseek-ai/dsh-credentials": "*",
@@ -33,6 +35,7 @@
     "@deepseek-ai/dsh-llm": "*",
     "@deepseek-ai/dsh-session": "*",
     "@deepseek-ai/dsh-session-persistence": "*",
+    "@deepseek-ai/dsh-shell-env": "*",
     "@deepseek-ai/dsh-system-prompt": "*",
     "@deepseek-ai/dsh-tools": "*",
     "@deepseek-ai/dsh-util-values": "*",
