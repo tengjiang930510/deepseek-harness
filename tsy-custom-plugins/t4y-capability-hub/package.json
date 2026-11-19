@@ -1,7 +1,7 @@
 {
   "name": "t4y-capability-hub",
-  "version": "0.1.18",
-  "description": "武汉地铁授权插件设置页：按项目菜单叶子表单管理安装、启停与最新版更新。",
+  "version": "0.1.19",
+  "description": "武汉地铁授权插件设置页：按项目菜单叶子表单管理安装、启停与最新版更新；输入框「技能」入口打开斜杠面板。",
   "private": true,
   "type": "module",
   "main": "./index.js",

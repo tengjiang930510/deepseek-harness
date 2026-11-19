@@ -17,7 +17,7 @@
 | 文件 | 说明 |
 |---|---|
 | `index.js` | Host 半（若有本地 API 代理则在此） |
-| `client.js` | 「授权插件」页、开关、`hubCopy` 文案 |
+| `client.js` | 「授权插件」页、输入框「技能」入口、开关、`hubCopy` 文案 |
 | `cordis.patch.yml` | 设置分区 order、禁用系统插件 UI |
 
 ## 本地开发
@@ -33,7 +33,8 @@ pnpm dsh web
 ## 验证
 
 - 登录并进入有授权表单的项目 → 设置里只见授权列表，不见系统插件库存。
-- 打开开关：未安装则安装 `latest.json` 指向版本；已安装则 enable，无需整页刷新。
+- 打开开关：未安装则安装 `latest.json` 指向版本；已安装则 enable，无需整页刷新。卡片无「快捷栏显示」勾选。
+- 会话输入框工具行有「技能」按钮，点击后打开与 `/` 相同的指令面板。
 - 企业菜单去掉某插件后，再开设置不应再出现（Host 每次重查菜单）。
 
 ## 发布注意
@@ -46,3 +47,5 @@ pnpm dsh web
 - `immediately: true`：client 脚本加载失败会拖垮 web-boot（identity 依赖本包）。
 - 不要在本包硬编码插件列表；列表只来自企业菜单 + Gitee `latest.json`。
 - Switch 状态需用 `listAllBundles` / 完整 bundle 状态，过滤后的 `listBundles` 会导致「永远关」。
+- 「技能」入口调用 `inputTriggers.toggleTrigger('/')`（不往草稿插入 `/`）。该 API 在 `@deepseek-ai/dsh-client-ui-input-trigger`；只更新 hub、核心 Client 仍是旧构建时，按钮会打开失败。命令 claim 仅 leading：有草稿 / 附件 / 非 plain 时应禁用按钮，否则选取会静默失败。
+- 本机 `link:` 能跑不等于安装包能跑：Desktop stage 只拷 `files`；见仓库 [DEVELOPING.md](../DEVELOPING.md)「本机 Web 正常、安装包却炸」。

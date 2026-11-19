@@ -33,18 +33,22 @@
           font-size: 20px;
           line-height: 28px;
           font-weight: 600;
+          color: #0f172a !important;
+          -webkit-text-fill-color: currentColor;
         }
         .t4y-mobile-cowatch-body {
           margin: 0;
           font-size: 14px;
           line-height: 22px;
-          color: var(--dsw-alias-label-secondary, #475569);
+          color: #475569 !important;
+          -webkit-text-fill-color: currentColor;
         }
         .t4y-mobile-cowatch-status {
           margin: 0;
           font-size: 13px;
           line-height: 20px;
-          color: var(--dsw-alias-label-tertiary, #64748b);
+          color: #64748b !important;
+          -webkit-text-fill-color: currentColor;
         }
         .t4y-mobile-cowatch-idle-root {
           position: fixed;
@@ -69,12 +73,15 @@
           margin: 0 0 8px;
           font-size: 18px;
           line-height: 26px;
+          color: #0f172a !important;
+          -webkit-text-fill-color: currentColor;
         }
         .t4y-mobile-cowatch-idle-card p {
           margin: 0 0 16px;
           font-size: 14px;
           line-height: 22px;
-          color: #475569;
+          color: #475569 !important;
+          -webkit-text-fill-color: currentColor;
         }
         .t4y-mobile-cowatch-idle-card button {
           width: 100%;
@@ -82,9 +89,10 @@
           border: 0;
           border-radius: 8px;
           background: #0f1115;
-          color: #fff;
+          color: #fff !important;
           font-size: 16px;
           font-weight: 600;
+          -webkit-text-fill-color: currentColor;
         }
         .t4y-mobile-switch-root {
           position: fixed;
@@ -122,8 +130,9 @@
           border: 1px solid #e5e7eb;
           border-radius: 10px;
           background: #fff;
-          color: #111827;
+          color: #111827 !important;
           font-size: 0.95rem;
+          -webkit-text-fill-color: currentColor;
         }
         .t4y-mobile-switch-list button.is-ready {
           border-color: #86efac;
@@ -174,12 +183,31 @@
           border-radius: 8px;
           border: 1px solid #d1d5db;
           background: #fff;
+          /* 覆盖产品暗色主题的全局 button 字色，避免白底看不见字 */
+          color: #111827 !important;
+          font-size: 0.9rem;
           font-weight: 600;
+          line-height: 1.25;
+          -webkit-text-fill-color: currentColor;
         }
         .t4y-mobile-switch-actions button.primary {
           background: #0f1115;
-          color: #fff;
+          color: #fff !important;
           border-color: #0f1115;
+        }
+        .t4y-mobile-switch-select-link {
+          display: block;
+          width: 100%;
+          margin-top: 0.55rem;
+          padding: 0.45rem 0.5rem;
+          border: 0;
+          background: transparent;
+          color: #2563eb !important;
+          font-size: 0.88rem;
+          font-weight: 500;
+          text-align: center;
+          -webkit-text-fill-color: currentColor;
+          cursor: pointer;
         }
         html[data-t4y-mobile-cowatch="1"] [role="menu"] {
           z-index: 4000 !important;
@@ -243,7 +271,3 @@
       `
       document.head.appendChild(style)
     }
-
-    /**
-     * Best-effort: rename dsh-mobile device label to enterprise displayName (Codex-style user binding).
-     * @param {object} session

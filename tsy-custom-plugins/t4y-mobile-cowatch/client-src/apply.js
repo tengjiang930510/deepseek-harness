@@ -7,6 +7,7 @@
 
       installStyles()
       installIdleWatchdog()
+      installPhonePresence()
       installDeviceSwitcher()
 
       ctx.effect(() => () => {

@@ -17,6 +17,10 @@ export function enterpriseEnterPage() {
   .sub{margin:0 0 1rem;color:#6b7280;font-size:.9rem;line-height:1.45}
   label{display:block;margin:0 0 .35rem;font-size:.85rem;color:#374151}
   input{width:100%;box-sizing:border-box;margin:0 0 .85rem;padding:.65rem .75rem;border:1px solid #d1d5db;border-radius:8px;font-size:1rem}
+  .password-wrap{position:relative;margin:0 0 .85rem}
+  .password-wrap input{margin:0;padding-right:3.25rem}
+  .password-toggle{position:absolute;right:.4rem;top:50%;transform:translateY(-50%);height:2rem;padding:0 .55rem;border:0;border-radius:6px;background:transparent;color:#6b7280;font-size:.8rem;font-weight:500;cursor:pointer}
+  .password-toggle:hover{color:#111827;background:#f3f4f6}
   button{width:100%;padding:.7rem 1rem;border:0;border-radius:8px;background:#0f1115;color:#fff;font-size:1rem;font-weight:600}
   button:disabled{opacity:.55}
   button.secondary{background:#fff;color:#111827;border:1px solid #d1d5db;margin-top:.5rem}
@@ -42,12 +46,13 @@ export function enterpriseEnterPage() {
     <h1>登录进入电脑</h1>
     <p class="sub">使用与电脑端相同的企业账号。登录后请先选择要进入的电脑。</p>
     <form id="form" autocomplete="on">
-      <label for="enterpriseName">企业名</label>
-      <input id="enterpriseName" name="enterpriseName" autocomplete="organization" required>
       <label for="userName">账号</label>
       <input id="userName" name="userName" autocomplete="username" required>
       <label for="password">密码</label>
-      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <div class="password-wrap">
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <button id="togglePassword" class="password-toggle" type="button" aria-label="显示密码" aria-pressed="false">显示</button>
+      </div>
       <button id="submit" type="submit">登录</button>
     </form>
   </section>
@@ -71,6 +76,10 @@ export function enterpriseEnterPage() {
   const hostsEl = document.getElementById('hosts')
   const refreshHosts = document.getElementById('refreshHosts')
   const backLogin = document.getElementById('backLogin')
+  const passwordInput = document.getElementById('password')
+  const togglePassword = document.getElementById('togglePassword')
+  /** Temporary fixed enterprise for Wuhan Metro builds; field UI removed until multi-tenant returns. */
+  const FIXED_ENTERPRISE_NAME = 'znzs'
   const HOST_READY_KEY = 't4y.mobile.hostReady.v1'
   const ENTERED_KEY = 't4y.mobile.cowatch.entered.v1'
   const REMEMBER_KEY = 't4y.mobile.hosts.v1'
@@ -83,6 +92,14 @@ export function enterpriseEnterPage() {
 
   /** @type {null | { accessToken: string, expiresAt: number, accountKey: string, enterpriseName: string, userName: string, hosts: any[] }} */
   let auth = null
+
+  togglePassword?.addEventListener('click', () => {
+    const show = passwordInput.type === 'password'
+    passwordInput.type = show ? 'text' : 'password'
+    togglePassword.textContent = show ? '隐藏' : '显示'
+    togglePassword.setAttribute('aria-label', show ? '隐藏密码' : '显示密码')
+    togglePassword.setAttribute('aria-pressed', show ? 'true' : 'false')
+  })
 
   function setStatus(message, kind) {
     status.textContent = message || ''
@@ -253,9 +270,24 @@ export function enterpriseEnterPage() {
       .replace(/"/g, '&quot;')
   }
 
-  async function refreshHostList() {
+  /**
+   * One usable PC → enter immediately (skip picker round-trip feel).
+   * @param {unknown[]} hosts
+   * @returns {Promise<boolean>}
+   */
+  async function maybeAutoEnter(hosts) {
+    const usable = (Array.isArray(hosts) ? hosts : []).filter((host) => host && host.online && host.accepting)
+    if (usable.length !== 1) return false
+    setStatus('正在进入…', 'info')
+    await enterHost(usable[0])
+    return true
+  }
+
+  async function refreshHostList(options = {}) {
+    const autoEnter = options.autoEnter === true
     setStatus('正在查找电脑…', 'info')
     const hosts = await collectHosts()
+    if (autoEnter && await maybeAutoEnter(hosts)) return
     renderHosts(hosts)
   }
 
@@ -532,7 +564,7 @@ export function enterpriseEnterPage() {
       }
       if (attempt < 2) {
         setStatus('网络不稳定，正在重试（' + (attempt + 2) + '/3）…', 'info')
-        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)))
+        await new Promise((r) => setTimeout(r, 250 * (attempt + 1)))
       }
     }
     return lastFail || { ok: false }
@@ -543,9 +575,9 @@ export function enterpriseEnterPage() {
     if (submit.disabled) return
     submit.disabled = true
     setStatus('正在登录…', 'info')
-    const enterpriseName = document.getElementById('enterpriseName').value.trim()
+    const enterpriseName = FIXED_ENTERPRISE_NAME
     const userName = document.getElementById('userName').value.trim()
-    const password = document.getElementById('password').value
+    const password = passwordInput.value
     try {
       const result = await postEnterLogin(enterpriseName, userName, password)
       if (!result.ok || !result.data) {
@@ -578,7 +610,8 @@ export function enterpriseEnterPage() {
       }
       writeRemembered([...(auth.hosts || []), ...readRemembered()])
       showSelect()
-      await refreshHostList()
+      // Single PC: skip the picker delay after login.
+      await refreshHostList({ autoEnter: true })
     } catch {
       setStatus('网络异常，请重试')
     } finally {
@@ -655,8 +688,23 @@ export function enterpriseOfflinePage() {
     }
   }
 
-  retry.addEventListener('click', () => { void checkOnce(true) })
-  window.setInterval(() => { void checkOnce(false) }, 5_000)
+  let delayMs = 5_000
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let timer
+  function schedule() {
+    if (timer !== undefined) clearTimeout(timer)
+    timer = setTimeout(() => {
+      void checkOnce(false).finally(() => {
+        delayMs = Math.min(delayMs * 2, 60_000)
+        schedule()
+      })
+    }, delayMs)
+  }
+  retry.addEventListener('click', () => {
+    delayMs = 5_000
+    void checkOnce(true).finally(() => { schedule() })
+  })
+  schedule()
 })()
 </script>
 </html>`

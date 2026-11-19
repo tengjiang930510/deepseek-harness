@@ -205,6 +205,33 @@ export class InputTriggerController {
   }
 
   /**
+   * Toggle a menu for every registered source of `hit.trigger` without typing
+   * the trigger character into the draft. Same roster as a typed trigger; the
+   * launcher key is `trigger:<char>` so dismiss leaves the draft unchanged.
+   * @param hit - synthetic hit carrying position and pick-time draft CAS.
+   */
+  toggleTrigger(hit: TriggerHit): void {
+    if (this.disposed) return
+    const key = `trigger:${hit.trigger}`
+    if (this.launcher.getSnapshot() === key && this.menu.getSnapshot().open) {
+      this.dismiss()
+      return
+    }
+    const roster = this.deps.roster.sources(hit.trigger)
+    if (roster.length === 0) {
+      this.dismiss()
+      return
+    }
+    this.stopFetch()
+    this.hit = hit
+    this.launcher.set(key)
+    this.menu.set(seedGroups(this.menu.getSnapshot(), roster))
+    this.reduce({ type: 'hit', hit })
+    this.refreshHeaders(hit, roster)
+    this.fetchCandidates(hit, roster)
+  }
+
+  /**
    * Pointer pick from MenuView: route the clicked candidate through onPick
    * and execute claim/insert outcomes via the scoped input events.
    * @param source - source (group) name.

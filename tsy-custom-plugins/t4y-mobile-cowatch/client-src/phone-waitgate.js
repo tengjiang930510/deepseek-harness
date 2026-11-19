@@ -1,3 +1,7 @@
+    /**
+     * Best-effort: rename dsh-mobile device label to enterprise displayName (Codex-style user binding).
+     * @param {object} session
+     */
     function bindDeviceLabel(session) {
       const displayName = typeof session?.displayName === 'string' ? session.displayName.trim() : ''
       if (displayName === '') return
@@ -166,8 +170,3 @@
         React.createElement('p', { className: 't4y-mobile-cowatch-body' }, t('body')),
         React.createElement('p', { className: 't4y-mobile-cowatch-status' }, t(statusKey))))
     }
-
-    /**
-     * After enter: 15 min with no tap/typing → close live WebSockets (free channel).
-     * Device pairing cookies stay;「继续使用」reload 免登续连.
-     * Page merely open in foreground does not count as activity.

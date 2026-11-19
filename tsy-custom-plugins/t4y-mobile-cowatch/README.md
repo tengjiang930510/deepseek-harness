@@ -19,7 +19,9 @@ Phone-side scope today:
 
 **Out of scope:** AppFrame grid rewrites, chat min-width overrides, shortcut seating moves. Phone layout will be redesigned separately.
 
-After Client edits: `pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-mobile-cowatch`, then restart Web.
+Client sources live under `client-src/`; run `node scripts/bundle-client.mjs` before `pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-mobile-cowatch`, then restart Web.
+
+**Packaging:** every Host sibling `import`ed from `index.js` (for example `per-host-origin.js`, `handoff.js`) must be listed in `package.json` `files` and committed. A local `link:` profile sees untracked files; Desktop trial stage copies only `files`, so a missing entry breaks packaged Host load. New `client-src` parts must be added to `scripts/bundle-client.mjs` `PART_FILES`, rebundled, and committed with the generated `client.js`.
 
 ## Dependencies
 
@@ -31,6 +33,11 @@ Requires `t4y-identity` (`host-session`). See `tenant-identity.overlay.yml` for 
 |-------|---------|
 | `GET /api/t4y-mobile-cowatch/credential-status` | Whether Host already holds `T4Y_NEW_API_KEY` |
 | `POST /api/t4y-mobile-cowatch/bind-device-label` | Rename the active / recent dsh-mobile device to enterprise `displayName` |
+| `POST /api/t4y-mobile-cowatch/presence` | Phone tab heartbeat / leave; paired cookie required |
+| `GET /api/t4y-mobile-cowatch/connected-devices` | Phones with a fresh presence beat (not historical pair rows) |
+| `POST /api/t4y-mobile-cowatch/per-host-origin` | Rewrite FRP `publicOrigin` to this Desktop’s subdomain |
+
+Soft-off releases FRP after ~60s. Multi-host Caddy: `../ops/frp-multi-host-caddy.md`.
 
 QR pair page auto-binds with no fill-in form; empty pairing labels are filled from `host-session.displayName` when `dsh-mobile` is present. Desktop Mobile access UI keeps only the seeded FRP remote channel.
 

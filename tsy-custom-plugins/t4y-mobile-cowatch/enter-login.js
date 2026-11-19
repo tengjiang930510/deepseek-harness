@@ -13,7 +13,7 @@ const PAIR_TTL_MS = 120_000
 const RATE_WINDOW_MS = 60_000
 const RATE_MAX = 12
 /** Same default as t4y-identity Host (avoid looping through Web-authed /api proxy). */
-const DEFAULT_API_BASE_URL = 'https://jgyw.crfsdi.com.cn:51111/backendapi'
+const DEFAULT_API_BASE_URL = 'https://jgyw.crfsdi.com.cn:51010/backendapi'
 
 /** @type {Map<string, { count: number, resetAt: number }>} */
 const loginAttempts = new Map()

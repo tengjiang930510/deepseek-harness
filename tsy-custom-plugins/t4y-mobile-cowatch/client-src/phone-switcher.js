@@ -230,9 +230,9 @@
           <ul class="t4y-mobile-switch-list" id="t4y-mobile-switch-list"></ul>
           <div class="t4y-mobile-switch-actions">
             <button type="button" data-action="close">${t('switchClose')}</button>
-            <button type="button" data-action="select-page">选机列表</button>
             <button type="button" class="primary" data-action="refresh">${t('switchRefresh')}</button>
           </div>
+          <button type="button" class="t4y-mobile-switch-select-link" data-action="select-page">选机列表</button>
         </div>`
         document.body.appendChild(root)
         root.addEventListener('click', (event) => {

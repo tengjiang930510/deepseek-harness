@@ -24,6 +24,7 @@ import {
   redeemHandoffTicket,
   sanitizeHandoffPayload,
 } from './handoff.js'
+import { ensurePerHostPublicOrigin } from './per-host-origin.js'
 
 export const name = 't4y-mobile-cowatch'
 export const inject = {
@@ -456,7 +457,7 @@ p{margin:0;color:#6b7280;font-size:.9rem;line-height:1.5}
 <body>
 <div class="card">
   <h1>配对已过期</h1>
-  <p>请在电脑端账号菜单打开「移动访问」，刷新二维码后再扫。</p>
+  <p>请在电脑端账号菜单打开「移动访问」，点「刷新二维码」后再扫。</p>
 </div>
 </body>
 </html>`
@@ -1023,6 +1024,87 @@ async function nudgeTrackControllers(ctx) {
 }
 
 /**
+ * Live phone presence for「已连接」hint.
+ * Pairing `lastSeenAt` stays for hours after the tab closes; only heartbeats mean the page is open.
+ * @type {Map<string, { id: string, label: string, nativeInstanceId: string, at: number }>}
+ */
+const phonePresence = new Map()
+/** Fallback if the tab dies without a leave beacon (crash / force-kill). */
+const PRESENCE_TTL_MS = 5 * 60_000
+
+/**
+ * @param {string} deviceId
+ * @returns {{ id: string, label: string, nativeInstanceId: string } | null}
+ */
+function resolvePresenceDevice(deviceId) {
+  for (const controller of [...accessControllers]) {
+    if (typeof controller.listDevices !== 'function') continue
+    try {
+      const devices = controller.listDevices()
+      if (!Array.isArray(devices)) continue
+      for (const device of devices) {
+        if (!device || typeof device !== 'object') continue
+        const row = /** @type {Record<string, unknown>} */ (device)
+        if (row.id !== deviceId) continue
+        if (row.revokedAt !== undefined && row.revokedAt !== null) continue
+        const expiresAt = typeof row.expiresAt === 'number' ? row.expiresAt : null
+        if (expiresAt !== null && expiresAt <= Date.now()) continue
+        const label = typeof row.label === 'string' && row.label.trim() !== '' ? row.label.trim() : deviceId
+        const nativeInstanceId = typeof row.nativeInstanceId === 'string' && row.nativeInstanceId !== ''
+          ? row.nativeInstanceId
+          : deviceId
+        return { id: deviceId, label, nativeInstanceId }
+      }
+    } catch {
+      // try next controller
+    }
+  }
+  return { id: deviceId, label: deviceId, nativeInstanceId: deviceId }
+}
+
+/**
+ * @param {string} deviceId
+ * @param {boolean} online
+ */
+function setPhonePresence(deviceId, online) {
+  if (!online) {
+    phonePresence.delete(deviceId)
+    return
+  }
+  const meta = resolvePresenceDevice(deviceId)
+  phonePresence.set(deviceId, { ...meta, at: Date.now() })
+}
+
+/**
+ * Phones with a fresh heartbeat on this Host (page still open).
+ * @returns {{ devices: { id: string, label: string, nativeInstanceId: string, lastSeenAt: number, online: boolean, expiresAt: null }[], onlineCount: number }}
+ */
+function listConnectedDevices() {
+  const now = Date.now()
+  /** @type {Map<string, { id: string, label: string, nativeInstanceId: string, lastSeenAt: number, online: boolean, expiresAt: null }>} */
+  const byPhone = new Map()
+  for (const [deviceId, row] of [...phonePresence]) {
+    if (now - row.at > PRESENCE_TTL_MS) {
+      phonePresence.delete(deviceId)
+      continue
+    }
+    const prev = byPhone.get(row.nativeInstanceId)
+    if (!prev || row.at > prev.lastSeenAt) {
+      byPhone.set(row.nativeInstanceId, {
+        id: row.id,
+        label: row.label,
+        nativeInstanceId: row.nativeInstanceId,
+        lastSeenAt: row.at,
+        online: true,
+        expiresAt: null,
+      })
+    }
+  }
+  const devices = [...byPhone.values()].sort((a, b) => b.lastSeenAt - a.lastSeenAt)
+  return { devices, onlineCount: devices.length }
+}
+
+/**
  * Durable fallback when AccessController instances are not yet tracked.
  * @param {string} displayName
  * @param {string | null} preferredDeviceId
@@ -1106,6 +1188,8 @@ async function applyLabelToControllers(displayName, preferredDeviceId) {
 export function apply(ctx) {
   loadAcceptingSync()
   installServerPairIntercept()
+  // Unique FRP Host per Desktop (shared frps); no-op when base domain / id missing.
+  void ensurePerHostPublicOrigin().catch(() => { /* boot must not fail on FRP rewrite */ })
   const enterOptions = { isAccepting }
   enterLoginHandler = async (request) => {
     try {
@@ -1413,7 +1497,67 @@ export function apply(ctx) {
     },
   })
 
+  // Rewrite FRP publicOrigin to this installation's subdomain; Desktop may re-configure frpc.
+  ctx.connection.fetch.register({
+    path: '/api/t4y-mobile-cowatch/per-host-origin',
+    methods: ['POST'],
+    requestBody: 'buffered',
+    async fetch() {
+      try {
+        const result = await ensurePerHostPublicOrigin()
+        return json(200, result)
+      } catch (error) {
+        return json(500, {
+          error: error instanceof Error ? error.message : 'per_host_origin_failed',
+        })
+      }
+    },
+  })
+
+  // Phone page heartbeat — paired cookie required. Desktop「已连接」reads this, not pair lastSeenAt.
+  ctx.connection.fetch.register({
+    path: '/api/t4y-mobile-cowatch/presence',
+    methods: ['POST'],
+    requestBody: 'buffered',
+    async fetch(request) {
+      try {
+        const deviceId = deviceIdFromRequest(request)
+        if (!deviceId) return json(401, { error: 'device_required' })
+        let online = true
+        try {
+          const body = await request.json()
+          if (body && typeof body.online === 'boolean') online = body.online
+        } catch {
+          // empty / keepalive leave body → treat as online beat when POST without JSON
+        }
+        await nudgeTrackControllers(ctx)
+        setPhonePresence(deviceId, online)
+        return json(200, { ok: true, online, deviceId })
+      } catch (error) {
+        return json(500, {
+          error: error instanceof Error ? error.message : 'presence_failed',
+        })
+      }
+    },
+  })
+
   // Soft-off switch for desktop menu (cookie-authed Host). Phone polls the public status route.
+  ctx.connection.fetch.register({
+    path: '/api/t4y-mobile-cowatch/connected-devices',
+    methods: ['GET'],
+    requestBody: 'buffered',
+    async fetch() {
+      try {
+        await nudgeTrackControllers(ctx)
+        return json(200, listConnectedDevices())
+      } catch (error) {
+        return json(500, {
+          error: error instanceof Error ? error.message : 'connected_devices_failed',
+        })
+      }
+    },
+  })
+
   ctx.connection.fetch.register({
     path: '/api/t4y-mobile-cowatch/accepting',
     methods: ['GET', 'POST'],

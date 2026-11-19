@@ -26,9 +26,11 @@ window.__ModuleLoader__.load({
     const HOST_READY_TTL_MS = 60_000
     /** Negative / 401 cache — stop retry storms while PC is offline or unpaired. */
     const HOST_READY_MISS_TTL_MS = 8_000
-    const POLL_MS_BASE = 2_500
-    const POLL_MS_MAX = 20_000
-    const FETCH_TIMEOUT_MS = 5_000
+    /** First WaitGate retries should be snappy over FRP; back off only while waiting. */
+    const POLL_MS_BASE = 700
+    const POLL_MS_MAX = 12_000
+    /** Phone over FRP: 5s aborted too often on cold RTT; keep well under Desktop's 20s. */
+    const FETCH_TIMEOUT_MS = 12_000
     /** No tap/input for this long → drop live sockets; device cookie kept for 免登续连. */
     const IDLE_DISCONNECT_MS = 15 * 60 * 1000
     const IDLE_GATE_ID = 't4y-mobile-cowatch-idle'
@@ -589,18 +591,22 @@ window.__ModuleLoader__.load({
           font-size: 20px;
           line-height: 28px;
           font-weight: 600;
+          color: #0f172a !important;
+          -webkit-text-fill-color: currentColor;
         }
         .t4y-mobile-cowatch-body {
           margin: 0;
           font-size: 14px;
           line-height: 22px;
-          color: var(--dsw-alias-label-secondary, #475569);
+          color: #475569 !important;
+          -webkit-text-fill-color: currentColor;
         }
         .t4y-mobile-cowatch-status {
           margin: 0;
           font-size: 13px;
           line-height: 20px;
-          color: var(--dsw-alias-label-tertiary, #64748b);
+          color: #64748b !important;
+          -webkit-text-fill-color: currentColor;
         }
         .t4y-mobile-cowatch-idle-root {
           position: fixed;
@@ -625,12 +631,15 @@ window.__ModuleLoader__.load({
           margin: 0 0 8px;
           font-size: 18px;
           line-height: 26px;
+          color: #0f172a !important;
+          -webkit-text-fill-color: currentColor;
         }
         .t4y-mobile-cowatch-idle-card p {
           margin: 0 0 16px;
           font-size: 14px;
           line-height: 22px;
-          color: #475569;
+          color: #475569 !important;
+          -webkit-text-fill-color: currentColor;
         }
         .t4y-mobile-cowatch-idle-card button {
           width: 100%;
@@ -638,9 +647,10 @@ window.__ModuleLoader__.load({
           border: 0;
           border-radius: 8px;
           background: #0f1115;
-          color: #fff;
+          color: #fff !important;
           font-size: 16px;
           font-weight: 600;
+          -webkit-text-fill-color: currentColor;
         }
         .t4y-mobile-switch-root {
           position: fixed;
@@ -678,8 +688,9 @@ window.__ModuleLoader__.load({
           border: 1px solid #e5e7eb;
           border-radius: 10px;
           background: #fff;
-          color: #111827;
+          color: #111827 !important;
           font-size: 0.95rem;
+          -webkit-text-fill-color: currentColor;
         }
         .t4y-mobile-switch-list button.is-ready {
           border-color: #86efac;
@@ -730,12 +741,31 @@ window.__ModuleLoader__.load({
           border-radius: 8px;
           border: 1px solid #d1d5db;
           background: #fff;
+          /* 覆盖产品暗色主题的全局 button 字色，避免白底看不见字 */
+          color: #111827 !important;
+          font-size: 0.9rem;
           font-weight: 600;
+          line-height: 1.25;
+          -webkit-text-fill-color: currentColor;
         }
         .t4y-mobile-switch-actions button.primary {
           background: #0f1115;
-          color: #fff;
+          color: #fff !important;
           border-color: #0f1115;
+        }
+        .t4y-mobile-switch-select-link {
+          display: block;
+          width: 100%;
+          margin-top: 0.55rem;
+          padding: 0.45rem 0.5rem;
+          border: 0;
+          background: transparent;
+          color: #2563eb !important;
+          font-size: 0.88rem;
+          font-weight: 500;
+          text-align: center;
+          -webkit-text-fill-color: currentColor;
+          cursor: pointer;
         }
         html[data-t4y-mobile-cowatch="1"] [role="menu"] {
           z-index: 4000 !important;
@@ -800,11 +830,11 @@ window.__ModuleLoader__.load({
       document.head.appendChild(style)
     }
 
+    // --- client-src/phone-waitgate.js ---
     /**
      * Best-effort: rename dsh-mobile device label to enterprise displayName (Codex-style user binding).
      * @param {object} session
-
-    // --- client-src/phone-waitgate.js ---
+     */
     function bindDeviceLabel(session) {
       const displayName = typeof session?.displayName === 'string' ? session.displayName.trim() : ''
       if (displayName === '') return
@@ -974,12 +1004,12 @@ window.__ModuleLoader__.load({
         React.createElement('p', { className: 't4y-mobile-cowatch-status' }, t(statusKey))))
     }
 
+    // --- client-src/phone-idle.js ---
     /**
      * After enter: 15 min with no tap/typing → close live WebSockets (free channel).
      * Device pairing cookies stay;「继续使用」reload 免登续连.
      * Page merely open in foreground does not count as activity.
-
-    // --- client-src/phone-idle.js ---
+     */
     function installIdleWatchdog() {
       if (typeof window === 'undefined' || typeof document === 'undefined') return
       /** @type {Set<WebSocket>} */
@@ -1063,6 +1093,7 @@ window.__ModuleLoader__.load({
           }
           idle = true
           disconnectLive()
+          try { window.__t4yCowatchPresence?.leave() } catch { /* ignore */ }
           showIdleGate()
         }, IDLE_DISCONNECT_MS)
       }
@@ -1078,13 +1109,65 @@ window.__ModuleLoader__.load({
       arm()
     }
 
+    // --- client-src/phone-presence.js ---
+    /**
+     * Pseudo-live「已连接」: enter beat + leave on hide; re-enter when the tab returns.
+     * No periodic heartbeat — scales to many phones without Host chatter.
+     */
+    function installPhonePresence() {
+      if (typeof window === 'undefined' || typeof document === 'undefined') return
+      const PATH = '/api/t4y-mobile-cowatch/presence'
+
+      /**
+       * @param {boolean} online
+       * @param {{ keepalive?: boolean }} [options]
+       */
+      function beat(online, options = {}) {
+        const body = JSON.stringify({ online })
+        const keepalive = options.keepalive === true
+        try {
+          if (keepalive && typeof navigator.sendBeacon === 'function') {
+            const blob = new Blob([body], { type: 'application/json' })
+            if (navigator.sendBeacon(PATH, blob)) return
+          }
+        } catch { /* fall through to fetch */ }
+        void rawFetch(PATH, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+          credentials: 'include',
+          keepalive,
+        }).catch(() => { /* ignore transient FRP blips */ })
+      }
+
+      function leave() {
+        beat(false, { keepalive: true })
+      }
+
+      function enter() {
+        beat(true)
+      }
+
+      // Expose for idle gate — socket drop should clear PC「已连接」without a heartbeat loop.
+      window.__t4yCowatchPresence = { enter, leave }
+
+      enter()
+      window.addEventListener('pagehide', leave)
+      window.addEventListener('beforeunload', leave)
+      window.addEventListener('pageshow', enter)
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') enter()
+        else leave()
+      })
+    }
+
+    // --- client-src/desktop-access.js ---
     /**
      * Desktop「移动访问」：
      * - 侧栏入口隐藏，改放到账号菜单「移动访问」
      * - 面板内只留一行勾选开关
      * - 启动后默认拉起 FRP；失败静默重试 2 次后再 toast
-
-    // --- client-src/desktop-access.js ---
+     */
     function installEnterpriseMobileAccessSimplify() {
       if (typeof document === 'undefined') return
       // Phone / enter 会话只遥控 PC，不得注入「移动访问」开关。
@@ -1178,15 +1261,22 @@ window.__ModuleLoader__.load({
             flex: 1;
             text-align: left;
             min-width: 0;
+            color: inherit;
+            -webkit-text-fill-color: currentColor;
           }
           button[${MENU_ITEM_ATTR}="1"] .t4y-ma-qr-hint {
             flex: none;
             font-size: 12px;
             font-weight: 500;
-            color: #1d4ed8;
+            color: #1d4ed8 !important;
             padding: 0.1rem 0.45rem;
             border-radius: 999px;
             background: #eff6ff;
+            -webkit-text-fill-color: currentColor;
+          }
+          button[${MENU_ITEM_ATTR}="1"] .t4y-ma-qr-hint[data-connected="1"] {
+            color: #166534 !important;
+            background: #dcfce7;
           }
           button[${MENU_ITEM_ATTR}="1"] .t4y-ma-qr-hint[hidden] {
             display: none !important;
@@ -1340,22 +1430,38 @@ window.__ModuleLoader__.load({
             grid-template-columns: 1fr 1.2fr;
             gap: 0.55rem;
           }
+          #t4y-mobile-access-qr-root .t4y-ma-qr-connected {
+            margin: 0 0 0.75rem;
+            padding: 0.4rem 0.65rem;
+            border-radius: 8px;
+            background: #f0fdf4;
+            color: #166534 !important;
+            font-size: 0.82rem;
+            font-weight: 500;
+            text-align: left;
+            -webkit-text-fill-color: currentColor;
+          }
+          #t4y-mobile-access-qr-root .t4y-ma-qr-connected[data-empty="1"] {
+            background: #f8fafc;
+            color: #64748b !important;
+          }
           #t4y-mobile-access-qr-root .t4y-ma-qr-actions button {
             padding: 0.62rem 0.75rem;
             border-radius: 10px;
             border: 1px solid #e2e8f0;
             background: #fff;
-            color: #334155;
+            color: #334155 !important;
             font-size: 0.9rem;
             font-weight: 500;
             cursor: pointer;
+            -webkit-text-fill-color: currentColor;
           }
           #t4y-mobile-access-qr-root .t4y-ma-qr-actions button:hover {
             background: #f8fafc;
           }
           #t4y-mobile-access-qr-root .t4y-ma-qr-actions button.primary {
             background: #0f172a;
-            color: #fff;
+            color: #fff !important;
             border-color: #0f172a;
           }
           #t4y-mobile-access-qr-root .t4y-ma-qr-actions button.primary:hover {
@@ -1508,18 +1614,17 @@ window.__ModuleLoader__.load({
           const status = await adminJson('/api/t4y-mobile-cowatch/accepting')
           const on = status?.accepting === true
           writeUserOff(!on)
+          writeAcceptingCache(on)
           paintMenuSwitch(switchEl, on, false)
         } catch {
-          paintMenuSwitch(switchEl, !readUserOff(), false)
+          paintMenuSwitch(switchEl, readCachedAccepting(), false)
         }
       }
 
-      /**
-       * @param {HTMLElement} switchEl
-       * @param {boolean} wantOn
-       */
       // Soft-off flag (cross-tab). FRP stays up so phones still reach the offline page.
       const USER_OFF_KEY = 't4y.mobile.remote.userOff'
+      /** Last known Host accepting — paints the menu switch before the next fetch returns. */
+      const ACCEPTING_CACHE_KEY = 't4y.mobile.remote.acceptingCached'
 
       function readUserOff() {
         try {
@@ -1535,6 +1640,27 @@ window.__ModuleLoader__.load({
         }
       }
 
+      /**
+       * Optimistic switch state before /accepting returns.
+       * Prefer explicit cache, then invert userOff (missing keys → on, matching Host default).
+       * @returns {boolean}
+       */
+      function readCachedAccepting() {
+        try {
+          const cached = localStorage.getItem(ACCEPTING_CACHE_KEY)
+          if (cached === '1') return true
+          if (cached === '0') return false
+        } catch { /* fall through */ }
+        return !readUserOff()
+      }
+
+      /** @param {boolean} on */
+      function writeAcceptingCache(on) {
+        try {
+          localStorage.setItem(ACCEPTING_CACHE_KEY, on ? '1' : '0')
+        } catch { /* ignore */ }
+      }
+
       /** @param {boolean} off */
       function writeUserOff(off) {
         try {
@@ -1545,6 +1671,7 @@ window.__ModuleLoader__.load({
             localStorage.removeItem(USER_OFF_KEY)
             sessionStorage.removeItem(USER_OFF_KEY)
           }
+          writeAcceptingCache(!off)
         } catch { /* ignore */ }
       }
 
@@ -1575,6 +1702,7 @@ window.__ModuleLoader__.load({
             <button type="button" class="t4y-ma-qr-close" data-action="close" aria-label="关闭">×</button>
           </div>
           <p class="t4y-ma-qr-desc">用手机摄像头扫码，免登录进入当前电脑。二维码约 2 分钟有效，过期可刷新。</p>
+          <p class="t4y-ma-qr-connected" data-connected data-empty="1">暂无手机连接</p>
           <div class="t4y-ma-qr-frame">
             <div class="t4y-ma-qr-svg" data-qr data-state="loading" aria-live="polite">正在生成</div>
           </div>
@@ -1585,6 +1713,14 @@ window.__ModuleLoader__.load({
           </div>
         </div>`
         document.body.appendChild(root)
+        const connectedEl = root.querySelector('[data-connected]')
+        const paintConnected = async () => {
+          if (!(connectedEl instanceof HTMLElement)) return
+          connectedEl.textContent = formatConnectedBanner(await fetchConnectedDevices())
+          connectedEl.dataset.empty = /暂无/.test(connectedEl.textContent) ? '1' : '0'
+        }
+        void paintConnected()
+        const connectedTimer = window.setInterval(() => { void paintConnected() }, 15_000)
         const onKey = (event) => {
           if (event.key === 'Escape') {
             event.preventDefault()
@@ -1592,7 +1728,10 @@ window.__ModuleLoader__.load({
           }
         }
         window.addEventListener('keydown', onKey)
-        qrPanelCleanup = () => { window.removeEventListener('keydown', onKey) }
+        qrPanelCleanup = () => {
+          window.clearInterval(connectedTimer)
+          window.removeEventListener('keydown', onKey)
+        }
         root.addEventListener('click', (event) => {
           if (event.target === root) closeQrPanel()
         })
@@ -1608,12 +1747,15 @@ window.__ModuleLoader__.load({
           meta.hidden = true
           meta.textContent = ''
           try {
-            // Ensure tunnel is up before minting a public pair URL.
+            // Product surface is Desktop only (`dsh web` is dev/test). Soft-on
+            // ensureRemoteTunnel keeps FRP warm; mint QR without reconnect when
+            // already ready — reconnect only repairs a down/broken tunnel.
             try {
-              await adminJson('/api/mobile-access/remote/control', {
-                method: 'POST',
-                body: JSON.stringify({ running: true, provider: 'frp' }),
-              })
+              const originInfo = await syncPerHostOrigin()
+              const snap = await ensureFrpTunnel({ reason: 'qr' })
+              if (snap?.state === 'ready' || snap?.running === true) {
+                warmPublicOrigin(originInfo?.publicOrigin || snap?.origin)
+              }
             } catch { /* pairing open will fail loud if remote is down */ }
             const data = await adminJson('/api/mobile-access/remote/pairing/open', {
               method: 'POST',
@@ -1636,9 +1778,12 @@ window.__ModuleLoader__.load({
             } else {
               meta.hidden = true
             }
-          } catch {
+          } catch (error) {
             box.dataset.state = 'error'
-            box.textContent = '生成失败，请确认移动访问已开启且网络正常'
+            const detail = error instanceof Error ? error.message : ''
+            box.textContent = detail && detail !== 'empty_pair_url'
+              ? `生成失败：${detail}`
+              : '生成失败，请确认移动访问已开启，并检查网络后重试'
             meta.hidden = true
           }
         }
@@ -1646,14 +1791,125 @@ window.__ModuleLoader__.load({
         await paint()
       }
 
-      function syncQrHint(item, on) {
-        const hint = item.querySelector('.t4y-ma-qr-hint')
-        if (!(hint instanceof HTMLElement)) return
-        if (on) hint.removeAttribute('hidden')
-        else hint.setAttribute('hidden', '')
+      /**
+       * @returns {Promise<{ devices: { id: string, label: string, online: boolean }[], onlineCount: number }>}
+       */
+      async function fetchConnectedDevices() {
+        try {
+          const data = await adminJson('/api/t4y-mobile-cowatch/connected-devices')
+          const devices = Array.isArray(data?.devices) ? data.devices : []
+          const onlineCount = typeof data?.onlineCount === 'number'
+            ? data.onlineCount
+            : devices.filter((device) => device?.online === true).length
+          return { devices, onlineCount }
+        } catch {
+          return { devices: [], onlineCount: 0 }
+        }
       }
 
-      /** Soft close/open: toggle accepting; keep FRP so the public status page stays reachable. */
+      /**
+       * @param {{ devices: { label?: string, online?: boolean }[], onlineCount: number }} snapshot
+       * @returns {string}
+       */
+      function formatConnectedHint(snapshot) {
+        // API only returns currently-online phones; never count historical pair rows.
+        const online = snapshot.devices.filter((device) => device.online !== false)
+        if (online.length === 0) return '扫码'
+        if (online.length === 1) {
+          const label = typeof online[0].label === 'string' && online[0].label.trim() !== ''
+            ? online[0].label.trim()
+            : '手机'
+          return `已连接 · ${label}`
+        }
+        return `已连接 ${online.length} 台`
+      }
+
+      /**
+       * @param {{ devices: { label?: string, online?: boolean }[], onlineCount: number }} snapshot
+       * @returns {string}
+       */
+      function formatConnectedBanner(snapshot) {
+        const online = snapshot.devices.filter((device) => device.online !== false)
+        if (online.length === 0) return '暂无手机连接'
+        if (online.length === 1) {
+          const label = typeof online[0].label === 'string' && online[0].label.trim() !== ''
+            ? online[0].label.trim()
+            : '手机'
+          return `当前已连接：${label}`
+        }
+        const names = online.slice(0, 3).map((device) => (
+          typeof device.label === 'string' && device.label.trim() !== '' ? device.label.trim() : '手机'
+        )).join('、')
+        const more = online.length > 3 ? ` 等 ${online.length} 台` : ''
+        return `当前已连接：${names}${more}`
+      }
+
+      /**
+       * @param {HTMLElement} item
+       * @param {boolean} on
+       * @param {{ devices: { label?: string, online?: boolean }[], onlineCount: number } | null} [snapshot]
+       */
+      function syncQrHint(item, on, snapshot = null) {
+        const hint = item.querySelector('.t4y-ma-qr-hint')
+        if (!(hint instanceof HTMLElement)) return
+        if (!on) {
+          hint.setAttribute('hidden', '')
+          hint.dataset.connected = '0'
+          hint.textContent = '扫码'
+          return
+        }
+        hint.removeAttribute('hidden')
+        const text = snapshot ? formatConnectedHint(snapshot) : '扫码'
+        hint.textContent = text
+        hint.dataset.connected = text.startsWith('已连接') ? '1' : '0'
+      }
+
+      /** @type {ReturnType<typeof window.setInterval> | undefined} */
+      let connectedPollTimer
+      /** @type {Promise<{ devices: { id: string, label: string, online: boolean }[], onlineCount: number }> | null} */
+      let connectedInflight = null
+
+      function stopConnectedPolling() {
+        if (connectedPollTimer !== undefined) {
+          window.clearInterval(connectedPollTimer)
+          connectedPollTimer = undefined
+        }
+      }
+
+      async function refreshConnectedHints() {
+        const item = document.querySelector(`button[${MENU_ITEM_ATTR}="1"]`)
+        if (!(item instanceof HTMLElement)) return
+        const switchEl = item.querySelector('.t4y-ma-switch')
+        const on = switchEl instanceof HTMLElement && switchEl.dataset.on === '1'
+        if (!on) {
+          syncQrHint(item, false)
+          return
+        }
+        if (!connectedInflight) {
+          connectedInflight = fetchConnectedDevices().finally(() => { connectedInflight = null })
+        }
+        const snapshot = await connectedInflight
+        syncQrHint(item, true, snapshot)
+        const panel = document.getElementById(QR_ROOT_ID)
+        const banner = panel?.querySelector('[data-connected]')
+        if (banner instanceof HTMLElement) {
+          banner.textContent = formatConnectedBanner(snapshot)
+          banner.dataset.empty = /暂无/.test(banner.textContent) ? '1' : '0'
+        }
+      }
+
+      function ensureConnectedPolling(on) {
+        if (!on) {
+          stopConnectedPolling()
+          return
+        }
+        if (connectedPollTimer !== undefined) return
+        void refreshConnectedHints()
+        // Pseudo-real-time: leave beacon clears soon; poll only for crashed-tab TTL expiry.
+        connectedPollTimer = window.setInterval(() => { void refreshConnectedHints() }, 15_000)
+      }
+
+      /** Soft close/open: accepting on ⇒ FRP up; soft-off ⇒ grace then release the shared frps slot. */
       async function setRemoteEnabled(switchEl, wantOn, options = {}) {
         paintMenuSwitch(switchEl, wantOn, true)
         writeUserOff(!wantOn)
@@ -1666,14 +1922,21 @@ window.__ModuleLoader__.load({
           const on = status?.accepting === true
           writeUserOff(!on)
           paintMenuSwitch(switchEl, on, false)
-          if (item instanceof HTMLElement) syncQrHint(item, on)
-          // Always keep the tunnel up (soft-off only refuses enter).
-          try {
-            await adminJson('/api/mobile-access/remote/control', {
-              method: 'POST',
-              body: JSON.stringify({ running: true, provider: 'frp' }),
-            })
-          } catch { /* ensure path reports via auto-ensure toast */ }
+          ensureConnectedPolling(on)
+          if (item instanceof HTMLElement) {
+            if (on) void refreshConnectedHints()
+            else syncQrHint(item, false)
+          }
+          if (on) {
+            cancelFrpStop()
+            try {
+              const originInfo = await syncPerHostOrigin()
+              const snap = await ensureFrpTunnel({ reason: 'soft-on' })
+              warmPublicOrigin(originInfo?.publicOrigin || snap?.origin)
+            } catch { /* ensure path reports via auto-ensure toast */ }
+          } else {
+            scheduleFrpStop()
+          }
           if (!on) closeQrPanel()
           else if (options.openQr === true) void openQrPanel()
         } catch {
@@ -1695,8 +1958,15 @@ window.__ModuleLoader__.load({
           if (existing instanceof HTMLElement) {
             const sw = existing.querySelector('.t4y-ma-switch')
             if (sw instanceof HTMLElement) {
+              // Keep painted state; only reconcile with Host (avoid off→on flash).
+              if (sw.dataset.on !== '1' && sw.dataset.on !== '0') {
+                paintMenuSwitch(sw, readCachedAccepting(), false)
+              }
               void refreshMenuSwitch(sw).then(() => {
-                syncQrHint(existing, sw.dataset.on === '1')
+                const on = sw.dataset.on === '1'
+                ensureConnectedPolling(on)
+                if (on) void refreshConnectedHints()
+                else syncQrHint(existing, false)
               })
             }
             return
@@ -1708,8 +1978,10 @@ window.__ModuleLoader__.load({
           item.setAttribute(MENU_ITEM_ATTR, '1')
           if (sample instanceof HTMLElement && sample.className) item.className = sample.className
           const iconClass = sample?.querySelector('[class*="itemIcon"], [class*="ItemIcon"]')?.className || ''
-          item.innerHTML = `${iconClass ? `<span class="${iconClass}">${PHONE_ICON_SVG}</span>` : `<span>${PHONE_ICON_SVG}</span>`}<span class="t4y-ma-label">移动访问</span><span class="t4y-ma-qr-hint" hidden>扫码</span><span class="t4y-ma-switch" role="switch" aria-checked="false"></span>`
+          const cachedOn = readCachedAccepting()
+          item.innerHTML = `${iconClass ? `<span class="${iconClass}">${PHONE_ICON_SVG}</span>` : `<span>${PHONE_ICON_SVG}</span>`}<span class="t4y-ma-label">移动访问</span><span class="t4y-ma-qr-hint"${cachedOn ? '' : ' hidden'}>扫码</span><span class="t4y-ma-switch" role="switch" aria-checked="${cachedOn ? 'true' : 'false'}"></span>`
           const switchEl = item.querySelector('.t4y-ma-switch')
+          if (switchEl instanceof HTMLElement) paintMenuSwitch(switchEl, cachedOn, false)
           item.addEventListener('click', (event) => {
             event.preventDefault()
             event.stopPropagation()
@@ -1717,24 +1989,30 @@ window.__ModuleLoader__.load({
             const target = event.target instanceof Element ? event.target : null
             const hitSwitch = target?.closest?.('.t4y-ma-switch')
             if (hitSwitch) {
+              // Toggle only — never auto-open QR; user clicks the row /「扫码」when ready.
               const next = switchEl.dataset.on !== '1'
-              void setRemoteEnabled(switchEl, next, { openQr: next })
+              void setRemoteEnabled(switchEl, next, { openQr: false })
               return
             }
-            // 开启时点「移动访问 / 扫码」展开二维码；关闭时隐藏入口，点击仅打开开关。
+            // Soft-on: click label /「扫码」opens QR. Soft-off: click only turns the switch on.
             if (switchEl.dataset.on === '1') {
               void openQrPanel()
               return
             }
-            void setRemoteEnabled(switchEl, true, { openQr: true })
+            void setRemoteEnabled(switchEl, true, { openQr: false })
           })
           const settings = [...menu.querySelectorAll('[role="menuitem"]')].find((el) => /设置|Settings/i.test(el.textContent || ''))
           if (settings?.nextSibling) menu.insertBefore(item, settings.nextSibling)
           else if (settings) settings.after(item)
           else menu.insertBefore(item, menu.firstChild)
           if (switchEl instanceof HTMLElement) {
+            ensureConnectedPolling(cachedOn)
+            if (cachedOn) void refreshConnectedHints()
             void refreshMenuSwitch(switchEl).then(() => {
-              syncQrHint(item, switchEl.dataset.on === '1')
+              const on = switchEl.dataset.on === '1'
+              ensureConnectedPolling(on)
+              if (on) void refreshConnectedHints()
+              else syncQrHint(item, false)
             })
           }
         } catch { /* ignore */ }
@@ -1758,9 +2036,142 @@ window.__ModuleLoader__.load({
         } catch { /* ignore */ }
       }
 
+      /** Soft-off: keep FRP briefly for「电脑不在线」, then release the shared frps slot. */
+      const SOFT_OFF_FRP_GRACE_MS = 60_000
+      /** @type {ReturnType<typeof window.setTimeout> | undefined} */
+      let frpStopTimer
+
+      function cancelFrpStop() {
+        if (frpStopTimer !== undefined) {
+          window.clearTimeout(frpStopTimer)
+          frpStopTimer = undefined
+        }
+      }
+
+      async function stopFrpTunnel() {
+        try {
+          await adminJson('/api/mobile-access/remote/control', {
+            method: 'POST',
+            body: JSON.stringify({ running: false, provider: 'frp' }),
+          })
+        } catch { /* offline / already stopped */ }
+      }
+
+      function scheduleFrpStop() {
+        cancelFrpStop()
+        frpStopTimer = window.setTimeout(() => {
+          frpStopTimer = undefined
+          void stopFrpTunnel()
+        }, SOFT_OFF_FRP_GRACE_MS)
+      }
+
+      /** Apply per-Desktop publicOrigin; reload frpc when the Host rewrote settings. */
+      let originSyncInflight = null
+      async function syncPerHostOrigin() {
+        if (originSyncInflight) return originSyncInflight
+        originSyncInflight = (async () => {
+          const result = await adminJson('/api/t4y-mobile-cowatch/per-host-origin', {
+            method: 'POST',
+            body: '{}',
+          })
+          if (result?.changed === true && result.configure && typeof result.configure === 'object') {
+            await adminJson('/api/mobile-access/remote/frp/configure', {
+              method: 'POST',
+              body: JSON.stringify(result.configure),
+            })
+          }
+          return result
+        })().finally(() => { originSyncInflight = null })
+        return originSyncInflight
+      }
+
+      /** @type {number} */
+      let lastOriginWarmAt = 0
       /**
-       * Soft-off keeps FRP up for the public offline page; always ensure the tunnel.
-       * Switch off only flips accepting via /api/t4y-mobile-cowatch/accepting.
+       * No corporate domain: sslip uses Let's Encrypt on-demand (~10s first hit).
+       * Warm the public Origin from the PC as soon as FRP is up so the phone skips that wait.
+       * @param {string | null | undefined} [hintOrigin]
+       */
+      function warmPublicOrigin(hintOrigin) {
+        const now = Date.now()
+        if (now - lastOriginWarmAt < 10 * 60_000) return
+        lastOriginWarmAt = now
+        void (async () => {
+          try {
+            let origin = typeof hintOrigin === 'string' ? hintOrigin.trim().replace(/\/$/u, '') : ''
+            if (!origin.startsWith('https://')) {
+              const synced = await syncPerHostOrigin()
+              if (typeof synced?.publicOrigin === 'string') {
+                origin = synced.publicOrigin.trim().replace(/\/$/u, '')
+              }
+            }
+            if (!origin.startsWith('https://')) {
+              const snap = await adminJson('/api/mobile-access/remote/control')
+              if (typeof snap?.origin === 'string') origin = snap.origin.trim().replace(/\/$/u, '')
+            }
+            if (!origin.startsWith('https://')) return
+            await fetch(`${origin}/mobile-access/discovery`, {
+              method: 'GET',
+              mode: 'cors',
+              credentials: 'omit',
+              cache: 'no-store',
+              signal: AbortSignal.timeout(45_000),
+            })
+          } catch { /* warm is best-effort; phone still works after LE issues */ }
+        })()
+      }
+
+      /**
+       * Single-flight FRP repair for QR + auto-ensure (only while accepting).
+       * Never stop+start while frpc is still `starting`/`connecting` (reclaim fights).
+       * @param {{ reason?: string }} [options]
+       * @returns {Promise<{ provider?: string, running?: boolean, state?: string } | null>}
+       */
+      let tunnelEnsureInflight = null
+      async function ensureFrpTunnel(options = {}) {
+        if (tunnelEnsureInflight) return tunnelEnsureInflight
+        tunnelEnsureInflight = (async () => {
+          void options
+          let snap = await adminJson('/api/mobile-access/remote/control')
+          const ready = snap
+            && snap.provider === 'frp'
+            && snap.running === true
+            && snap.state === 'ready'
+          if (ready) return snap
+          // Handshake in progress — wait, do not reconnect (reconnect = stop+start).
+          if (
+            snap
+            && snap.provider === 'frp'
+            && snap.running === true
+            && (snap.state === 'starting' || snap.state === 'connecting')
+          ) {
+            return snap
+          }
+          const frpConfigured = snap?.providers?.frp?.configuration?.configured === true
+            || snap?.providers?.frp?.state === 'ready'
+            || snap?.provider === 'frp'
+          if (!snap?.running || snap?.provider !== 'frp') {
+            snap = await adminJson('/api/mobile-access/remote/control', {
+              method: 'POST',
+              body: JSON.stringify(frpConfigured
+                ? { running: true, provider: 'frp' }
+                : { running: true }),
+            })
+            return snap
+          }
+          if (snap.state === 'error' || snap.state === 'unavailable') {
+            snap = await adminJson('/api/mobile-access/remote/reconnect', {
+              method: 'POST',
+              body: JSON.stringify({ provider: 'frp' }),
+            })
+          }
+          return snap
+        })().finally(() => { tunnelEnsureInflight = null })
+        return tunnelEnsureInflight
+      }
+
+      /**
+       * Keep FRP warm only while「移动访问」is accepting. Soft-off releases after grace.
        */
       function installRemoteAutoEnsure() {
         let silentFails = 0
@@ -1769,6 +2180,7 @@ window.__ModuleLoader__.load({
         /** @type {ReturnType<typeof window.setInterval> | undefined} */
         let timer
         let acceptingSynced = false
+        let originSynced = false
 
         const healthy = (snap) => snap
           && snap.provider === 'frp'
@@ -1777,15 +2189,28 @@ window.__ModuleLoader__.load({
 
         const syncAcceptingFromLocal = async () => {
           if (acceptingSynced) return
-          acceptingSynced = true
           // Prior hard-off left localStorage userOff; map it onto soft-off once.
-          if (!readUserOff()) return
+          if (!readUserOff()) {
+            acceptingSynced = true
+            return
+          }
           try {
             await adminJson('/api/t4y-mobile-cowatch/accepting', {
               method: 'POST',
               body: JSON.stringify({ accepting: false }),
             })
-          } catch { /* ignore — next menu refresh will retry */ }
+            acceptingSynced = true
+            scheduleFrpStop()
+          } catch { /* retry on next tick */ }
+        }
+
+        const readAccepting = async () => {
+          try {
+            const data = await adminJson('/api/t4y-mobile-cowatch/accepting')
+            return data?.accepting === true
+          } catch {
+            return readCachedAccepting()
+          }
         }
 
         const tick = async () => {
@@ -1793,31 +2218,38 @@ window.__ModuleLoader__.load({
           inFlight = true
           try {
             await syncAcceptingFromLocal()
-            let snap = await adminJson('/api/mobile-access/remote/control')
+            const accepting = await readAccepting()
+            if (!accepting) {
+              silentFails = 0
+              // Soft-off / boot with switch off: release leftover tunnels after grace.
+              if (frpStopTimer === undefined) scheduleFrpStop()
+              return
+            }
+            cancelFrpStop()
+            /** @type {string | null} */
+            let publicOriginHint = null
+            if (!originSynced) {
+              try {
+                const originInfo = await syncPerHostOrigin()
+                publicOriginHint = typeof originInfo?.publicOrigin === 'string' ? originInfo.publicOrigin : null
+                originSynced = true
+              } catch { /* retry next tick */ }
+            }
+            let snap = await ensureFrpTunnel({ reason: 'auto-ensure' })
             if (healthy(snap)) {
               silentFails = 0
               toastShown = false
+              warmPublicOrigin(publicOriginHint || snap?.origin)
               return
             }
-            const frpConfigured = snap?.providers?.frp?.configuration?.configured === true
-              || snap?.providers?.frp?.state === 'ready'
-              || snap?.provider === 'frp'
-            try {
-              if (!snap.running || snap.provider !== 'frp') {
-                snap = await adminJson('/api/mobile-access/remote/control', {
-                  method: 'POST',
-                  body: JSON.stringify(frpConfigured
-                    ? { running: true, provider: 'frp' }
-                    : { running: true }),
-                })
-              } else if (snap.state === 'error' || snap.state === 'unavailable' || snap.state === 'connecting') {
-                snap = await adminJson('/api/mobile-access/remote/reconnect', {
-                  method: 'POST',
-                  body: '{}',
-                })
-              }
-            } catch {
-              // count as failed attempt below
+            // Still handshaking — do not count as failure yet.
+            if (
+              snap
+              && snap.provider === 'frp'
+              && snap.running === true
+              && (snap.state === 'starting' || snap.state === 'connecting')
+            ) {
+              return
             }
             await new Promise((resolve) => window.setTimeout(resolve, 2_500))
             try { snap = await adminJson('/api/mobile-access/remote/control') } catch { /* keep previous */ }
@@ -2085,9 +2517,9 @@ window.__ModuleLoader__.load({
           <ul class="t4y-mobile-switch-list" id="t4y-mobile-switch-list"></ul>
           <div class="t4y-mobile-switch-actions">
             <button type="button" data-action="close">${t('switchClose')}</button>
-            <button type="button" data-action="select-page">选机列表</button>
             <button type="button" class="primary" data-action="refresh">${t('switchRefresh')}</button>
           </div>
+          <button type="button" class="t4y-mobile-switch-select-link" data-action="select-page">选机列表</button>
         </div>`
         document.body.appendChild(root)
         root.addEventListener('click', (event) => {
@@ -2228,6 +2660,7 @@ window.__ModuleLoader__.load({
 
       installStyles()
       installIdleWatchdog()
+      installPhonePresence()
       installDeviceSwitcher()
 
       ctx.effect(() => () => {

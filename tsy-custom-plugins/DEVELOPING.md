@@ -35,7 +35,7 @@
 | `t4y-key-broker` | 独立 Key Broker 服务（非 DSH 插件） | New API 管理面 |
 | `hub-projects/` | Hub catalog / latest 本地样板 | 发布到 Gitee Hub |
 
-推荐加载顺序（Web / Desktop sync 脚本一致）：tenant → identity → capability-hub → brand → release-manager → trial-runtime → mobile-cowatch；Desktop sync 另装 `dsh-mobile@0.8.2`。企业 FRP 预置：`node ./tsy-custom-plugins/scripts/seed-enterprise-mobile-frp.mjs`。
+推荐加载顺序（Web / Desktop sync、试用 stage 一致）：`dsh-mobile@0.8.2` → tenant → identity → capability-hub → brand → release-manager → trial-runtime → mobile-cowatch。版本常量见 `scripts/enterprise-desktop-plugins.mjs`；**安装包强制 seed / 覆盖** profile 中的同名包（含曾用 registry/link 安装的 `dsh-mobile`），换版随新安装包，不做运行时自动升。企业 FRP 预置：`node ./tsy-custom-plugins/scripts/seed-enterprise-mobile-frp.mjs`。
 手机模块若被裁空导致白屏：`node ./tsy-custom-plugins/scripts/seed-enterprise-mobile-modules.mjs`（默认 reset 回全量），手机整页刷新后再开。激进减负需先做冒烟，勿直接当默认。
 
 ## 日常开发循环（Web）
@@ -50,7 +50,9 @@ pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-brand
 pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-capability-hub
 pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-release-manager
 pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-trial-runtime
+pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-mobile-cowatch
 ```
+
 
 3. 启动：`pnpm dsh web`（已在跑则重启，或依赖 HMR 视改动面而定）。
 4. Host 半截可单独：`pnpm dsh web --patch ./tsy-custom-plugins/tenant-identity.overlay.yml`；Client 仍以 profile 已装包为准。
@@ -61,22 +63,61 @@ pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-trial-runtime
 
 1. 退出 Desktop。
 2. `node ./tsy-custom-plugins/scripts/sync-desktop-plugins.mjs`（同步到 `~/.dsh/profiles/desktop` 等）。
-3. 再开 Desktop（`pnpm start:desktop` / 已安装的 App）。
+3. 再开 Desktop（企业联调优先开 **已打进 trial-defaults 的安装包 / win-unpacked**，见下方注意事项；不要默认用裸 `pnpm start:desktop` 验收登录门禁）。
+
+### 注意事项：禁止验收时落到官方欢迎页（登录 / 添加 API Key）
+
+打包或重启后若出现原生窗「欢迎使用 DeepSeek Harness / 组装无限可能… / 登录 / 添加 API Key」，说明 **Electron 欢迎窗**被打开了，企业 `t4y-identity` 登录门禁还没机会接管。这是企业交付里**反复踩过**的坑，验收前必须排除。
+
+| 正确 | 错误 |
+|---|---|
+| 安装包 `resources/trial-defaults.json` = `desktop-enterprise-defaults.json`（`credentialRef: T4Y_DESKTOP_ENTERPRISE_GATE`） | 漏设 `DSH_DESKTOP_TRIAL_DEFAULTS_FILE`，或指向空/错误文件 |
+| 安装包同时带 `resources/trial-plugins/`（含已启用的 `t4y-identity`）并完成 stage | 只 stage 了插件、没带 enterprise defaults |
+| Windows：`.env.windows` 写绝对路径指向 `tsy-custom-plugins/desktop-enterprise-defaults.json` 再 `package:desktop:win:x64:unsigned` | 跑完 `seed-desktop-trial-defaults.mjs` 后未改回企业标记，又把 defaults 换成 Qwen Key 文件却未随包带上 |
+| mac unsigned：shell **export 绝对路径**（不读 `.env.macos`） | 只改了 `.env.macos` 却以为 mac 打包会读到 |
+| 验收企业登录：打开 `win-unpacked/DeepSeek Harness.exe` 或已安装 App | 用裸 `pnpm start:desktop` 验收门禁（**未打包进程不读 `trial-defaults.json`**，无官方 Key 时必出欢迎页） |
+
+打包后自检（缺一不可）：
+
+```sh
+# Windows 示例
+test -f apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/win-unpacked/resources/trial-defaults.json
+# 内容须含 T4Y_DESKTOP_ENTERPRISE_GATE；且 resources/trial-plugins/t4y-identity 存在
+```
+
+临时误开 `start:desktop` 时：欢迎页点「添加 API Key」→「稍后」可进工作区再看到企业门禁；**正式交付与冒烟仍必须以带 enterprise defaults 的安装包为准**。
 
 ### UI 约束：禁止出现在「已安装插件」
 
 左上角 **插件 → 已安装插件** 用于普通第三方包；企业平台包和表单管理的插件由 `t4y-release-manager` 在 Host 侧过滤，表单管理的插件通过 **设置 → 授权插件** 操作。profile 的 `bundles` 勿残留无对应 `dependencies` 的包名；过滤范围以该插件的实际包集合和发布状态为准。
+
+### 常见坑：本机 Web 正常、安装包 / 干净 clone 却炸
+
+Web / Desktop profile 常用 `link:` 指向 `tsy-custom-plugins/<pkg>`。**Junction 会带上未跟踪文件**，所以本机改完立刻能跑；`stage-desktop-trial-plugins.mjs` 却只复制各包 `package.json` 的 `files` 列表。
+
+因此会出现：本机联调正常 → 打出的 Desktop trial 缺 sibling 模块 → Host `import './…'` 直接失败。已经踩过一次：`t4y-mobile-cowatch` 新增 `per-host-origin.js` 并被 `index.js` import，但未写入 `files`、也未提交，stage 产物缺文件。
+
+| 注意 | 原因 |
+|---|---|
+| 新增 Host 本地 `.js` 并被 `import` | 必须进 `package.json` → `files`，并 `git add` |
+| 新增 `client-src/` 分片 | 写入 `scripts/bundle-client.mjs` 的 `PART_FILES`，跑 bundle，源文件也要提交（只交生成的 `client.js` 不够维护） |
+| 输入框「技能」依赖 `ui-input-trigger.toggleTrigger` | hub 与该 API 须同批交付；只 stage hub、核心包仍是旧构建会点按钮失败 |
+| stage 后自检 | 脚本会核对 `files` 是否落盘；改完务必 `node …/stage-desktop-trial-plugins.mjs` 再打包 |
 
 ## 打试用安装包（Mac unsigned）
 
 无符号 mac 打包**不会**读 `.env.macos` 里的 trial 路径，必须在进程环境里给出**绝对路径**：
 
 ```sh
-node ./tsy-custom-plugins/scripts/stage-desktop-trial-plugins.mjs
-node ./tsy-custom-plugins/scripts/seed-desktop-trial-defaults.mjs   # 若需内置试用 Key
+node ./tsy-custom-plugins/scripts/stage-desktop-trial-plugins.mjs  # 含 dsh-mobile@钉死版 + 全套 t4y-*
+# 企业登录包（武汉地铁默认）：非秘密 gate，跳过官方欢迎页 → t4y-identity 门禁。
+# 切勿漏掉；否则首屏会变成「登录 / 添加 API Key」。
+export DSH_DESKTOP_TRIAL_DEFAULTS_FILE="$PWD/tsy-custom-plugins/desktop-enterprise-defaults.json"
+# 仅当明确要打「内置试用模型 Key」包时才改用 seed-desktop-trial-defaults.mjs；
+# 跑完 seed 会改写 .env.windows，企业包务必再改回上一行路径。
+# node ./tsy-custom-plugins/scripts/seed-desktop-trial-defaults.mjs
 
 export DSH_DESKTOP_TRIAL_PLUGINS_DIR="$PWD/apps/desktop/.desktop-build/trial-plugins"
-export DSH_DESKTOP_TRIAL_DEFAULTS_FILE="$PWD/apps/desktop/.desktop-build/t4y-trial-defaults.json"
 export ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"   # 按需
 
 # 需 Node ^22.19 或 >=24（import.meta.main + native headers）

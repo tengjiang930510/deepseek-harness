@@ -1,3 +1,8 @@
+    /**
+     * After enter: 15 min with no tap/typing → close live WebSockets (free channel).
+     * Device pairing cookies stay;「继续使用」reload 免登续连.
+     * Page merely open in foreground does not count as activity.
+     */
     function installIdleWatchdog() {
       if (typeof window === 'undefined' || typeof document === 'undefined') return
       /** @type {Set<WebSocket>} */
@@ -81,6 +86,7 @@
           }
           idle = true
           disconnectLive()
+          try { window.__t4yCowatchPresence?.leave() } catch { /* ignore */ }
           showIdleGate()
         }, IDLE_DISCONNECT_MS)
       }
@@ -95,9 +101,3 @@
       }
       arm()
     }
-
-    /**
-     * Desktop「移动访问」：
-     * - 侧栏入口隐藏，改放到账号菜单「移动访问」
-     * - 面板内只留一行勾选开关
-     * - 启动后默认拉起 FRP；失败静默重试 2 次后再 toast

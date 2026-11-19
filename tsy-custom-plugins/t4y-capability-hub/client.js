@@ -14,10 +14,10 @@ window.__ModuleLoader__.load({
         intro: '只显示当前项目菜单中有权限的插件。开启/关闭与系统「插件」页相同：即时生效，无需刷新页面。',
         commands: '命令',
         categoryOther: '其他',
-        shortcut: '在输入框显示快捷按钮',
+        shortcutFailed: '无法打开指令面板，请重试',
         shortcutDraft: '请先处理当前输入内容',
-        shortcutFailed: '无法打开插件命令，请确认插件已启用后重试',
-        shortcutBar: '插件快捷入口',
+        skillEntry: '技能',
+        skillEntryTitle: '打开指令与技能（与输入 / 相同）',
         enableToggle: '启用 {name}',
         stateOn: '已启用',
         stateOff: '已停用',
@@ -37,10 +37,10 @@ window.__ModuleLoader__.load({
         intro: 'Only plugins authorized by the current project menu appear here. Enable and disable work like the system Plugins page: they apply immediately without refreshing.',
         commands: 'Commands',
         categoryOther: 'Other',
-        shortcut: 'Show shortcut in composer',
+        shortcutFailed: 'Could not open the command panel. Try again.',
         shortcutDraft: 'Finish the current draft first',
-        shortcutFailed: 'Could not open the plugin command. Check that the plugin is enabled and try again.',
-        shortcutBar: 'Plugin shortcuts',
+        skillEntry: 'Skills',
+        skillEntryTitle: 'Open commands and skills (same as typing /)',
         enableToggle: 'Enable {name}',
         stateOn: 'On',
         stateOff: 'Off',
@@ -101,31 +101,13 @@ window.__ModuleLoader__.load({
       return value
     }
 
-    const SHORTCUT_EVENT = 't4y-capability:shortcuts-changed'
+    /** Fired after authorize/install/toggle so the Skills entry can warm the slash roster. */
+    const PLUGIN_STATE_EVENT = 't4y-capability:plugin-state-changed'
 
-    function shortcutStorageKey() {
+    function pluginIdentityKey() {
       const session = window.__t4yIdentity?.getSession?.()
       if (!session?.tenantId || !session?.username || !moduleId()) return null
-      return `t4y-shortcuts:${JSON.stringify([session.tenantId, session.username, moduleId()])}`
-    }
-
-    function readShortcuts() {
-      const key = shortcutStorageKey()
-      if (key === null) return []
-      try {
-        const value = JSON.parse(localStorage.getItem(key) || '[]')
-        return Array.isArray(value) ? value.filter((item) => typeof item === 'string') : []
-      } catch { return [] }
-    }
-
-    function updateShortcut(pluginKey, selected) {
-      const key = shortcutStorageKey()
-      if (key === null) return
-      const values = new Set(readShortcuts())
-      if (selected) values.add(pluginKey)
-      else values.delete(pluginKey)
-      localStorage.setItem(key, JSON.stringify([...values]))
-      window.dispatchEvent(new Event(SHORTCUT_EVENT))
+      return `t4y-plugins:${JSON.stringify([session.tenantId, session.username, moduleId()])}`
     }
 
     const METADATA_CACHE_KEY = 't4y-plugin-metadata-v1'
@@ -168,7 +150,7 @@ window.__ModuleLoader__.load({
     let pluginRevision = 0
 
     function currentPluginIdentity() {
-      const key = shortcutStorageKey()
+      const key = pluginIdentityKey()
       const token = window.__t4yIdentity?.getAccessToken?.()
       return key && token ? { key, token } : null
     }
@@ -220,13 +202,6 @@ window.__ModuleLoader__.load({
       }).finally(() => { if (pluginPending === pending) pluginPending = null })
       pluginPending = pending
       return pending.promise
-    }
-
-    function visibleShortcuts(snapshot) {
-      if (!snapshot) return []
-      const enabled = new Set((snapshot.state.bundles || []).filter(bundle => bundle.enabled === true).map(bundle => bundle.name))
-      const selected = new Set(readShortcuts())
-      return snapshot.plugins.filter(plugin => selected.has(plugin.key) && enabled.has(plugin.package) && plugin.commands?.length)
     }
 
     function PluginIcon({ url, size }) {
@@ -361,78 +336,74 @@ window.__ModuleLoader__.load({
       })
     }
 
-    function ShortcutBar({ inputActions, useInput, t, resolveCommand }) {
+    function SkillStarIcon() {
+      return React.createElement('svg', {
+        className: 't4y-skill-entry-icon',
+        width: 16,
+        height: 16,
+        viewBox: '0 0 24 24',
+        fill: 'none',
+        'aria-hidden': 'true',
+      },
+        React.createElement('path', {
+          d: 'M12 3.2 13.55 8.8 19.2 10.35 13.55 11.9 12 17.5 10.45 11.9 4.8 10.35 10.45 8.8 12 3.2Z',
+          fill: 'currentColor',
+        }),
+        React.createElement('path', {
+          d: 'M18.2 14.4 18.9 16.7 21.2 17.4 18.9 18.1 18.2 20.4 17.5 18.1 15.2 17.4 17.5 16.7 18.2 14.4Z',
+          fill: 'currentColor',
+          opacity: '0.85',
+        }))
+    }
+
+    /**
+     * Composer tool-row entry: same slash panel as typing `/`, without inserting `/`.
+     * Command claims are leading-only (`beginCommand`); disable while the draft,
+     * attachments, or a non-plain phase would make a pick fail silently.
+     */
+    function SkillEntry({ inputActions, useInput, t, openSkills, warm }) {
       const input = useInput((state) => state)
-      const [plugins, setPlugins] = React.useState([])
       const [error, setError] = React.useState(false)
       React.useEffect(() => {
-        let generation = 0
         let disposed = false
-        let identity = currentPluginIdentity()
-        const refresh = async () => {
-          const request = ++generation
-          setPlugins([])
-          try {
-            const snapshot = await loadPluginSnapshot()
-            if (!disposed && request === generation) setPlugins(visibleShortcuts(snapshot))
-          } catch {
-            if (!disposed && request === generation) setPlugins([])
-          }
-        }
-        const onChange = () => { void refresh() }
-        const onIdentityChange = (_tenant, reason) => {
-          const next = currentPluginIdentity()
-          if (reason === 'module-plugins-applied' && samePluginIdentity(identity, next)) {
-            void refresh()
-            return
-          }
-          if ((!identity && !next) || samePluginIdentity(identity, next)) return
-          identity = next
-          void refresh()
-        }
-        void refresh()
-        window.addEventListener(SHORTCUT_EVENT, onChange)
-        const removeTenant = window.__t4yTenant?.onChange?.(onIdentityChange)
-        const removeIdentity = window.__t4yIdentity?.onSession?.(onIdentityChange)
+        const warmNow = () => { if (!disposed) void warm?.() }
+        warmNow()
+        window.addEventListener(PLUGIN_STATE_EVENT, warmNow)
+        const removeTenant = window.__t4yTenant?.onChange?.(warmNow)
+        const removeIdentity = window.__t4yIdentity?.onSession?.(warmNow)
         return () => {
           disposed = true
-          window.removeEventListener(SHORTCUT_EVENT, onChange)
+          window.removeEventListener(PLUGIN_STATE_EVENT, warmNow)
           removeTenant?.()
           removeIdentity?.()
         }
-      }, [])
-      if (!plugins.length) return null
-      const busy = !input || input.phase !== 'plain' || input.draft !== '' || input.attachmentIds.length > 0
-      const buttons = plugins.flatMap((plugin) => plugin.commands.map((command) => {
-        const label = plugin.commands.length === 1 ? (plugin.menuTitle || plugin.name) : command
-        return React.createElement('button', {
+      }, [warm])
+      const draft = typeof input?.draft === 'string' ? input.draft : ''
+      const attachments = Array.isArray(input?.attachmentIds) ? input.attachmentIds.length : 0
+      const locked = !input || input.phase !== 'plain' || draft.trim() !== '' || attachments > 0
+      return React.createElement(React.Fragment, null,
+        error && React.createElement('span', { className: 't4y-skill-entry-error', role: 'alert' }, t('shortcutFailed')),
+        React.createElement('button', {
           type: 'button',
-          key: `${plugin.key}:${command}`,
-          className: 't4y-shortcut-inline',
-          disabled: busy,
-          title: busy && input?.draft !== '' ? t('shortcutDraft') : label,
-          'aria-label': label,
+          className: 't4y-skill-entry',
+          disabled: locked,
+          title: locked ? t('shortcutDraft') : t('skillEntryTitle'),
+          'aria-label': t('skillEntry'),
           onClick: () => {
+            if (locked) return
             setError(false)
             const span = inputActions.captureInsertion()
-            const currentKey = shortcutStorageKey()
-            void (async () => {
-              const snapshot = await loadPluginSnapshot()
-              if (currentKey !== shortcutStorageKey() || !visibleShortcuts(snapshot).some(item => item.key === plugin.key)) return false
-              return resolveCommand(command, span)
-            })().then((ok) => { if (!ok) setError(true) }, () => { setError(true) })
+            try {
+              // Claims only apply in the leading seat; never open as inline.
+              if (!openSkills({ span, position: 'leading' })) setError(true)
+            } catch {
+              setError(true)
+            }
           },
         },
-          React.createElement(PluginIcon, { url: plugin.iconUrl, size: 18 }),
-          label)
-      }))
-      return React.createElement(React.Fragment, null,
-        error && React.createElement('span', { className: 't4y-shortcut-rail-error', role: 'alert' }, t('shortcutFailed')),
-        React.createElement('div', {
-          className: 't4y-shortcut-bar t4y-shortcut-bar--inline',
-          role: 'toolbar',
-          'aria-label': t('shortcutBar'),
-        }, buttons))
+          React.createElement(SkillStarIcon),
+          React.createElement('span', { className: 't4y-skill-entry-label' }, t('skillEntry')),
+          React.createElement('span', { className: 't4y-skill-entry-chevron', 'aria-hidden': 'true' }, '›')))
     }
 
     /** Same role="switch" control the system Plugins page uses. */
@@ -451,7 +422,7 @@ window.__ModuleLoader__.load({
 
     function CapabilityCard(props) {
       const {
-        t, plugin, installed, enabled, busy, onToggle, selected, onShortcut,
+        t, plugin, installed, enabled, busy, onToggle,
       } = props
       const [notice, setNotice] = React.useState(null)
       const title = plugin.menuTitle || plugin.name
@@ -495,9 +466,6 @@ window.__ModuleLoader__.load({
           commands.length > 0 && React.createElement('p', { className: 't4y-capability-commands' },
             React.createElement('span', null, t('commands'), '：'),
             commands.map((command) => React.createElement('code', { key: command }, command))),
-          commands.length > 0 && React.createElement('label', { className: 't4y-shortcut-setting' },
-            React.createElement('input', { type: 'checkbox', checked: selected, onChange: (event) => onShortcut(plugin.key, event.target.checked) }),
-            t('shortcut')),
           !installed && React.createElement('p', {
             className: 't4y-capability-note',
             role: 'status',
@@ -526,14 +494,6 @@ window.__ModuleLoader__.load({
       const identityEpoch = React.useRef(0)
       if (gate.current === null) gate.current = createRequestGate()
       React.useEffect(() => () => { gate.current.invalidate(); identityEpoch.current += 1 }, [])
-      const [shortcuts, setShortcuts] = React.useState(readShortcuts)
-      React.useEffect(() => {
-        const refresh = () => setShortcuts(readShortcuts())
-        window.addEventListener(SHORTCUT_EVENT, refresh)
-        const removeTenant = window.__t4yTenant?.onChange?.(refresh)
-        const removeIdentity = window.__t4yIdentity?.onSession?.(refresh)
-        return () => { window.removeEventListener(SHORTCUT_EVENT, refresh); removeTenant?.(); removeIdentity?.() }
-      }, [])
       const [busyKeys, setBusyKeys] = React.useState(() => new Set())
       const [authenticated, setAuthenticated] = React.useState(() => window.__t4yIdentity?.getSession?.() !== null)
       const viewRef = React.useRef(view)
@@ -603,7 +563,6 @@ window.__ModuleLoader__.load({
         })
       }, [])
 
-      const onShortcut = (key, selected) => updateShortcut(key, selected)
       const onToggle = React.useCallback(async (plugin, nextEnabled) => {
         const identity = currentPluginIdentity()
         const epoch = identityEpoch.current
@@ -625,7 +584,7 @@ window.__ModuleLoader__.load({
             void reload(true)
             try { localStorage.removeItem(METADATA_CACHE_KEY) } catch { /* Cache storage is optional. */ }
             invalidatePluginSnapshot()
-            window.dispatchEvent(new Event(SHORTCUT_EVENT))
+            window.dispatchEvent(new Event(PLUGIN_STATE_EVENT))
             if (result?.application === 'restart-required') return { kind: 'restart' }
             return { kind: 'installed' }
           }
@@ -635,7 +594,7 @@ window.__ModuleLoader__.load({
           void reload(true)
           try { localStorage.removeItem(METADATA_CACHE_KEY) } catch { /* Cache storage is optional. */ }
           invalidatePluginSnapshot()
-          window.dispatchEvent(new Event(SHORTCUT_EVENT))
+          window.dispatchEvent(new Event(PLUGIN_STATE_EVENT))
           if (result?.application === 'restart-required') return { kind: 'restart' }
           return null
         } catch (error) {
@@ -699,7 +658,7 @@ window.__ModuleLoader__.load({
                 installed: view.installed.has(plugin.key),
                 enabled: view.enabled.has(plugin.key),
                 busy: busyKeys.has(plugin.key),
-                selected: shortcuts.includes(plugin.key), onShortcut, onToggle,
+                onToggle,
               }))))))
     }
 
@@ -747,33 +706,35 @@ window.__ModuleLoader__.load({
           .t4y-plugin-icon { flex: none; object-fit: contain; border-radius: 4px; }
           .t4y-capability-category { display: flex; flex-direction: column; gap: 12px; }
           .t4y-capability-category h3 { margin: 0; font-size: 14px; font-weight: 500; color: var(--dsw-alias-label-primary); }
-          .t4y-shortcut-setting { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--dsw-alias-label-secondary); }
-          .t4y-shortcut-rail-error {
-            margin: 0;
+          .t4y-skill-entry-error {
+            margin: 0 6px 0 0;
             color: var(--dsw-alias-state-error-primary);
             font-size: 12px;
             line-height: 1.4;
           }
-          .t4y-shortcut-bar--inline {
-            display: flex;
-            gap: 4px;
-            max-width: min(40vw, 400px);
-            overflow-x: auto;
-          }
-          .t4y-shortcut-inline {
+          .t4y-skill-entry {
             display: inline-flex;
             align-items: center;
-            gap: 4px;
+            gap: 6px;
             flex: none;
             border: 0;
-            border-radius: 6px;
-            padding: 5px 8px;
+            border-radius: 8px;
+            padding: 6px 10px;
             background: transparent;
             color: var(--dsw-alias-label-primary);
             cursor: pointer;
+            overflow: visible;
           }
-          .t4y-shortcut-inline:disabled { opacity: .5; cursor: default; }
-          .t4y-shortcut-inline:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); }
+          .t4y-skill-entry:hover:not(:disabled) { background: var(--dsw-alias-bg-module-platform, rgba(15, 23, 42, 0.06)); }
+          .t4y-skill-entry:disabled { opacity: .5; cursor: default; }
+          .t4y-skill-entry:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); }
+          .t4y-skill-entry-icon { flex: none; overflow: visible; }
+          .t4y-skill-entry-label { font-size: 13px; line-height: 1; white-space: nowrap; }
+          .t4y-skill-entry-chevron {
+            font-size: 14px;
+            line-height: 1;
+            color: var(--dsw-alias-label-tertiary);
+          }
           .t4y-capability-intro,
           .t4y-capability-note,
           .t4y-capability-description,
@@ -830,9 +791,6 @@ window.__ModuleLoader__.load({
             .t4y-capability-card-switch {
               align-self: flex-start;
               padding-top: 4px;
-            }
-            .t4y-shortcut-setting {
-              align-items: flex-start;
             }
           }
           .t4y-capability-card-main { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 8px; }
@@ -985,18 +943,27 @@ window.__ModuleLoader__.load({
       })
 
       ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
-        name: 'conversation.input.left', id: 't4y-plugin-shortcuts', order: 30, locale: SETTINGS_NS,
+        name: 'conversation.input.left', id: 't4y-skill-entry', order: 30, locale: SETTINGS_NS,
         inject: (sessionId) => ({
-          resolveCommand: async (command, span) => {
+          warm: () => { void loadPluginSnapshot() },
+          openSkills: ({ span, position }) => {
             const actx = ctx.sessions.scope(sessionId)
             if (!actx) return false
             try {
-              const claim = await ctx.inputTriggers.sessionOf(actx).resolveClaim(command, new AbortController().signal)
-              return claim !== undefined && actx.bail(actx, 'slash/input-begin-command', { claim, span }) === true
+              const controller = ctx.inputTriggers.sessionOf(actx)
+              if (typeof controller.toggleTrigger !== 'function') return false
+              controller.toggleTrigger({
+                trigger: '/',
+                query: '',
+                quoted: false,
+                position: position === 'inline' ? 'inline' : 'leading',
+                span,
+              })
+              return controller.menu.getSnapshot().open === true
             } catch { return false }
           },
         }),
-      }, ShortcutBar))
+      }, SkillEntry))
 
       // Keep a unique order: general=0, models=10, plugins=15, this=16,
       // agent-presets=20. Sharing 20 with agent-presets made the tab jump

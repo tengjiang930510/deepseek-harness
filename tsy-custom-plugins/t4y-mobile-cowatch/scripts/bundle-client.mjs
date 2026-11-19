@@ -17,6 +17,7 @@ const PART_FILES = [
   'phone-styles.js',
   'phone-waitgate.js',
   'phone-idle.js',
+  'phone-presence.js',
   'desktop-access.js',
   'phone-switcher.js',
   'apply.js',

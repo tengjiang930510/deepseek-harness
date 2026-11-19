@@ -478,6 +478,35 @@ describe('programmatic source launcher', () => {
     expect(controller.launcher.getSnapshot()).toBeNull()
     expect(controller.menu.getSnapshot().groups.map(group => group.source)).toEqual(['command', 'skill'])
   })
+
+  it('opens every source for a trigger without a typed token, and toggles closed', async () => {
+    const command = readySource('/', 'command', [{ name: 'goal' }])
+    const skill = readySource('/', 'skill', [{ name: 'review' }])
+    const { controller } = controllerBench([command.source, skill.source])
+    const hit = {
+      trigger: '/' as const,
+      query: '',
+      quoted: false,
+      position: 'leading' as const,
+      span: { start: 0, end: 0, draftRev: 3 },
+    }
+
+    controller.toggleTrigger(hit)
+    await tick()
+    expect(controller.launcher.getSnapshot()).toBe('trigger:/')
+    expect(controller.menu.getSnapshot()).toMatchObject({
+      open: true,
+      hit,
+      groups: [
+        { source: 'command', status: 'ready', items: [{ name: 'goal' }] },
+        { source: 'skill', status: 'ready', items: [{ name: 'review' }] },
+      ],
+    })
+
+    controller.toggleTrigger(hit)
+    expect(controller.menu.getSnapshot().open).toBe(false)
+    expect(controller.launcher.getSnapshot()).toBeNull()
+  })
 })
 
 describe('scope-birth warm', () => {

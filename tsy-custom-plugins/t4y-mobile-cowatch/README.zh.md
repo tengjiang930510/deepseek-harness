@@ -36,12 +36,19 @@
 Client 源码在 `client-src/`（按端拆分）；改完后先 `node scripts/bundle-client.mjs` 生成 `client.js`，再执行：
 `pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-mobile-cowatch`，然后重启 Web。
 
+**打包注意：** `index.js` 本地 `import` 的 sibling（如 `per-host-origin.js`、`handoff.js`）必须列入 `package.json` 的 `files` 并提交。本机 `link:` 能看见未跟踪文件，stage 安装包不会；漏列会导致 Desktop 加载本包直接失败。新增 `client-src` 分片后要改 `scripts/bundle-client.mjs` 的 `PART_FILES`、重新 bundle，并把分片源文件一并提交。
+
 ## 接口
 
 | 路由 | 说明 |
 |------|------|
 | `GET /api/t4y-mobile-cowatch/credential-status` | Host 是否已有 `T4Y_NEW_API_KEY` |
 | `POST /api/t4y-mobile-cowatch/bind-device-label` | 将当前/最近 dsh-mobile 设备名改为企业 `displayName` |
+| `POST /api/t4y-mobile-cowatch/presence` | 手机页心跳 / 关页离线；需配对 cookie |
+| `GET /api/t4y-mobile-cowatch/connected-devices` | 当前有新鲜心跳的手机（不含历史配对行） |
+| `POST /api/t4y-mobile-cowatch/per-host-origin` | 将 FRP `publicOrigin` 改写为本机子域名 |
+
+软关闭约 60 秒后释放 FRP。多机 Caddy：`../ops/frp-multi-host-caddy.md`。
 | `GET/POST /api/t4y-mobile-cowatch/accepting` | 软开/软关（关时 revoke 已配对设备） |
 | `GET /api/t4y-mobile-cowatch/switch-auth-seed` | 扫码后 / 配对态回填 session-only `switchAuth` |
 | `POST /api/t4y-mobile-cowatch/handoff-mint` | 目标电脑签发一次性切换码（CORS，无 Cookie） |

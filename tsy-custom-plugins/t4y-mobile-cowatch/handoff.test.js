@@ -24,9 +24,9 @@ describe('handoff tickets', () => {
   it('mints a one-time code and redeems once', () => {
     const payload = sanitizeHandoffPayload({
       accessToken: 'enterprise-jwt-example',
-      enterpriseName: 'hhjczhjl',
+      enterpriseName: 'znzs',
       userName: 'admin',
-      accountKey: accountKeyOf('hhjczhjl', 'admin'),
+      accountKey: accountKeyOf('znzs', 'admin'),
       expiresAt: Date.now() + 60_000,
       preferSelect: true,
     })
@@ -46,7 +46,7 @@ describe('handoff tickets', () => {
   })
 
   it('accountKeyOf is stable for the same account', () => {
-    assert.equal(accountKeyOf('hhjczhjl', 'admin'), accountKeyOf('HHJCZHJL', 'Admin'))
-    assert.notEqual(accountKeyOf('hhjczhjl', 'admin'), accountKeyOf('hhjczhjl', 'other'))
+    assert.equal(accountKeyOf('znzs', 'admin'), accountKeyOf('znzs', 'Admin'))
+    assert.notEqual(accountKeyOf('znzs', 'admin'), accountKeyOf('znzs', 'other'))
   })
 })

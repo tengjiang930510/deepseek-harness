@@ -9,9 +9,11 @@
     const HOST_READY_TTL_MS = 60_000
     /** Negative / 401 cache — stop retry storms while PC is offline or unpaired. */
     const HOST_READY_MISS_TTL_MS = 8_000
-    const POLL_MS_BASE = 2_500
-    const POLL_MS_MAX = 20_000
-    const FETCH_TIMEOUT_MS = 5_000
+    /** First WaitGate retries should be snappy over FRP; back off only while waiting. */
+    const POLL_MS_BASE = 700
+    const POLL_MS_MAX = 12_000
+    /** Phone over FRP: 5s aborted too often on cold RTT; keep well under Desktop's 20s. */
+    const FETCH_TIMEOUT_MS = 12_000
     /** No tap/input for this long → drop live sockets; device cookie kept for 免登续连. */
     const IDLE_DISCONNECT_MS = 15 * 60 * 1000
     const IDLE_GATE_ID = 't4y-mobile-cowatch-idle'
