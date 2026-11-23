@@ -32,6 +32,100 @@
       return controller.signal
     }
 
+    const COARSE_DEVICE_MODELS = new Set([
+      'iPhone', 'iPad', 'Android', '手机', '浏览器', 'Mac', 'Windows', 'Windows Phone', '华为',
+      'Mobile device', 'DeepSeek Harness Android', '1', 'test1',
+    ])
+
+    /**
+     * @param {string} model
+     * @returns {boolean}
+     */
+    function isConcretePhoneModel(model) {
+      const m = String(model || '').trim()
+      if (m.length < 3 || m.length > 32) return false
+      return !COARSE_DEVICE_MODELS.has(m)
+    }
+
+    /**
+     * Prefer Android Build model when present; otherwise a coarse class (iPhone / Android / …).
+     * @param {string} [userAgent]
+     * @returns {string}
+     */
+    function modelFromUserAgent(userAgent) {
+      const ua = String(userAgent || (typeof navigator !== 'undefined' ? navigator.userAgent : '') || '')
+      const fromBuild = ua.match(/;\s*([^;)]+?)\s+Build\//i)
+      if (fromBuild?.[1]) {
+        const name = fromBuild[1].trim().replace(/\s+/g, ' ')
+        if (name && name.length <= 32 && !/^wv$/i.test(name)) return name.slice(0, 32)
+      }
+      const fromAndroid = ua.match(/Android\s+[\d.]+;\s*([^;)]+?)(?:\s+Build\/|[;)])/i)
+      if (fromAndroid?.[1]) {
+        const name = fromAndroid[1].trim().replace(/\s+/g, ' ')
+        if (
+          name
+          && name.length <= 32
+          && !/^wv$/i.test(name)
+          && !/^(U|zh-cn|zh-tw|en-us)$/i.test(name)
+        ) {
+          return name.slice(0, 32)
+        }
+      }
+      if (/iPhone/i.test(ua)) return 'iPhone'
+      if (/iPad/i.test(ua)) return 'iPad'
+      if (/Android/i.test(ua)) return 'Android'
+      if (/HarmonyOS|HUAWEI/i.test(ua)) return '华为'
+      if (/Mobile|phone/i.test(ua)) return '手机'
+      if (/Macintosh|Mac OS/i.test(ua)) return 'Mac'
+      if (/Windows/i.test(ua)) return 'Windows'
+      return '浏览器'
+    }
+
+    /**
+     * Cross-browser phone id. Concrete Android models (VER-AN10) use the model alone so
+     * Chrome / 系统浏览器 / 微信内置浏览器 share one fingerprint.
+     * @returns {Promise<string>}
+     */
+    async function crossBrowserDeviceFingerprint() {
+      const ua = String((typeof navigator !== 'undefined' ? navigator.userAgent : '') || '')
+      const model = modelFromUserAgent(ua)
+      if (isConcretePhoneModel(model)) return `xbf2.model.${model}`
+      const family = /iPhone|iPad|iPod/i.test(ua) ? 'ios' : (/Android/i.test(ua) ? 'android' : 'other')
+      let tz = ''
+      try {
+        tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''
+      } catch { /* ignore */ }
+      const screenObj = typeof screen !== 'undefined' ? screen : { width: 0, height: 0 }
+      const w = Number(screenObj.width) || 0
+      const h = Number(screenObj.height) || 0
+      const shortSide = Math.min(w, h)
+      const longSide = Math.max(w, h)
+      const dpr = Math.round((typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1) * 100) / 100
+      const parts = [
+        'v2',
+        family,
+        model,
+        `${shortSide}x${longSide}`,
+        String(dpr),
+        String(typeof navigator !== 'undefined' ? (navigator.maxTouchPoints || 0) : 0),
+        tz,
+      ]
+      const raw = parts.join('|')
+      try {
+        if (typeof crypto !== 'undefined' && crypto.subtle) {
+          const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw))
+          const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
+          return `xbf2.${hex}`
+        }
+      } catch { /* fall through */ }
+      let hash = 2166136261
+      for (let i = 0; i < raw.length; i += 1) {
+        hash ^= raw.charCodeAt(i)
+        hash = Math.imul(hash, 16777619)
+      }
+      return `xbf2.fb${(hash >>> 0).toString(16).padStart(8, '0')}`
+    }
+
     const copy = {
       zh: {
         titleChecking: '正在连接',

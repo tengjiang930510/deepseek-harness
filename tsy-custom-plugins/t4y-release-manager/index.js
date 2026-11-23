@@ -21,7 +21,7 @@ const CATALOG_CACHE_FILE = '.dsh-plugin-catalog-cache.json'
 const SUSPENDED_FILE = '.dsh-plugin-suspended.json'
 const LEGACY_CATALOG_URL = 'https://gitee.com/eureka96/tsy-dsh-plugins-hub/raw/master/wuhanmetro/catalog.json'
 const DEFAULT_REPOSITORY = 'https://gitee.com/eureka96/tsy-dsh-plugins-hub.git'
-const DEFAULT_API_BASE_URL = 'https://jgyw.crfsdi.com.cn:51111/backendapi'
+const DEFAULT_API_BASE_URL = 'https://jgyw.crfsdi.com.cn:51010/backendapi'
 /** Hub root; latest resolves to `{base}/{projectName}/plugins/{name}/latest.json`. */
 const PLUGIN_LATEST_BASE_URL = 'https://gitee.com/eureka96/tsy-dsh-plugins-hub/raw/master'
 

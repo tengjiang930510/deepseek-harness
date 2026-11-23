@@ -7,7 +7,7 @@
  */
 import { constants, publicEncrypt } from 'node:crypto'
 
-const apiBase = (process.env.T4Y_API_BASE || 'https://jgyw.crfsdi.com.cn:51111/backendapi').replace(/\/$/, '')
+const apiBase = (process.env.T4Y_API_BASE || 'https://jgyw.crfsdi.com.cn:51010/backendapi').replace(/\/$/, '')
 const enterpriseName = process.env.ENTERPRISE_NAME || ''
 const userName = process.env.ENTERPRISE_USER || ''
 const password = process.env.ENTERPRISE_PASSWORD || ''

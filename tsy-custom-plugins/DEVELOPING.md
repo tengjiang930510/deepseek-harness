@@ -61,8 +61,10 @@ pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-mobile-cowatch
 
 ## Desktop 开发循环
 
+**顺序固定：先改 Web（`tsy-custom-plugins/`），验证后再 sync/stage 到 Desktop。禁止直接改 `.dsh-trial-plugins`、profile `node_modules`、`.desktop-build/trial-plugins` 或 `win-unpacked` 里的拷贝当主修复路径。**
+
 1. 退出 Desktop。
-2. `node ./tsy-custom-plugins/scripts/sync-desktop-plugins.mjs`（同步到 `~/.dsh/profiles/desktop` 等）。
+2. `node ./tsy-custom-plugins/scripts/sync-desktop-plugins.mjs`（把仓库同步到 `~/.dsh/profiles/desktop` 等）。
 3. 再开 Desktop（企业联调优先开 **已打进 trial-defaults 的安装包 / win-unpacked**，见下方注意事项；不要默认用裸 `pnpm start:desktop` 验收登录门禁）。
 
 ### 注意事项：禁止验收时落到官方欢迎页（登录 / 添加 API Key）
@@ -101,7 +103,9 @@ Web / Desktop profile 常用 `link:` 指向 `tsy-custom-plugins/<pkg>`。**Junct
 |---|---|
 | 新增 Host 本地 `.js` 并被 `import` | 必须进 `package.json` → `files`，并 `git add` |
 | 新增 `client-src/` 分片 | 写入 `scripts/bundle-client.mjs` 的 `PART_FILES`，跑 bundle，源文件也要提交（只交生成的 `client.js` 不够维护） |
-| 输入框「技能」依赖 `ui-input-trigger.toggleTrigger` | hub 与该 API 须同批交付；只 stage hub、核心包仍是旧构建会点按钮失败 |
+| 输入框「技能」依赖 `ui-input-trigger.toggleTrigger` | hub 与该 API 须同批交付；只 stage hub、核心包仍是旧构建会点按钮失败。成功判定须把「已开再点关闭」算成功，不能只看 `menu.open` |
+| FRP `frpc.toml` 被 stop 删掉但进程残留 | cowatch 只杀自有僵死 frpc 并 `needReconnect`；**toml/启动只走 dsh-mobile 官方 remote API**，禁止双写双拉 |
+| 手机「已连接」不刷新 | Gateway/Host 见设备 cookie 即记在线（流量即心跳）；不要依赖手机 CSRF presence POST |
 | stage 后自检 | 脚本会核对 `files` 是否落盘；改完务必 `node …/stage-desktop-trial-plugins.mjs` 再打包 |
 
 ## 打试用安装包（Mac unsigned）

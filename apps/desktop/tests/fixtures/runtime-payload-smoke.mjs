@@ -132,6 +132,11 @@ function checkHtml() {
   assert.match(markdown, /\| x\s+\| 7\s+\|/u)
 }
 
+const summary = () => JSON.stringify({
+  node: process.versions.node, platform: process.platform, arch: process.arch,
+  koffi: true, sharp: true, html: true, pty: true, pnpm: true, grep: true, glob: true,
+})
+
 try {
   const builtin = requireRuntime('node-addon-require-builtin')
   assert.equal(typeof builtin.requireBuiltin('internal/modules/esm/loader').getOrInitializeCascadedLoader, 'function')
@@ -153,8 +158,14 @@ try {
   await rm(scratch, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 })
 }
 
+if (process.platform === 'win32') {
+  // ConPTY / native-addon workers can keep Electron's loop alive after every check
+  // succeeds; packaging's 120s execFile deadline then SIGTERM-fails a green run.
+  console.log(summary())
+  process.exit(0)
+}
+
 // Natural event-loop drain includes node-pty's worker and console-list helper teardown.
 process.once('beforeExit', () => {
-  console.log(JSON.stringify({ node: process.versions.node, platform: process.platform, arch: process.arch,
-    koffi: true, sharp: true, html: true, pty: true, pnpm: true, grep: true, glob: true }))
+  console.log(summary())
 })

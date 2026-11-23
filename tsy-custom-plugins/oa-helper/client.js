@@ -288,23 +288,36 @@ window.__ModuleLoader__.load({
           React.createElement('div', { className: 't4y-office-card-frame' },
             React.createElement('p', { className: 't4y-office-note', style: { margin: 0 } }, t('status'))))
       }
-      if (node.outcome?.text !== '已创建办公申请，请在会话卡片中补全并确认。') {
+      const outcomeText = typeof node.outcome?.text === 'string' ? node.outcome.text : ''
+      // Mount the editable card for prepare / analyze outcomes (not only one exact string).
+      const wantsEditableCard = node.outcome?.kind !== 'error'
+        && (
+          /已创建办公申请/.test(outcomeText)
+          || /请在会话卡片中补全/.test(outcomeText)
+          || /正在分析申请内容/.test(outcomeText)
+          || outcomeText === ''
+        )
+      if (!wantsEditableCard) {
         return React.createElement('section', {
           className: 't4y-office-card',
           role: node.outcome?.kind === 'error' ? 'alert' : 'status',
         }, React.createElement('div', { className: 't4y-office-card-frame' },
-          React.createElement('p', { className: 't4y-office-note', style: { margin: 0 } }, node.outcome?.text || t('status'))))
+          React.createElement('p', { className: 't4y-office-note', style: { margin: 0 } }, outcomeText || t('status'))))
       }
       const parsed = parseOaHelperCommandArgs(args)
       const form = { kind: parsed.kind, ...parseCommand(parsed.kind, parsed.rest) }
       const id = `${sessionId}:${node.commandId}`
-      return React.createElement(OfficeCard, {
-        key: id,
-        node: { id, data: form },
-        t,
-        sessionId,
-        submitLeave,
-      })
+      // Keep Host prepare copy visible above the editable card (commandview replaces the
+      // default outcome bubble; checklist + users still need「已创建办公申请」in the thread).
+      const prepareNote = outcomeText || '已创建办公申请，请在会话卡片中补全并确认。'
+      return React.createElement(React.Fragment, { key: id },
+        React.createElement('p', { className: 't4y-office-note', role: 'status', style: { margin: '0 0 8px' } }, prepareNote),
+        React.createElement(OfficeCard, {
+          node: { id, data: form },
+          t,
+          sessionId,
+          submitLeave,
+        }))
     }
     function officeFormState(event) {
       if (event.type === 'command/run') {

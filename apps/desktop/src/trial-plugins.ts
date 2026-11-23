@@ -92,14 +92,13 @@ function bootstrapPlugins(pluginsDir: string): BootstrapPlugin[] {
 }
 
 /**
- * Copy installer-carried plugins into the Desktop profile and enable each one once.
+ * Copy installer-carried plugins into the Desktop profile and enable each one.
  *
- * A plugin is seeded only when the profile does not already declare it, so user-managed installs are untouched.
- * Installer-resource dependencies created by pre-manifest Desktop releases are migrated to the explicit bootstrap
- * set. After seeding, a plugin the user removes stays removed; one the profile still declares is replaced when the
- * installer carries another version. Recovery that disables bundles is likewise preserved.
+ * Carried packages are deployment-owned: the installer always wins over registry, link, or prior trial
+ * copies. A missing declaration is re-added; a different version or dependency spec is replaced. Legacy
+ * installer-volume `file:…/Resources/trial-plugins/…` specs for packages no longer carried are removed.
  *
- * Dependency specs for installer-copied packages use {@link TRIAL_PLUGINS_STORE} under the profile, not the
+ * Dependency specs for bare installer copies use {@link TRIAL_PLUGINS_STORE} under the profile, not the
  * installer path, so a DMG or network volume may unmount after the first seed without breaking later resolves.
  * @param profileDir - Initialized Desktop profile directory holding `package.json`.
  * @param pluginsDir - Resource directory whose children each hold one package with its production dependencies.
@@ -142,17 +141,8 @@ export function seedTrialPlugins(profileDir: string, pluginsDir: string): void {
     const store = join(profileDir, TRIAL_PLUGINS_STORE, name)
     const previous = seeded[name]
     const currentSpec = dependencies[name]
-    const needsLegacyRewrite = isLegacyInstallerResource(currentSpec)
-    if (previous === undefined) {
-      if (name in dependencies && !isLegacyInstallerResource(dependencies[name])) continue
-      dependencies[name] = recordedSpec
-      if (!bundles.includes(name)) bundles.push(name)
-    } else if (!(name in dependencies)) {
-      // User removed the package after seeding; do not re-add it.
-      continue
-    } else if (
-      !needsLegacyRewrite
-      && previous === version
+    if (
+      previous === version
       && currentSpec === recordedSpec
       && existsSync(join(target, 'package.json'))
       && existsSync(join(store, 'package.json'))
@@ -160,6 +150,7 @@ export function seedTrialPlugins(profileDir: string, pluginsDir: string): void {
       continue
     }
     dependencies[name] = recordedSpec
+    if (!bundles.includes(name)) bundles.push(name)
     installTrialCopy(profileDir, name, source)
     seeded[name] = version
     changed = true

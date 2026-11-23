@@ -107,6 +107,26 @@ const BUILTIN_PROFILE_BUNDLES = new Set([
   '@deepseek-ai/dsh-sdk-minimal',
 ])
 
+/**
+ * Deployment-owned Wuhan Metro packages stay out of「已安装插件」.
+ * Covers platform `t4y-*` / `dsh-mobile`, installer trial seeds, and Hub/Gitee
+ * capability installs (e.g. `oa-helper`). Users manage those under 设置 → 授权插件.
+ * @param name - package name as the Host reports it (scoped or bare).
+ * @param source - profile dependency spec when the Host reports one.
+ * @returns whether the Installed list must hide this package.
+ */
+export function isDeploymentOwnedEnterprisePlugin(name: string, source?: string): boolean {
+  const bare = name.startsWith('@') ? name.slice(name.indexOf('/') + 1) : name
+  if (bare.startsWith('t4y-') || bare === 'dsh-mobile') return true
+  if (source === undefined || source === '') return false
+  // Trial seed store, Hub/Gitee release materializations, and tree-local enterprise links.
+  // Specs look like `file:.dsh-plugin-releases/...`, `file:C:/.../.dsh-trial-plugins/...`,
+  // or `link:.../tsy-custom-plugins/oa-helper`.
+  return /(?:^|[\\/:])\.dsh-trial-plugins(?:[\\/]|$)/u.test(source)
+    || /(?:^|[\\/:])\.dsh-plugin-releases(?:[\\/]|$)/u.test(source)
+    || /(?:^|[\\/:])tsy-custom-plugins(?:[\\/]|$)/u.test(source)
+}
+
 /** The optional bundles the main list always holds, in this order; new bundles join the main list. */
 const EXTENSION_BUNDLES = [
   '@deepseek-ai/dsh-experimental-agent-team-profile',
@@ -1536,6 +1556,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
   // selected name the Host cannot read; the installation's other bundles are inspected in the Settings
   // Plugins section's Plugin list tab.
   const listed = state.packages.filter(pkg => !BUILTIN_PROFILE_BUNDLES.has(pkg.name)
+    && !isDeploymentOwnedEnterprisePlugin(pkg.name, pkg.source)
     && (pkg.installed || pkg.official || pkg.error !== undefined))
   const mine = listed.filter(pkg => !pkg.official)
   const official = listed.filter(pkg => pkg.official)

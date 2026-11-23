@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>简易壳原型 · 对齐 Go · 随系统</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --surface2: #f1f5f9;
+      --ink: #0f172a;
+      --muted: #64748b;
+      --online: #22c55e;
+      --line: rgba(15, 23, 42, 0.08);
+      --shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
+      --shadow-strong: 0 10px 28px rgba(15, 23, 42, 0.10);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0b1220;
+        --surface: #1c2433;
+        --surface2: #252e3d;
+        --ink: #f2f4f7;
+        --muted: #9aa3b2;
+        --online: #34d399;
+        --line: rgba(255, 255, 255, 0.08);
+        --shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+        --shadow-strong: 0 10px 28px rgba(0, 0, 0, 0.35);
+      }
+    }
+    body { background: #e2e8f0; margin: 0; font-family: "PingFang SC", "Segoe UI", sans-serif; color: var(--ink); }
+    @media (prefers-color-scheme: dark) { body { background: #05080f; } }
+    .phone {
+      width: 390px; height: 844px; margin: 24px auto; border-radius: 28px; overflow: hidden;
+      background: var(--bg); color: var(--ink); position: relative;
+      box-shadow: 0 24px 80px rgba(0,0,0,.18);
+    }
+    .topbar {
+      position: absolute; left: 12px; right: 12px; top: 12px; z-index: 20;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .icon, .model {
+      height: 40px; border-radius: 999px; background: var(--surface);
+      display: inline-flex; align-items: center; justify-content: center;
+      border: 1px solid var(--line); color: var(--ink); flex: none;
+      box-shadow: var(--shadow);
+    }
+    .icon { width: 40px; }
+    .model { width: auto; max-width: 112px; padding: 0 12px; font-size: 13px; gap: 4px; }
+    .title-pill {
+      flex: 1; min-width: 0; height: 44px; border-radius: 999px; background: var(--surface);
+      display: flex; flex-direction: column; justify-content: center; padding: 0 16px;
+      box-shadow: var(--shadow); border: 1px solid var(--line); color: var(--ink); text-align: left;
+    }
+    .title-pill strong { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .title-pill span { font-size: 11px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+    .dot { width: 7px; height: 7px; border-radius: 999px; background: var(--online); }
+    .welcome { position: absolute; inset: 90px 20px 180px; display: flex; flex-direction: column; justify-content: center; }
+    .welcome h1 { margin: 0; font-size: 40px; font-weight: 600; }
+    .welcome p { margin: 8px 0 20px; color: var(--muted); }
+    .suggest { display: flex; flex-direction: column; gap: 10px; }
+    .suggest button {
+      text-align: left; border: 1px solid var(--line); border-radius: 999px; background: var(--surface);
+      color: var(--ink); padding: 14px 16px; font-size: 14px; box-shadow: var(--shadow);
+    }
+    .composer-wrap { position: absolute; left: 12px; right: 12px; bottom: 18px; display: flex; flex-direction: column; gap: 8px; }
+    .capsules { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+    .capsules::-webkit-scrollbar { display: none; }
+    .cap {
+      flex: none; height: 34px; padding: 0 14px; border-radius: 999px; background: var(--surface);
+      border: 1px solid var(--line); color: var(--ink); font-size: 13px; box-shadow: var(--shadow);
+    }
+    .composer {
+      display: flex; align-items: center; gap: 8px; background: var(--surface);
+      border-radius: 28px; padding: 8px 10px; box-shadow: var(--shadow-strong);
+      border: 1px solid var(--line);
+    }
+    .composer input { flex: 1; border: 0; outline: none; background: transparent; color: var(--ink); font-size: 15px; }
+    .composer input::placeholder { color: var(--muted); }
+    .round { width: 36px; height: 36px; border-radius: 999px; border: 0; background: transparent; color: var(--ink); display: grid; place-items: center; }
+    .rail { position: absolute; inset: 0; z-index: 40; pointer-events: none; }
+    .rail.open { pointer-events: auto; }
+    .mask { position: absolute; inset: 0; background: color-mix(in srgb, var(--ink) 35%, transparent); opacity: 0; transition: .2s; }
+    .rail.open .mask { opacity: 1; }
+    .panel {
+      position: absolute; top: 0; right: 0; bottom: 0; width: 78%; background: var(--surface);
+      transform: translateX(105%); transition: .22s ease; padding: 56px 16px 24px;
+      box-shadow: var(--shadow-strong);
+    }
+    .rail.open .panel { transform: none; }
+    .panel button { display: block; width: 100%; text-align: left; border: 0; background: transparent; color: var(--ink); padding: 14px 12px; border-radius: 14px; font-size: 15px; }
+  </style>
+</head>
+<body>
+  <p class="text-slate-600 text-center text-sm pt-4">对齐 Go 布局 · 颜色随系统（prefers-color-scheme）</p>
+  <div class="phone" id="phone">
+    <div class="topbar">
+      <button type="button" class="icon" id="btnMenu" aria-label="菜单">☰</button>
+      <button type="button" class="title-pill">
+        <strong>新对话</strong>
+        <span><i class="dot"></i>DESKTOP-JULY0…</span>
+      </button>
+      <button type="button" class="model" aria-label="选择模型">✦ Qwen 3… ▾</button>
+    </div>
+    <div class="welcome">
+      <h1>中午好</h1>
+      <p>今天想做点什么?</p>
+      <div class="suggest">
+        <button type="button">看看工作区有什么</button>
+        <button type="button">写个词频统计脚本</button>
+        <button type="button">新建 Node.js 项目</button>
+        <button type="button">rebase 还是 merge</button>
+      </div>
+    </div>
+    <div class="composer-wrap">
+      <div class="capsules" aria-label="插件快捷">
+        <button type="button" class="cap">办公助手</button>
+        <button type="button" class="cap">OA 请假</button>
+      </div>
+      <div class="composer">
+        <button type="button" class="round" aria-label="加号">＋</button>
+        <input placeholder="给 DSH 发消息…" />
+        <button type="button" class="round" aria-label="语音">🎤</button>
+      </div>
+    </div>
+    <div class="rail" id="rail">
+      <div class="mask" id="mask"></div>
+      <aside class="panel">
+        <div style="color:var(--muted);font-size:12px;padding:0 12px 8px">快捷入口</div>
+        <button type="button">插件 · 授权与安装</button>
+        <button type="button">设置</button>
+        <button type="button">会话列表</button>
+        <button type="button" id="btnClose">关闭</button>
+      </aside>
+    </div>
+  </div>
+  <script>
+    const rail = document.getElementById('rail')
+    const open = () => rail.classList.add('open')
+    const close = () => rail.classList.remove('open')
+    document.getElementById('btnMenu').onclick = open
+    document.getElementById('mask').onclick = close
+    document.getElementById('btnClose').onclick = close
+  </script>
+</body>
+</html>

@@ -11,7 +11,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { MenuItemButton } from '@deepseek-ai/dsh-client-ui-primitives'
 import { StrictMode, type ReactNode } from 'react'
 import { createNavigationStore } from '../src/client/navigation-store.ts'
-import { PluginManagerPage } from '../src/client/PluginManagerPage.tsx'
+import { isDeploymentOwnedEnterprisePlugin, PluginManagerPage } from '../src/client/PluginManagerPage.tsx'
 import { PluginRefreshToast } from '../src/client/PluginRefreshToast.tsx'
 import type { PluginManagerPageProps } from '../src/client/index.ts'
 import type { PluginTab } from '../src/client/tab-ledger.ts'
@@ -671,6 +671,31 @@ describe('PluginManagerPage', () => {
       '@deepseek-ai/dsh-experimental-agent-team-profile', '@acme/dsh-base', 'dsh-better-sidebar',
     ])
     expect(document.querySelector('[data-plugin-count]')).toBeNull()
+  })
+
+  it('omits deployment-owned enterprise plugins from the Installed list', () => {
+    expect(isDeploymentOwnedEnterprisePlugin('t4y-mobile-cowatch')).toBe(true)
+    expect(isDeploymentOwnedEnterprisePlugin('dsh-mobile')).toBe(true)
+    expect(isDeploymentOwnedEnterprisePlugin('@deepseek-ai/dsh-mobile')).toBe(true)
+    expect(isDeploymentOwnedEnterprisePlugin('oa-helper', 'file:.dsh-plugin-releases/wuhanmetro/oa-helper/abc/0.3.3')).toBe(true)
+    expect(isDeploymentOwnedEnterprisePlugin('oa-helper', 'link:D:/agentwork/deepseek-harness-zhs/tsy-custom-plugins/oa-helper')).toBe(true)
+    expect(isDeploymentOwnedEnterprisePlugin('t4y-brand', 'file:.dsh-trial-plugins/t4y-brand')).toBe(true)
+    expect(isDeploymentOwnedEnterprisePlugin('dsh-better-sidebar')).toBe(false)
+    expect(isDeploymentOwnedEnterprisePlugin('@acme/custom-tool', 'npm:@acme/custom-tool@1.0.0')).toBe(false)
+    renderTab({
+      packages: [
+        pkg({ name: 't4y-mobile-cowatch' }),
+        pkg({ name: 't4y-identity' }),
+        pkg({ name: 'dsh-mobile' }),
+        pkg({ name: '@deepseek-ai/dsh-mobile' }),
+        pkg({ name: 'oa-helper', source: 'file:.dsh-plugin-releases/wuhanmetro/oa-helper/abc/0.3.3' }),
+        pkg({ name: 'dsh-better-sidebar' }),
+        pkg({ name: '@acme/custom-tool' }),
+      ],
+    })
+    expect(screen.getAllByRole('listitem').map(card => card.getAttribute('data-plugin-package'))).toEqual([
+      'dsh-better-sidebar', '@acme/custom-tool',
+    ])
   })
 
   it.each([false, true])('shows an empty list for built-in bundles with errors and installed=%s', (installed) => {

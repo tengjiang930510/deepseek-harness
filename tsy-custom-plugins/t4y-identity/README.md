@@ -8,7 +8,7 @@ See [DEVELOPING.md](./DEVELOPING.md) for development.
 
 Connects to the existing backend login: `publicKey → RSA(PKCS1) 加密密码 → login → Authorization → getInfo / getRouters`. A full-screen gate appears when signed out; after login the account menu shows `user.nickName`.
 
-The browser does not call `apiBaseUrl` directly. It uses Host `POST /api/t4y-identity/enterprise-proxy` so mobile over cpolar/iroh reaches the enterprise login API through the PC (avoids split DNS / unreachable public :51111).
+The browser does not call `apiBaseUrl` directly. It uses Host `POST /api/t4y-identity/enterprise-proxy` so mobile over cpolar/iroh reaches the enterprise login API through the PC (avoids split DNS / unreachable public enterprise ports).
 
 After Desktop signs in and picks a project, the complete enterprise session is stored on Host via `PUT /api/t4y-identity/host-session` (`~/.dsh/t4y-identity/host-session.json`). A paired Mobile cold start `GET`s the same route to inherit it without signing in again; logout `DELETE`s / revoke clears it.
 
@@ -47,7 +47,7 @@ Session restore and enterprise switching preserve the current workspace and sess
 
 | Field | Description |
 |---|---|
-| `apiBaseUrl` | Default `https://jgyw.crfsdi.com.cn:51111/backendapi` |
+| `apiBaseUrl` | Default `https://jgyw.crfsdi.com.cn:51010/backendapi` (`:51111` is retired — do not use) |
 | `brokerBaseUrl` | Required. Key Broker address used by the DSH Host process |
 | `newApiBaseUrl` | Required. OpenAI-compatible `/v1` address for New API |
 

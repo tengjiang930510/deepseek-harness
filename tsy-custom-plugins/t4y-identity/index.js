@@ -36,7 +36,7 @@ export const inject = {
  * }} IdentityConfig
  */
 
-const DEFAULT_API_BASE_URL = 'https://jgyw.crfsdi.com.cn:51111/backendapi'
+const DEFAULT_API_BASE_URL = 'https://jgyw.crfsdi.com.cn:51010/backendapi'
 const MODEL_CREDENTIAL_REF = 'T4Y_NEW_API_KEY'
 const LLM_SETTINGS_NAMESPACE = 'llm-pi-ai'
 const LLM_PROVIDER = 't4y-newapi'
@@ -784,6 +784,29 @@ export function apply(ctx, config = {}) {
         return json(502, { error: result.payload?.error || 'broker_rejected' })
       }
       return json(200, { revoked: result.payload?.revoked === true })
+    },
+  })
+
+  /**
+   * Desktop-only restore of the disk JWT after a Client reload.
+   * Must not be used by phone/cowatch (those keep GET /host-session redaction).
+   * UA may be Electron or the branded `@deepseek-ai/dsh-desktop/...` string.
+   */
+  ctx.connection.fetch.register({
+    path: '/api/t4y-identity/host-session/desktop',
+    methods: ['GET'],
+    requestBody: 'buffered',
+    async fetch(request) {
+      const ua = request.headers.get('user-agent') || ''
+      if (!/Electron|dsh-desktop/i.test(ua)) return json(403, { error: 'desktop_only' })
+      const session = await readHostSessionFile()
+      if (!session) return json(404, { error: 'host_session_missing' })
+      let modelKeyPresent = false
+      try {
+        const resolved = await ctx.credentials.resolve(MODEL_CREDENTIAL_REF)
+        modelKeyPresent = typeof resolved?.value === 'string' && resolved.value !== ''
+      } catch { /* treat as missing */ }
+      return json(200, { session, modelKeyPresent })
     },
   })
 

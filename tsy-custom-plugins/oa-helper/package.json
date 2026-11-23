@@ -1,6 +1,6 @@
 {
   "name": "oa-helper",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "武汉地铁智能助手：办公申请、请假/出差（菜单 name / 包名：oa-helper）。",
   "private": true,
   "type": "module",

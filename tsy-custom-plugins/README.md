@@ -26,6 +26,8 @@ This writes under `apps/desktop/.desktop-build/` (e.g. `t4y-trial-defaults.json`
 
 For enterprise-login builds that do not embed a model key, set `DSH_DESKTOP_TRIAL_DEFAULTS_FILE` to the absolute path of `tsy-custom-plugins/desktop-enterprise-defaults.json`. This non-secret marker selects the existing Desktop trial startup path so the enterprise plugin owns the login screen; it is not a model credential. The build must also include and enable `t4y-identity`.
 
+**Watch-out (recurring):** omitting that defaults file, or verifying with bare `pnpm start:desktop`, opens the stock Welcome window (“Sign in / Add API Key”) instead of the enterprise gate. After packaging, confirm `resources/trial-defaults.json` contains `T4Y_DESKTOP_ENTERPRISE_GATE`, and smoke the `win-unpacked` / installed app — see [DEVELOPING.md](./DEVELOPING.md) (Desktop section, 注意事项).
+
 ## Install into the Web profile (preferred)
 
 From the repository root (after `pnpm install`):

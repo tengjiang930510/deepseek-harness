@@ -352,6 +352,7 @@ export function enterpriseEnterPage() {
         localStorage.setItem(CURRENT_HOST_KEY, JSON.stringify(data._selectedHost))
       }
     } catch { /* ignore */ }
+    try { sessionStorage.removeItem('t4y.mobile.bootReload.v1') } catch { /* ignore */ }
     location.replace(typeof data.redirect === 'string' && data.redirect.startsWith('/') ? data.redirect : '/')
   }
 

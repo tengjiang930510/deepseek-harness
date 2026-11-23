@@ -26,6 +26,8 @@ node ./tsy-custom-plugins/scripts/seed-desktop-trial-defaults.mjs
 
 不内置模型 Key 的企业登录构建应将 `DSH_DESKTOP_TRIAL_DEFAULTS_FILE` 设为 `tsy-custom-plugins/desktop-enterprise-defaults.json` 的绝对路径。该非秘密标记选择现有 Desktop 试用启动路径，由企业插件提供登录界面；它不是模型凭据。构建还必须包含并启用 `t4y-identity`。
 
+**注意事项（反复踩坑）：** 漏带该 defaults、或用裸 `pnpm start:desktop` 验收时，会先弹出官方欢迎页「登录 / 添加 API Key」，而不是企业账号门禁。打包后确认 `resources/trial-defaults.json` 含 `T4Y_DESKTOP_ENTERPRISE_GATE`；验收用 `win-unpacked` / 安装包，细节见 [DEVELOPING.md](./DEVELOPING.md#注意事项禁止验收时落到官方欢迎页登录--添加-api-key)。
+
 ## 安装到 Web profile（推荐）
 
 在仓库根目录执行（先运行 `pnpm install`）：

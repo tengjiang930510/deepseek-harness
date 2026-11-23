@@ -1,0 +1,20 @@
+---
+description: After GitHub push, clear DeepSeek Harness (DSH) sessions under DSH_HOME
+alwaysApply: true
+---
+
+# Clear DSH sessions on GitHub push
+
+「对话 / 会话」means **DeepSeek Harness product sessions**, not Cursor chat threads.
+
+When the user asks to **push to GitHub** (`git push` / a workflow that pushes), after a **successful** push:
+
+1. Resolve `DSH_HOME` (`$env:DSH_HOME` on Windows, else `~/.dsh`).
+2. Delete all contents under `$DSH_HOME/sessions/`.
+3. Delete `$DSH_HOME/storages/session_projcache/` if present.
+4. Edit `$DSH_HOME/storages/workspace.json` if present: set `global.archivedSessionIds` and `global.pinnedSessionIds` to `[]`, and every workspace `sessionIds` to `[]` (keep workspace registrations).
+5. If DeepSeek Harness Desktop is running, tell the user to **restart** it so the sidebar reloads an empty session list.
+
+If the user asks only to **clear DSH sessions / 清空会话** (no push), do steps 1–5 immediately.
+
+Do **not** delete credentials, settings, plugins, `t4y-identity`, or other non-session `$DSH_HOME` data unless the user explicitly asks.

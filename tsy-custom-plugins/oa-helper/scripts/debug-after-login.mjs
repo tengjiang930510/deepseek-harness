@@ -1,9 +1,9 @@
 import { chromium } from 'playwright'
 
 const LOGIN_URL =
-  'https://jgyw.crfsdi.com.cn:51111/smart-supervision-hhjc/#/company/hhjczhjl/login'
+  'https://jgyw.crfsdi.com.cn:51010/smart-supervision-znzs/#/company/znzs/login'
 const FORM_URL =
-  'https://jgyw.crfsdi.com.cn:51111/smart-supervision-hhjc/#/company/hhjczhjl/dashboard/2100475767734706178/form/wf87b15ec0603dfd28acd3cf'
+  'https://jgyw.crfsdi.com.cn:51010/smart-supervision-znzs/#/company/znzs/dashboard/2100475767734706178/form/wf87b15ec0603dfd28acd3cf'
 
 const username = process.env.OA_USERNAME
 const password = process.env.OA_PASSWORD

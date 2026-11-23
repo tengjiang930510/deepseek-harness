@@ -94,7 +94,7 @@ describe('trial plugin seeding', () => {
     expect(installedVersion(profile, 'initial-plugin')).toBe('1.0.0')
   })
 
-  it('keeps a plugin the user removed after seeding removed', () => {
+  it('re-seeds a plugin the user removed when the installer still carries it', () => {
     const { profile, plugins } = setup()
     carry(plugins, 'plugin-a', '1.0.0')
     seedTrialPlugins(profile, plugins)
@@ -104,8 +104,9 @@ describe('trial plugin seeding', () => {
     writeFileSync(join(profile, 'package.json'), JSON.stringify(removed))
     carry(plugins, 'plugin-a', '2.0.0')
     seedTrialPlugins(profile, plugins)
-    expect(manifest(profile).dependencies).toEqual({})
-    expect(manifest(profile).dsh.profile.bundles).not.toContain('plugin-a')
+    expect(manifest(profile).dependencies).toEqual({ 'plugin-a': `file:${TRIAL_PLUGINS_STORE}/plugin-a` })
+    expect(manifest(profile).dsh.profile.bundles).toContain('plugin-a')
+    expect(installedVersion(profile, 'plugin-a')).toBe('2.0.0')
   })
 
   it('replaces a seeded plugin when the installer carries another version', () => {
@@ -150,15 +151,16 @@ describe('trial plugin seeding', () => {
     expect(manifest(profile).dependencies['plugin-a']).toBe('git+https://example.invalid/hub.git#second')
   })
 
-  it('leaves a plugin the profile already declares under its own spec', () => {
+  it('force-replaces a profile dependency that used another install spec', () => {
     const { profile, plugins } = setup()
     const own = manifest(profile)
     own.dependencies['plugin-a'] = 'link:/somewhere/plugin-a'
+    own.dsh.profile.bundles.push('plugin-a')
     writeFileSync(join(profile, 'package.json'), JSON.stringify(own))
     carry(plugins, 'plugin-a', '1.0.0')
     seedTrialPlugins(profile, plugins)
-    expect(manifest(profile).dependencies['plugin-a']).toBe('link:/somewhere/plugin-a')
-    expect(existsSync(join(profile, 'node_modules', 'plugin-a'))).toBe(false)
+    expect(manifest(profile).dependencies['plugin-a']).toBe(`file:${TRIAL_PLUGINS_STORE}/plugin-a`)
+    expect(installedVersion(profile, 'plugin-a')).toBe('1.0.0')
   })
 
   it('rejects a carried plugin without a name and version', () => {

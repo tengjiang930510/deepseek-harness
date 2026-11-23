@@ -49,6 +49,100 @@ window.__ModuleLoader__.load({
       return controller.signal
     }
 
+    const COARSE_DEVICE_MODELS = new Set([
+      'iPhone', 'iPad', 'Android', '手机', '浏览器', 'Mac', 'Windows', 'Windows Phone', '华为',
+      'Mobile device', 'DeepSeek Harness Android', '1', 'test1',
+    ])
+
+    /**
+     * @param {string} model
+     * @returns {boolean}
+     */
+    function isConcretePhoneModel(model) {
+      const m = String(model || '').trim()
+      if (m.length < 3 || m.length > 32) return false
+      return !COARSE_DEVICE_MODELS.has(m)
+    }
+
+    /**
+     * Prefer Android Build model when present; otherwise a coarse class (iPhone / Android / …).
+     * @param {string} [userAgent]
+     * @returns {string}
+     */
+    function modelFromUserAgent(userAgent) {
+      const ua = String(userAgent || (typeof navigator !== 'undefined' ? navigator.userAgent : '') || '')
+      const fromBuild = ua.match(/;\s*([^;)]+?)\s+Build\//i)
+      if (fromBuild?.[1]) {
+        const name = fromBuild[1].trim().replace(/\s+/g, ' ')
+        if (name && name.length <= 32 && !/^wv$/i.test(name)) return name.slice(0, 32)
+      }
+      const fromAndroid = ua.match(/Android\s+[\d.]+;\s*([^;)]+?)(?:\s+Build\/|[;)])/i)
+      if (fromAndroid?.[1]) {
+        const name = fromAndroid[1].trim().replace(/\s+/g, ' ')
+        if (
+          name
+          && name.length <= 32
+          && !/^wv$/i.test(name)
+          && !/^(U|zh-cn|zh-tw|en-us)$/i.test(name)
+        ) {
+          return name.slice(0, 32)
+        }
+      }
+      if (/iPhone/i.test(ua)) return 'iPhone'
+      if (/iPad/i.test(ua)) return 'iPad'
+      if (/Android/i.test(ua)) return 'Android'
+      if (/HarmonyOS|HUAWEI/i.test(ua)) return '华为'
+      if (/Mobile|phone/i.test(ua)) return '手机'
+      if (/Macintosh|Mac OS/i.test(ua)) return 'Mac'
+      if (/Windows/i.test(ua)) return 'Windows'
+      return '浏览器'
+    }
+
+    /**
+     * Cross-browser phone id. Concrete Android models (VER-AN10) use the model alone so
+     * Chrome / 系统浏览器 / 微信内置浏览器 share one fingerprint.
+     * @returns {Promise<string>}
+     */
+    async function crossBrowserDeviceFingerprint() {
+      const ua = String((typeof navigator !== 'undefined' ? navigator.userAgent : '') || '')
+      const model = modelFromUserAgent(ua)
+      if (isConcretePhoneModel(model)) return `xbf2.model.${model}`
+      const family = /iPhone|iPad|iPod/i.test(ua) ? 'ios' : (/Android/i.test(ua) ? 'android' : 'other')
+      let tz = ''
+      try {
+        tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''
+      } catch { /* ignore */ }
+      const screenObj = typeof screen !== 'undefined' ? screen : { width: 0, height: 0 }
+      const w = Number(screenObj.width) || 0
+      const h = Number(screenObj.height) || 0
+      const shortSide = Math.min(w, h)
+      const longSide = Math.max(w, h)
+      const dpr = Math.round((typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1) * 100) / 100
+      const parts = [
+        'v2',
+        family,
+        model,
+        `${shortSide}x${longSide}`,
+        String(dpr),
+        String(typeof navigator !== 'undefined' ? (navigator.maxTouchPoints || 0) : 0),
+        tz,
+      ]
+      const raw = parts.join('|')
+      try {
+        if (typeof crypto !== 'undefined' && crypto.subtle) {
+          const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw))
+          const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
+          return `xbf2.${hex}`
+        }
+      } catch { /* fall through */ }
+      let hash = 2166136261
+      for (let i = 0; i < raw.length; i += 1) {
+        hash ^= raw.charCodeAt(i)
+        hash = Math.imul(hash, 16777619)
+      }
+      return `xbf2.fb${(hash >>> 0).toString(16).padStart(8, '0')}`
+    }
+
     const copy = {
       zh: {
         titleChecking: '正在连接',
@@ -832,11 +926,29 @@ window.__ModuleLoader__.load({
 
     // --- client-src/phone-waitgate.js ---
     /**
-     * Best-effort: rename dsh-mobile device label to enterprise displayName (Codex-style user binding).
+     * Best-effort: attach enterprise account + cross-browser device fingerprint.
      * @param {object} session
      */
     function bindDeviceLabel(session) {
       const displayName = typeof session?.displayName === 'string' ? session.displayName.trim() : ''
+      const model = modelFromUserAgent()
+      void (async () => {
+        let fingerprint = ''
+        try {
+          fingerprint = await crossBrowserDeviceFingerprint()
+        } catch { /* ignore */ }
+        void rawFetch('/api/t4y-mobile-cowatch/register-device', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            fingerprint: fingerprint || undefined,
+            model,
+            account: displayName || undefined,
+          }),
+          signal: timeoutSignal(FETCH_TIMEOUT_MS),
+        }).catch(() => { /* non-blocking */ })
+      })()
       if (displayName === '') return
       void rawFetch('/api/t4y-mobile-cowatch/bind-device-label', {
         method: 'POST',
@@ -1111,54 +1223,72 @@ window.__ModuleLoader__.load({
 
     // --- client-src/phone-presence.js ---
     /**
-     * Pseudo-live「已连接」: enter beat + leave on hide; re-enter when the tab returns.
-     * No periodic heartbeat — scales to many phones without Host chatter.
+     * Desktop「已连接」is driven by Host presence rows created at pair/register/enter,
+     * refreshed by cookie traffic, and cleared by an explicit leave beacon.
      */
     function installPhonePresence() {
-      if (typeof window === 'undefined' || typeof document === 'undefined') return
-      const PATH = '/api/t4y-mobile-cowatch/presence'
+      if (typeof window === 'undefined') return
 
-      /**
-       * @param {boolean} online
-       * @param {{ keepalive?: boolean }} [options]
-       */
-      function beat(online, options = {}) {
-        const body = JSON.stringify({ online })
-        const keepalive = options.keepalive === true
+      /** @type {boolean | null} */
+      let desiredOnline = null
+      /** @type {Promise<void>} */
+      let chain = Promise.resolve()
+
+      const postPresence = (online, keepalive = false) => {
+        const body = JSON.stringify({ online: online === true })
         try {
-          if (keepalive && typeof navigator.sendBeacon === 'function') {
+          if (online !== true && typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
             const blob = new Blob([body], { type: 'application/json' })
-            if (navigator.sendBeacon(PATH, blob)) return
+            if (navigator.sendBeacon('/api/t4y-mobile-cowatch/presence', blob)) return Promise.resolve()
           }
         } catch { /* fall through to fetch */ }
-        void rawFetch(PATH, {
+        return fetch('/api/t4y-mobile-cowatch/presence', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          keepalive: keepalive === true,
+          headers: { 'content-type': 'application/json' },
           body,
-          credentials: 'include',
-          keepalive,
-        }).catch(() => { /* ignore transient FRP blips */ })
+        }).then(() => undefined, () => undefined)
       }
 
-      function leave() {
-        beat(false, { keepalive: true })
+      const flush = () => {
+        chain = chain.then(async () => {
+          const target = desiredOnline
+          if (target === null) return
+          await postPresence(target === true, target !== true)
+          // A newer leave/enter may have flipped desired while we were in flight.
+          if (desiredOnline !== target && desiredOnline !== null) {
+            await postPresence(desiredOnline === true, desiredOnline !== true)
+          }
+        })
+        return chain
       }
 
-      function enter() {
-        beat(true)
+      const leave = () => {
+        desiredOnline = false
+        void flush()
       }
 
-      // Expose for idle gate — socket drop should clear PC「已连接」without a heartbeat loop.
+      const enter = () => {
+        desiredOnline = true
+        void flush()
+      }
+
       window.__t4yCowatchPresence = { enter, leave }
 
-      enter()
-      window.addEventListener('pagehide', leave)
-      window.addEventListener('beforeunload', leave)
-      window.addEventListener('pageshow', enter)
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') enter()
-        else leave()
-      })
+      try {
+        if (document.readyState === 'complete') enter()
+        else window.addEventListener('load', () => enter(), { once: true })
+      } catch { /* ignore */ }
+
+      try {
+        window.addEventListener('pagehide', () => leave())
+        window.addEventListener('beforeunload', () => leave())
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'hidden') leave()
+          else if (document.visibilityState === 'visible') enter()
+        })
+      } catch { /* ignore */ }
     }
 
     // --- client-src/desktop-access.js ---
@@ -1701,7 +1831,7 @@ window.__ModuleLoader__.load({
             <h2 id="t4y-ma-qr-title">扫码连接本机</h2>
             <button type="button" class="t4y-ma-qr-close" data-action="close" aria-label="关闭">×</button>
           </div>
-          <p class="t4y-ma-qr-desc">用手机摄像头扫码，免登录进入当前电脑。二维码约 2 分钟有效，过期可刷新。</p>
+          <p class="t4y-ma-qr-desc">用手机摄像头扫码，免登录进入当前电脑。每张码只能扫一次；换浏览器请先刷新二维码再扫。</p>
           <p class="t4y-ma-qr-connected" data-connected data-empty="1">暂无手机连接</p>
           <div class="t4y-ma-qr-frame">
             <div class="t4y-ma-qr-svg" data-qr data-state="loading" aria-live="polite">正在生成</div>
@@ -1714,53 +1844,66 @@ window.__ModuleLoader__.load({
         </div>`
         document.body.appendChild(root)
         const connectedEl = root.querySelector('[data-connected]')
-        const paintConnected = async () => {
-          if (!(connectedEl instanceof HTMLElement)) return
-          connectedEl.textContent = formatConnectedBanner(await fetchConnectedDevices())
-          connectedEl.dataset.empty = /暂无/.test(connectedEl.textContent) ? '1' : '0'
-        }
-        void paintConnected()
-        const connectedTimer = window.setInterval(() => { void paintConnected() }, 15_000)
-        const onKey = (event) => {
-          if (event.key === 'Escape') {
-            event.preventDefault()
-            closeQrPanel()
+        /** @type {string} */
+        let lastConnectedKey = ''
+        /** @type {boolean} */
+        let paintBusy = false
+        /** @type {ReturnType<typeof window.setTimeout> | undefined} */
+        let qrExpireTimer
+        const clearQrExpireTimer = () => {
+          if (qrExpireTimer !== undefined) {
+            window.clearTimeout(qrExpireTimer)
+            qrExpireTimer = undefined
           }
         }
-        window.addEventListener('keydown', onKey)
-        qrPanelCleanup = () => {
-          window.clearInterval(connectedTimer)
-          window.removeEventListener('keydown', onKey)
-        }
-        root.addEventListener('click', (event) => {
-          if (event.target === root) closeQrPanel()
-        })
-        for (const btn of root.querySelectorAll('[data-action="close"]')) {
-          btn.addEventListener('click', () => closeQrPanel())
+        const armQrExpireRefresh = (expiresAt) => {
+          clearQrExpireTimer()
+          if (!(typeof expiresAt === 'number') || !Number.isFinite(expiresAt)) return
+          const wait = Math.max(0, expiresAt - Date.now() + 250)
+          qrExpireTimer = window.setTimeout(() => {
+            qrExpireTimer = undefined
+            if (!document.getElementById(QR_ROOT_ID)) return
+            void paint()
+          }, wait)
         }
         const paint = async () => {
+          if (paintBusy) return
+          paintBusy = true
+          clearQrExpireTimer()
           const box = root.querySelector('[data-qr]')
           const meta = root.querySelector('[data-meta]')
-          if (!(box instanceof HTMLElement) || !(meta instanceof HTMLElement)) return
+          if (!(box instanceof HTMLElement) || !(meta instanceof HTMLElement)) {
+            paintBusy = false
+            return
+          }
           box.dataset.state = 'loading'
           box.textContent = '正在生成'
           meta.hidden = true
           meta.textContent = ''
           try {
-            // Product surface is Desktop only (`dsh web` is dev/test). Soft-on
-            // ensureRemoteTunnel keeps FRP warm; mint QR without reconnect when
-            // already ready — reconnect only repairs a down/broken tunnel.
+            // FrpController must be ready (gateway()) before pairing/open.
             try {
               const originInfo = await syncPerHostOrigin()
               const snap = await ensureFrpTunnel({ reason: 'qr' })
-              if (snap?.state === 'ready' || snap?.running === true) {
+              if (snap?.state === 'ready') {
                 warmPublicOrigin(originInfo?.publicOrigin || snap?.origin)
               }
-            } catch { /* pairing open will fail loud if remote is down */ }
-            const data = await adminJson('/api/mobile-access/remote/pairing/open', {
-              method: 'POST',
-              body: '{}',
-            })
+            } catch { /* pairing open retries below */ }
+            let data
+            try {
+              data = await adminJson('/api/mobile-access/remote/pairing/open', {
+                method: 'POST',
+                body: '{}',
+              })
+            } catch (pairError) {
+              const msg = pairError instanceof Error ? pairError.message : ''
+              if (!/gateway_stopped/i.test(msg)) throw pairError
+              await ensureFrpTunnel({ reason: 'qr' })
+              data = await adminJson('/api/mobile-access/remote/pairing/open', {
+                method: 'POST',
+                body: '{}',
+              })
+            }
             const pairUrl = typeof data?.pairUrl === 'string' ? data.pairUrl : ''
             const qrSvg = typeof data?.qrSvg === 'string' ? data.qrSvg : ''
             const expiresAt = typeof data?.expiresAt === 'number' ? data.expiresAt : 0
@@ -1775,6 +1918,7 @@ window.__ModuleLoader__.load({
             if (expiresAt > Date.now()) {
               meta.hidden = false
               meta.textContent = `有效至 ${new Date(expiresAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+              armQrExpireRefresh(expiresAt)
             } else {
               meta.hidden = true
             }
@@ -1785,7 +1929,43 @@ window.__ModuleLoader__.load({
               ? `生成失败：${detail}`
               : '生成失败，请确认移动访问已开启，并检查网络后重试'
             meta.hidden = true
+          } finally {
+            paintBusy = false
           }
+        }
+        const paintConnected = async () => {
+          if (!(connectedEl instanceof HTMLElement)) return
+          const snapshot = await fetchConnectedDevices()
+          connectedEl.textContent = formatConnectedBanner(snapshot)
+          connectedEl.dataset.empty = /暂无/.test(connectedEl.textContent) ? '1' : '0'
+          const key = snapshot.devices.map((device) => String(device?.id || '')).filter(Boolean).sort().join(',')
+          // After a successful scan the token is spent — mint a fresh QR so switching browsers works.
+          if (lastConnectedKey !== '' && key !== lastConnectedKey) {
+            lastConnectedKey = key
+            void paint()
+            return
+          }
+          lastConnectedKey = key
+        }
+        void paintConnected()
+        const connectedTimer = window.setInterval(() => { void paintConnected() }, 3_000)
+        const onKey = (event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            closeQrPanel()
+          }
+        }
+        window.addEventListener('keydown', onKey)
+        qrPanelCleanup = () => {
+          clearQrExpireTimer()
+          window.clearInterval(connectedTimer)
+          window.removeEventListener('keydown', onKey)
+        }
+        root.addEventListener('click', (event) => {
+          if (event.target === root) closeQrPanel()
+        })
+        for (const btn of root.querySelectorAll('[data-action="close"]')) {
+          btn.addEventListener('click', () => closeQrPanel())
         }
         root.querySelector('[data-action="refresh"]')?.addEventListener('click', () => { void paint() })
         await paint()
@@ -1811,16 +1991,29 @@ window.__ModuleLoader__.load({
        * @param {{ devices: { label?: string, online?: boolean }[], onlineCount: number }} snapshot
        * @returns {string}
        */
+      /**
+       * Prefer Host-enriched label (`iPhone · a1b2c3d4（管理员）`); fall back to model/shortId.
+       * @param {{ label?: string, model?: string, shortId?: string, account?: string, id?: string }} device
+       * @returns {string}
+       */
+      function connectedDeviceLabel(device) {
+        if (typeof device?.label === 'string' && device.label.trim() !== '') return device.label.trim()
+        const model = typeof device?.model === 'string' && device.model.trim() !== ''
+          ? device.model.trim()
+          : '手机'
+        const shortId = typeof device?.shortId === 'string' && device.shortId !== ''
+          ? device.shortId
+          : (typeof device?.id === 'string' && device.id.length >= 8 ? device.id.slice(0, 8) : '')
+        const base = shortId ? `${model} · ${shortId}` : model
+        const account = typeof device?.account === 'string' ? device.account.trim() : ''
+        return account && account !== model ? `${base}（${account}）` : base
+      }
+
       function formatConnectedHint(snapshot) {
-        // API only returns currently-online phones; never count historical pair rows.
+        // Account menu: short status only. Model / shortId live in the QR panel.
         const online = snapshot.devices.filter((device) => device.online !== false)
         if (online.length === 0) return '扫码'
-        if (online.length === 1) {
-          const label = typeof online[0].label === 'string' && online[0].label.trim() !== ''
-            ? online[0].label.trim()
-            : '手机'
-          return `已连接 · ${label}`
-        }
+        if (online.length === 1) return '已连接'
         return `已连接 ${online.length} 台`
       }
 
@@ -1832,14 +2025,9 @@ window.__ModuleLoader__.load({
         const online = snapshot.devices.filter((device) => device.online !== false)
         if (online.length === 0) return '暂无手机连接'
         if (online.length === 1) {
-          const label = typeof online[0].label === 'string' && online[0].label.trim() !== ''
-            ? online[0].label.trim()
-            : '手机'
-          return `当前已连接：${label}`
+          return `当前已连接：${connectedDeviceLabel(online[0])}`
         }
-        const names = online.slice(0, 3).map((device) => (
-          typeof device.label === 'string' && device.label.trim() !== '' ? device.label.trim() : '手机'
-        )).join('、')
+        const names = online.slice(0, 3).map((device) => connectedDeviceLabel(device)).join('、')
         const more = online.length > 3 ? ` 等 ${online.length} 台` : ''
         return `当前已连接：${names}${more}`
       }
@@ -2123,47 +2311,90 @@ window.__ModuleLoader__.load({
 
       /**
        * Single-flight FRP repair for QR + auto-ensure (only while accepting).
-       * Never stop+start while frpc is still `starting`/`connecting` (reclaim fights).
+       * Never tear down a ready tunnel (clear/reconnect drops phone mid-boot →
+       * ECONNRESET → "Failed to load plugins"). Only repair when FrpController
+       * is actually down/broken.
        * @param {{ reason?: string }} [options]
-       * @returns {Promise<{ provider?: string, running?: boolean, state?: string } | null>}
+       * @returns {Promise<{ provider?: string, running?: boolean, state?: string, origin?: string } | null>}
        */
       let tunnelEnsureInflight = null
       async function ensureFrpTunnel(options = {}) {
         if (tunnelEnsureInflight) return tunnelEnsureInflight
         tunnelEnsureInflight = (async () => {
           void options
-          let snap = await adminJson('/api/mobile-access/remote/control')
-          const ready = snap
-            && snap.provider === 'frp'
-            && snap.running === true
-            && snap.state === 'ready'
-          if (ready) return snap
-          // Handshake in progress — wait, do not reconnect (reconnect = stop+start).
-          if (
-            snap
-            && snap.provider === 'frp'
-            && snap.running === true
-            && (snap.state === 'starting' || snap.state === 'connecting')
-          ) {
-            return snap
+          let snap = null
+          try {
+            snap = await adminJson('/api/mobile-access/remote/control')
+          } catch { /* start path below */ }
+
+          const isReady = (s) => s
+            && s.provider === 'frp'
+            && s.running === true
+            && s.state === 'ready'
+          const isHandshaking = (s) => s
+            && s.provider === 'frp'
+            && s.running === true
+            && (s.state === 'starting' || s.state === 'connecting')
+          // frpc may still be listed as running while FrpController reports frp_exited.
+          const isZombieError = (s) => s
+            && s.provider === 'frp'
+            && (s.state === 'error' || s.errorCode === 'frp_exited' || s.errorCode === 'gateway_stopped')
+
+          if (isReady(snap)) return snap
+
+          // Handshake in progress — wait, never stop+start under a live phone.
+          if (isHandshaking(snap)) {
+            for (let i = 0; i < 12; i += 1) {
+              await new Promise((resolve) => window.setTimeout(resolve, 700))
+              try {
+                snap = await adminJson('/api/mobile-access/remote/control')
+              } catch { /* keep */ }
+              if (isReady(snap) || !isHandshaking(snap)) break
+            }
+            if (isReady(snap) || isHandshaking(snap)) return snap
           }
-          const frpConfigured = snap?.providers?.frp?.configuration?.configured === true
-            || snap?.providers?.frp?.state === 'ready'
-            || snap?.provider === 'frp'
-          if (!snap?.running || snap?.provider !== 'frp') {
+
+          // Zombie running+error: stop first so start/reconnect can rebuild gateway().
+          if (isZombieError(snap) && snap?.running === true) {
+            try {
+              await adminJson('/api/mobile-access/remote/control', {
+                method: 'POST',
+                body: JSON.stringify({ running: false, provider: 'frp' }),
+              })
+            } catch { /* best-effort */ }
+          }
+
+          // Broken / off: free orphan frpc, then start (prefer start over reconnect).
+          try {
+            await adminJson('/api/t4y-mobile-cowatch/frp-guard', {
+              method: 'POST',
+              body: JSON.stringify({ clearForReconnect: true }),
+            })
+          } catch { /* best-effort */ }
+
+          try {
             snap = await adminJson('/api/mobile-access/remote/control', {
               method: 'POST',
-              body: JSON.stringify(frpConfigured
-                ? { running: true, provider: 'frp' }
-                : { running: true }),
+              body: JSON.stringify({ running: true, provider: 'frp' }),
             })
-            return snap
+          } catch { /* reconnect below */ }
+
+          if (!isReady(snap) && !isHandshaking(snap)) {
+            try {
+              snap = await adminJson('/api/mobile-access/remote/reconnect', {
+                method: 'POST',
+                body: JSON.stringify({ provider: 'frp' }),
+              })
+            } catch { /* caller surfaces */ }
           }
-          if (snap.state === 'error' || snap.state === 'unavailable') {
-            snap = await adminJson('/api/mobile-access/remote/reconnect', {
-              method: 'POST',
-              body: JSON.stringify({ provider: 'frp' }),
-            })
+
+          for (let i = 0; i < 12; i += 1) {
+            if (isReady(snap)) break
+            if (!isHandshaking(snap)) break
+            await new Promise((resolve) => window.setTimeout(resolve, 700))
+            try {
+              snap = await adminJson('/api/mobile-access/remote/control')
+            } catch { /* keep */ }
           }
           return snap
         })().finally(() => { tunnelEnsureInflight = null })

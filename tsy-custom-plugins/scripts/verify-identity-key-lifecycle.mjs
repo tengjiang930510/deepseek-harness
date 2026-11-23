@@ -29,7 +29,7 @@ const bootToken = process.env.DSH_WEB_TOKEN || ''
 const enterpriseName = process.env.ENTERPRISE_NAME || ''
 const enterpriseUser = process.env.ENTERPRISE_USER || ''
 const enterprisePassword = process.env.ENTERPRISE_PASSWORD || ''
-const apiBase = process.env.ENTERPRISE_API_BASE || 'https://jgyw.crfsdi.com.cn:51111/backendapi'
+const apiBase = process.env.ENTERPRISE_API_BASE || 'https://jgyw.crfsdi.com.cn:51010/backendapi'
 const newApiBase = process.env.NEW_API_BASE || 'http://192.10.51.138:4000/v1'
 
 const failures = []
@@ -169,7 +169,11 @@ async function main() {
   // CLI overlay on llm-pi-ai locks settings.update and blocks New API catalog sync.
   assert('overlay-does-not-patch-llm-pi-ai', !/^\s*- id:\s*llm-pi-ai\s*$/m.test(overlay), 'llm-pi-ai must be seeded in writable settings')
   assert('overlay-does-not-patch-agent-default-model', !/^\s*- id:\s*agent-default-model\s*$/m.test(overlay), 'default model set after sync')
-  assert('overlay-keeps-identity-newapi-url', /newApiBaseUrl:\s*http:\/\/192\.10\.51\.138:4000\/v1/.test(overlay), 'identity points at New API')
+  assert(
+    'overlay-keeps-identity-newapi-url',
+    /newApiBaseUrl:\s*https:\/\/jgyw\.crfsdi\.com\.cn:50000\/whdt\/proxy\/t4y_new_api\/v1/.test(overlay),
+    'identity points at public New API proxy',
+  )
 
   if (!bootToken) {
     fail('boot-token', 'set DSH_WEB_TOKEN from `dsh web` output')
@@ -202,13 +206,17 @@ async function main() {
 
   console.log('=== Enterprise login + issue ===')
   const session = await enterpriseLogin()
+  // Keep enterprise_id as decimal text — JSON.parse would round large Snowflake ids.
+  const jwtPayloadRaw = Buffer.from(session.accessToken.split('.')[1], 'base64url').toString('utf8')
+  const moduleId = jwtPayloadRaw.match(/"enterprise_id"\s*:\s*(\d+)/)?.[1] || ''
+  assert('login-exposes-enterprise-id', moduleId !== '', jwtPayloadRaw.slice(0, 220))
   const issue = await dsh('/api/t4y-identity/issue-model-key', {
     method: 'POST',
     headers: {
-      authorization: session.accessToken,
+      'x-t4y-access-token': session.accessToken,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ expiresIn: session.expiresIn }),
+    body: JSON.stringify({ expiresIn: session.expiresIn, moduleId, moduleName: enterpriseName }),
   })
   assert('issue-http-200', issue.status === 200, `status=${issue.status} body=${JSON.stringify(issue.body).slice(0, 240)}`)
   assert('issue-returns-expiresAt', typeof issue.body?.expiresAt === 'number', String(issue.body?.expiresAt))
@@ -225,10 +233,11 @@ async function main() {
   // Recover Key via Broker re-issue fingerprint (same login token) by asking New API through a
   // second broker issue is not possible without reading credentials. Use status + revoke instead,
   // and recover Key by calling Broker issue directly once for chat verification only in this script.
-  const brokerIssue = await jsonFetch('http://192.10.51.138:4010/v1/session/issue', {
+  const brokerBase = process.env.BROKER_BASE || 'https://jgyw.crfsdi.com.cn:50000/whdt/proxy/t4y_key_broker'
+  const brokerIssue = await jsonFetch(`${brokerBase}/v1/session/issue`, {
     method: 'POST',
     headers: { authorization: session.accessToken, 'content-type': 'application/json' },
-    body: JSON.stringify({ expiresIn: session.expiresIn }),
+    body: JSON.stringify({ expiresIn: session.expiresIn, moduleId, moduleName: enterpriseName }),
   })
   assert('broker-reissue-same-session', brokerIssue.status === 200 && typeof brokerIssue.body?.apiKey === 'string', JSON.stringify(brokerIssue.body).slice(0, 200))
   const apiKey = brokerIssue.body.apiKey
@@ -241,7 +250,7 @@ async function main() {
   console.log('=== session-status while active ===')
   const statusActive = await dsh('/api/t4y-identity/session-status', {
     method: 'POST',
-    headers: { authorization: session.accessToken },
+    headers: { 'x-t4y-access-token': session.accessToken },
   })
   assert('status-active-true', statusActive.status === 200 && statusActive.body?.active === true, JSON.stringify(statusActive.body))
 
@@ -256,13 +265,13 @@ async function main() {
   console.log('=== revoke ===')
   const revoke = await dsh('/api/t4y-identity/revoke-model-key', {
     method: 'POST',
-    headers: { authorization: session.accessToken },
+    headers: { 'x-t4y-access-token': session.accessToken },
   })
   assert('revoke-http-200', revoke.status === 200 && revoke.body?.revoked === true, JSON.stringify(revoke.body))
 
   const statusAfter = await dsh('/api/t4y-identity/session-status', {
     method: 'POST',
-    headers: { authorization: session.accessToken },
+    headers: { 'x-t4y-access-token': session.accessToken },
   })
   assert('status-after-revoke-inactive', statusAfter.status === 200 && statusAfter.body?.active === false, JSON.stringify(statusAfter.body))
 
@@ -277,24 +286,24 @@ async function main() {
   const reissue = await dsh('/api/t4y-identity/issue-model-key', {
     method: 'POST',
     headers: {
-      authorization: session.accessToken,
+      'x-t4y-access-token': session.accessToken,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ expiresIn: session.expiresIn }),
+    body: JSON.stringify({ expiresIn: session.expiresIn, moduleId, moduleName: enterpriseName }),
   })
   assert('reissue-http-200', reissue.status === 200 && Array.isArray(reissue.body?.models), JSON.stringify(reissue.body).slice(0, 240))
   assert('reissue-models-still-from-newapi', reissue.body?.models?.length >= 2, JSON.stringify(reissue.body?.models))
 
   const statusReissued = await dsh('/api/t4y-identity/session-status', {
     method: 'POST',
-    headers: { authorization: session.accessToken },
+    headers: { 'x-t4y-access-token': session.accessToken },
   })
   assert('status-after-reissue-active', statusReissued.status === 200 && statusReissued.body?.active === true, JSON.stringify(statusReissued.body))
 
   // Cleanup: revoke again so the acceptance key does not linger.
   await dsh('/api/t4y-identity/revoke-model-key', {
     method: 'POST',
-    headers: { authorization: session.accessToken },
+    headers: { 'x-t4y-access-token': session.accessToken },
   })
 
   console.log('\n=== Summary ===')

@@ -20,12 +20,12 @@ test('registers a single oa-helper slash command', async () => {
   const agent = { steer: message => messages.push(message) }
   assert.deepEqual(await commands[0].handler({ agent, rawInput: '年假 10 月 9 日到 10 月 10 日' }), {
     kind: 'success',
-    text: '正在分析申请内容。',
+    text: '已创建办公申请，请在会话卡片中补全并确认。',
   })
   assert.match(messages[0].content[0].text, /年假 10 月 9 日到 10 月 10 日/)
   assert.deepEqual(await commands[0].handler({ agent, rawInput: 'travel 去杭州' }), {
     kind: 'success',
-    text: '正在分析申请内容。',
+    text: '已创建办公申请，请在会话卡片中补全并确认。',
   })
   assert.equal((await commands[0].handler({ agent, rawInput: '' })).kind, 'error')
   assert.equal(messages.length, 2)
@@ -63,7 +63,7 @@ test('office workflow tool creates a structured conversation workflow', async ()
   assert.equal(concluded, true)
   assert.deepEqual(result, {
     kind: 'travel',
-    message: '已创建办公申请卡片。请停止回复并等待用户在卡片中补全、确认后提交；本轮不要再输出任何文字或调用工具。',
+    message: '已创建办公申请，请在会话卡片中补全并确认。',
   })
   await assert.rejects(() => tool.execute({ kind: 'unknown' }), /不支持的办公申请类型/)
 })

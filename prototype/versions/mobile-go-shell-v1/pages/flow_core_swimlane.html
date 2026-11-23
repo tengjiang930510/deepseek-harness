@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>职能泳道 · 手机简易壳</title>
+  <style>
+    body { margin: 0; font-family: "Segoe UI", "PingFang SC", sans-serif; background: #f8fafc; color: #0f172a; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    h1 { font-size: 22px; margin: 0 0 8px; }
+    .legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; color: #475569; margin-bottom: 16px; }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .sw { width: 28px; height: 14px; border-radius: 999px; border: 1px solid #94a3b8; background: #e2e8f0; }
+    .sw.d { border-radius: 4px; }
+    .sw.j { width: 16px; height: 16px; border-radius: 2px; transform: rotate(45deg); }
+    .sw.c { border-style: dashed; background: transparent; }
+    svg { width: 100%; height: auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; }
+    .note { margin-top: 16px; font-size: 14px; color: #475569; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>手机同看简易壳 · 职能泳道</h1>
+    <p class="note" style="margin-top:0">本地打开本页。图例：胶囊=起止 · 菱形=判断 · 矩形=处理 · 虚线框=约束</p>
+    <div class="legend">
+      <span><i class="sw"></i>起止</span>
+      <span><i class="sw j"></i>判断</span>
+      <span><i class="sw d"></i>处理</span>
+      <span><i class="sw c"></i>约束</span>
+    </div>
+    <svg viewBox="0 0 1000 420" xmlns="http://www.w3.org/2000/svg" aria-label="职能泳道图">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#64748b" />
+        </marker>
+      </defs>
+      <!-- columns -->
+      <rect x="20" y="20" width="230" height="380" fill="#f1f5f9" stroke="#cbd5e1" rx="8"/>
+      <rect x="270" y="20" width="230" height="380" fill="#f8fafc" stroke="#cbd5e1" rx="8"/>
+      <rect x="520" y="20" width="230" height="380" fill="#f1f5f9" stroke="#cbd5e1" rx="8"/>
+      <rect x="770" y="20" width="210" height="380" fill="#f8fafc" stroke="#cbd5e1" rx="8"/>
+      <text x="135" y="48" text-anchor="middle" font-size="14" font-weight="700" fill="#334155">手机用户</text>
+      <text x="385" y="48" text-anchor="middle" font-size="14" font-weight="700" fill="#334155">cowatch 壳</text>
+      <text x="635" y="48" text-anchor="middle" font-size="14" font-weight="700" fill="#334155">电脑 Host</text>
+      <text x="875" y="48" text-anchor="middle" font-size="14" font-weight="700" fill="#334155">企业插件</text>
+
+      <!-- start -->
+      <rect x="60" y="80" width="150" height="36" rx="18" fill="#e2e8f0" stroke="#64748b"/>
+      <text x="135" y="102" text-anchor="middle" font-size="12" fill="#0f172a">打开同源 Web</text>
+
+      <!-- diamond UA -->
+      <path d="M385 78 L430 103 L385 128 L340 103 Z" fill="#e2e8f0" stroke="#64748b"/>
+      <text x="385" y="107" text-anchor="middle" font-size="11" fill="#0f172a">手机 UA?</text>
+
+      <!-- wait / shell -->
+      <rect x="310" y="160" width="150" height="40" rx="6" fill="#fff" stroke="#64748b"/>
+      <text x="385" y="185" text-anchor="middle" font-size="12">WaitGate / 简易壳</text>
+
+      <rect x="560" y="160" width="150" height="40" rx="6" fill="#fff" stroke="#64748b"/>
+      <text x="635" y="185" text-anchor="middle" font-size="12">host-session / 模型</text>
+
+      <!-- chat actions -->
+      <rect x="60" y="240" width="150" height="40" rx="6" fill="#fff" stroke="#64748b"/>
+      <text x="135" y="265" text-anchor="middle" font-size="12">选模型 / 发消息</text>
+
+      <rect x="310" y="240" width="150" height="40" rx="6" fill="#fff" stroke="#64748b"/>
+      <text x="385" y="265" text-anchor="middle" font-size="12">顶栏模型+胶囊+左滑</text>
+
+      <rect x="810" y="240" width="140" height="40" rx="6" fill="#fff" stroke="#64748b"/>
+      <text x="880" y="265" text-anchor="middle" font-size="12">快捷命令插入</text>
+
+      <!-- constraint -->
+      <rect x="300" y="320" width="170" height="50" rx="6" fill="none" stroke="#94a3b8" stroke-dasharray="5 4"/>
+      <text x="385" y="342" text-anchor="middle" font-size="11" fill="#475569">桌面 UA 零激活</text>
+      <text x="385" y="358" text-anchor="middle" font-size="11" fill="#475569">不改 Hub 桌面座位</text>
+
+      <rect x="60" y="340" width="150" height="36" rx="18" fill="#e2e8f0" stroke="#64748b"/>
+      <text x="135" y="362" text-anchor="middle" font-size="12">完成遥控回合</text>
+
+      <!-- paths -->
+      <path d="M210 98 H340" stroke="#64748b" fill="none" marker-end="url(#arr)"/>
+      <path d="M430 103 H560" stroke="#64748b" fill="none" marker-end="url(#arr)"/>
+      <text x="480" y="96" font-size="11" fill="#64748b">是</text>
+      <path d="M385 128 V160" stroke="#64748b" fill="none" marker-end="url(#arr)"/>
+      <path d="M635 200 V220 H880 V240" stroke="#64748b" fill="none" marker-end="url(#arr)"/>
+      <path d="M385 200 V240" stroke="#64748b" fill="none" marker-end="url(#arr)"/>
+      <path d="M210 260 H310" stroke="#64748b" fill="none" marker-end="url(#arr)"/>
+      <path d="M460 260 H810" stroke="#64748b" fill="none" marker-end="url(#arr)"/>
+      <path d="M135 280 V340" stroke="#64748b" fill="none" marker-end="url(#arr)"/>
+      <path d="M385 280 V320" stroke="#64748b" fill="none" marker-end="url(#arr)"/>
+    </svg>
+    <p class="note">文字解读：用户经同源 Web 进入；cowatch 判定手机 UA 后做 WaitGate 与简易壳；电脑 Host 提供会话与模型；企业插件快捷由壳层胶囊消费，桌面布局不受影响。</p>
+  </div>
+</body>
+</html>

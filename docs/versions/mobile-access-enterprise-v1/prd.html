@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Desktop 移动访问与手机浏览器（H5）PRD · mobile-access-enterprise-v1</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --ink: #0f172a;
+      --muted: #475569;
+      --line: #e2e8f0;
+      --card: #ffffff;
+      --accent: #334155;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.6;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+    nav {
+      position: sticky;
+      top: 0;
+      align-self: start;
+      height: 100vh;
+      overflow: auto;
+      padding: 24px 16px;
+      border-right: 1px solid var(--line);
+      background: #fff;
+      font-size: 13px;
+    }
+    nav a { display: block; color: var(--muted); text-decoration: none; padding: 4px 0; }
+    nav a:hover { color: var(--ink); }
+    main { padding: 32px 24px 64px; }
+    .content {
+      max-width: 940px;
+      margin: 0 auto;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 32px 36px;
+    }
+    h1 { font-size: 26px; margin: 0 0 8px; }
+    h2 { font-size: 20px; margin: 32px 0 12px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+    h3 { font-size: 16px; margin: 20px 0 8px; }
+    .meta { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 12px 0 20px; }
+    th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+    th { background: #f1f5f9; color: var(--accent); }
+    .callout {
+      background: #f1f5f9;
+      border-left: 3px solid #64748b;
+      padding: 12px 14px;
+      margin: 16px 0;
+      border-radius: 0 8px 8px 0;
+    }
+    code { font-family: ui-monospace, Consolas, monospace; font-size: 0.92em; }
+    ol { padding-left: 1.3em; }
+    a { color: #334155; }
+    @media (max-width: 860px) {
+      .layout { grid-template-columns: 1fr; }
+      nav { height: auto; position: static; border-right: none; border-bottom: 1px solid var(--line); }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <nav>
+      <strong>目录</strong>
+      <a href="#s1">1. 结论</a>
+      <a href="#s2">2. 目标</a>
+      <a href="#s3">3. 需求</a>
+      <a href="#s4">4. 流程</a>
+      <a href="#s5">5. 状态文案</a>
+      <a href="#s6">6. 场景</a>
+      <a href="#s7">7. 风险</a>
+      <a href="#s8">8. 验收</a>
+      <a href="#s9">9. 待确认</a>
+    </nav>
+    <main>
+      <article class="content">
+        <h1>Desktop 移动访问与手机浏览器（H5）自动连接 PRD</h1>
+        <p class="meta">版本 mobile-access-enterprise-v1 · 2026-11-12 · 第 3 轮 · 学 Codex Remote · 钉死一机 · 无单独原型</p>
+
+        <div class="callout" id="s1">
+          <strong>结论：</strong>体验对齐 <strong>ChatGPT Codex Remote</strong>（电脑开远程出码 → 手机扫码/链接绑主机 → 电脑管设备）；通道用现网 <strong>dsh-mobile + FRP</strong>；客户端为浏览器/H5。<strong>一人一机钉死</strong>，不做最近登录漂移；设备名=企业用户；配对免手填名称。不另做原型。
+
+          <br /><br />
+          职能泳道：<a href="../../../prototype/versions/mobile-access-enterprise-v1/pages/flow_core_swimlane.html">flow_core_swimlane.html</a>
+          · 全文：<code>prd.md</code>
+        </div>
+
+        <h2 id="s2">目标与非目标</h2>
+        <table>
+          <thead><tr><th>类型</th><th>内容</th></tr></thead>
+          <tbody>
+            <tr><td>目标</td><td>Desktop 开关 + 企业 FRP；浏览器/H5 自动连；跟随电脑登录；WebView 可复用</td></tr>
+            <tr><td>非目标</td><td>本版原生 App；无绑定裸奔；手机独立企业写会话</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="s3">需求与优先级</h2>
+        <table>
+          <thead><tr><th>优先级</th><th>需求</th><th>验收</th></tr></thead>
+          <tbody>
+            <tr><td>P0</td><td>Desktop「移动访问」</td><td>默认关；开→就绪；关→公网不可用</td></tr>
+            <tr><td>P0</td><td>企业预置通道</td><td>安装包内嵌配置</td></tr>
+            <tr><td>P0</td><td>浏览器远程配对</td><td>配对链接完成首次绑定</td></tr>
+            <tr><td>P0</td><td>日常免扫</td><td>同浏览器再开 Origin 自动连</td></tr>
+            <tr><td>P0</td><td>学 Codex 绑主机</td><td>扫码/链接钉死当前 Desktop；无多机点选、无漂移</td></tr>
+            <tr><td>P0</td><td>设备名=用户绑定</td><td>电脑设备列表按企业用户管理/撤销</td></tr>
+            <tr><td>P0</td><td>跟随电脑登录</td><td>登录后自动进壳</td></tr>
+            <tr><td>P0</td><td>分步等待态</td><td>通道/绑定/登录文案互斥</td></tr>
+            <tr><td>P1</td><td>主屏幕指引</td><td>交付说明含添加步骤</td></tr>
+            <tr><td>P1</td><td>H5 嵌 App 预留</td><td>WebView 可加载同一 Origin</td></tr>
+            <tr><td>P2</td><td>企业 App 容器</td><td>后续版本</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="s4">主流程</h2>
+        <ol>
+          <li>Desktop 登录并打开「移动访问」至就绪。</li>
+          <li>复制远程配对链接 → 手机浏览器打开完成首次绑定。</li>
+          <li>建议添加到主屏幕或收藏。</li>
+          <li>之后打开入口自动连；电脑未登录则等待，登录后进入简易壳。</li>
+        </ol>
+
+        <h2 id="s5">阶段文案</h2>
+        <table>
+          <thead><tr><th>阶段</th><th>文案</th></tr></thead>
+          <tbody>
+            <tr><td>need_bind</td><td>请使用电脑提供的配对链接完成首次绑定</td></tr>
+            <tr><td>tunnel_off</td><td>请在电脑打开「移动访问」后再试</td></tr>
+            <tr><td>waiting_pc_login</td><td>请先在电脑完成登录；登录并选择项目后将自动进入</td></tr>
+            <tr><td>waiting_pc_creds</td><td>电脑尚未就绪模型凭据，请在电脑重新登录后再试</td></tr>
+            <tr><td>entering</td><td>正在进入助手…</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="s6">场景</h2>
+        <h3>正常</h3>
+        <p>通道开、已配对、电脑已登录 → 浏览器打开即进壳（可经短暂检测）。</p>
+        <h3>边界</h3>
+        <table>
+          <thead><tr><th>情况</th><th>行为</th></tr></thead>
+          <tbody>
+            <tr><td>未开移动访问</td><td>tunnel_off</td></tr>
+            <tr><td>未登录</td><td>waiting_pc_login，登录后自动进</td></tr>
+            <tr><td>清缓存/换浏览器</td><td>重新配对</td></tr>
+            <tr><td>未来 App WebView</td><td>加载同一 H5；Cookie 策略 P2 验收</td></tr>
+          </tbody>
+        </table>
+        <h3>异常</h3>
+        <table>
+          <thead><tr><th>异常</th><th>兜底</th></tr></thead>
+          <tbody>
+            <tr><td>配对过期</td><td>电脑重新生成链接</td></tr>
+            <tr><td>设备撤销</td><td>提示失效并重配</td></tr>
+            <tr><td>证书过期</td><td>运维续期</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="s7">风险</h2>
+        <table>
+          <thead><tr><th>风险</th><th>缓解</th></tr></thead>
+          <tbody>
+            <tr><td>找不到入口</td><td>固定 Origin + 主屏幕指引</td></tr>
+            <tr><td>清缓存掉绑定</td><td>失效文案 + 重配说明</td></tr>
+            <tr><td>误以为必须装 App</td><td>交付写明浏览器即可</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="s8">验收要点</h2>
+        <table>
+          <thead><tr><th>#</th><th>步骤</th><th>期望</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>默认开关</td><td>关</td></tr>
+            <tr><td>2</td><td>打开开关</td><td>discovery=200</td></tr>
+            <tr><td>3</td><td>浏览器配对链接</td><td>首次绑定成功</td></tr>
+            <tr><td>4</td><td>同浏览器再开</td><td>免扫自动连</td></tr>
+            <tr><td>5</td><td>电脑退出登录</td><td>等待后可自愈进入</td></tr>
+            <tr><td>6</td><td>关移动访问</td><td>通道未开文案</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="s9">待确认</h2>
+        <p>客户端已定为浏览器/H5。请业务在上线前给出<strong>正式 Origin</strong>（固定 IP 或域名）。企业 App 容器名称与排期作 P2 即可。</p>
+      </article>
+    </main>
+  </div>
+</body>
+</html>

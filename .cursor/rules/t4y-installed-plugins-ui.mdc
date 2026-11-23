@@ -7,12 +7,14 @@ alwaysApply: true
 
 Left sidebar **插件** → group **已安装插件** (`bundlesTitle`) is only for user-added third-party bundles.
 
-**Never** surface deployment-owned Wuhan Metro / trial packages there:
+**Never** surface deployment-owned Wuhan Metro / trial / Hub packages there:
 
-- `t4y-tenant`, `t4y-identity`, `t4y-brand`, `t4y-capability-hub`, `t4y-release-manager`, `t4y-trial-runtime`, and any new `t4y-*`
+- `t4y-tenant`, `t4y-identity`, `t4y-brand`, `t4y-capability-hub`, `t4y-release-manager`, `t4y-trial-runtime`, `t4y-mobile-cowatch`, and any new `t4y-*`
+- `dsh-mobile`
+- Hub/Gitee capability installs (e.g. `oa-helper`) whose dependency `source` is under `.dsh-plugin-releases`, `.dsh-trial-plugins`, or `tsy-custom-plugins`
 - Legacy `@deepseek-ai/dsh-t4y-enterprise`
 
-Those packages are seeded / linked into the profile for login, brand, and hub UI. End users manage hub capabilities under **设置 → 授权插件**, not under「已安装插件」.
+Those packages are seeded / linked / Hub-installed for login, brand, and hub UI. End users manage hub capabilities under **设置 → 授权插件**, not under「已安装插件」.
 
 ## 授权插件包名 = 菜单 name
 
@@ -22,4 +24,4 @@ Hub 可下载能力的 npm `package`、Hub `{projectName}/plugins/{name}` 目录
 
 - Do **not** leave orphan `dsh.profile.bundles` entries for packages that are not in `dependencies` (causes 异常 / 未安装 cards).
 - Do **not** “fix” missing t4y cards by adding them to the Installed list; keep the Client filter in `packages/client/ui-plugin-manager` (`isDeploymentOwnedEnterprisePlugin`) and trial seed scripts aligned.
-- When adding a new `t4y-*` package, ensure it stays excluded from「已安装插件」(name prefix `t4y-` is enough with the current filter).
+- Hide by name prefix (`t4y-*`, `dsh-mobile`) **and** by dependency `source` path (trial / plugin-releases / tsy-custom-plugins).

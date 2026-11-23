@@ -59,7 +59,7 @@ Host 插件：`inject: { t4yEnterprise: true }` 后调用 `ctx.t4yEnterprise.req
 
 | 字段 | 说明 |
 |---|---|
-| `apiBaseUrl` | 默认 `https://jgyw.crfsdi.com.cn:51111/backendapi` |
+| `apiBaseUrl` | 默认 `https://jgyw.crfsdi.com.cn:51010/backendapi`（`:51111` 已废弃，禁止再使用） |
 | `brokerBaseUrl` | 必填。DSH Host 进程访问的 Key Broker 地址 |
 | `newApiBaseUrl` | 必填。New API 的 OpenAI 兼容 `/v1` 地址 |
 

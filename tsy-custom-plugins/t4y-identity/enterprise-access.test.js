@@ -27,10 +27,10 @@ describe('enterprise-access (方案 B)', () => {
   })
 
   it('resolves relative API paths against apiBaseUrl', () => {
-    const base = 'https://jgyw.crfsdi.com.cn:51111/backendapi'
+    const base = 'https://jgyw.crfsdi.com.cn:51010/backendapi'
     const ok = resolveEnterpriseProxyTarget({ path: '/system/user/getInfo' }, base)
     assert.equal(ok.ok, true)
-    assert.equal(ok.target.href, 'https://jgyw.crfsdi.com.cn:51111/backendapi/system/user/getInfo')
+    assert.equal(ok.target.href, 'https://jgyw.crfsdi.com.cn:51010/backendapi/system/user/getInfo')
     assert.equal(resolveEnterpriseProxyTarget({ path: '../etc/passwd' }, base).ok, false)
     assert.equal(resolveEnterpriseProxyTarget({ url: 'https://evil.example/x' }, base).error, 'host_not_allowed')
   })

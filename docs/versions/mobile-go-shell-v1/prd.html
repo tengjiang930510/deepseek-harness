@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>手机同看简易壳 PRD · mobile-go-shell-v1</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --ink: #0f172a;
+      --muted: #475569;
+      --line: #e2e8f0;
+      --card: #ffffff;
+      --accent: #334155;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.6;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+    nav {
+      position: sticky;
+      top: 0;
+      align-self: start;
+      height: 100vh;
+      overflow: auto;
+      padding: 24px 16px;
+      border-right: 1px solid var(--line);
+      background: #fff;
+      font-size: 13px;
+    }
+    nav a { display: block; color: var(--muted); text-decoration: none; padding: 4px 0; }
+    nav a:hover { color: var(--ink); }
+    main {
+      padding: 32px 24px 64px;
+    }
+    .content {
+      max-width: 940px;
+      margin: 0 auto;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 32px 36px;
+    }
+    h1 { font-size: 28px; margin: 0 0 8px; }
+    h2 { font-size: 20px; margin: 32px 0 12px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+    h3 { font-size: 16px; margin: 20px 0 8px; }
+    p, li { color: var(--ink); }
+    .meta { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 12px 0 20px; }
+    th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+    th { background: #f1f5f9; color: var(--accent); }
+    .callout {
+      background: #f1f5f9;
+      border-left: 3px solid #64748b;
+      padding: 12px 14px;
+      margin: 16px 0;
+      border-radius: 0 8px 8px 0;
+    }
+    code { font-family: ui-monospace, Consolas, monospace; font-size: 0.92em; }
+    @media (max-width: 860px) {
+      .layout { grid-template-columns: 1fr; }
+      nav { height: auto; position: static; border-right: none; border-bottom: 1px solid var(--line); }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <nav>
+      <strong>目录</strong>
+      <a href="#s1">1. 结论</a>
+      <a href="#s2">2. 需求</a>
+      <a href="#s3">3. 对标 Go</a>
+      <a href="#s4">4. 场景</a>
+      <a href="#s5">5. 边界</a>
+      <a href="#s6">6. 风险</a>
+      <a href="#s7">7. 交付</a>
+    </nav>
+    <main>
+      <article class="content">
+        <h1>手机同看简易壳（仿 Go）PRD</h1>
+        <p class="meta">版本 mobile-go-shell-v1 · 2026-11-05 · 分支 feat/t4y-mobile-cowatch</p>
+
+        <div class="callout" id="s1">
+          <strong>结论：</strong>手机 UA 下将同源 Web 收成仿 Go 简易对话壳——右上角模型、输入框上方企业胶囊条、左滑快捷；仅改 <code>t4y-mobile-cowatch</code>，桌面零激活。
+        </div>
+
+        <h2 id="s2">需求与优先级</h2>
+        <table>
+          <thead><tr><th>优先级</th><th>需求</th><th>验收</th></tr></thead>
+          <tbody>
+            <tr><td>P0</td><td>简易对话框</td><td>消息区 + 圆角输入；侧栏/右栏隐藏</td></tr>
+            <tr><td>P0</td><td>模型右上角</td><td>顶栏右侧可切换模型</td></tr>
+            <tr><td>P0</td><td>胶囊条</td><td>Hub 快捷在输入框上方横向滑动</td></tr>
+            <tr><td>P0</td><td>桌面零误伤</td><td>桌面 UA 不激活</td></tr>
+            <tr><td>P1</td><td>左滑快捷</td><td>插件 / 设置 / 会话入口</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="s3">对标 Go 与差异</h2>
+        <table>
+          <thead><tr><th>项</th><th>Go 手机</th><th>本需求</th></tr></thead>
+          <tbody>
+            <tr><td>模型</td><td>点进输入后在输入框下方</td><td>顶栏右上固定</td></tr>
+            <tr><td>企业快捷</td><td>无</td><td>输入框上方胶囊</td></tr>
+            <tr><td>左滑</td><td>有</td><td>要做</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="s4">场景</h2>
+        <h3>正常</h3>
+        <p>电脑已登录 → 手机进同源 Web → WaitGate 消失 → 简易壳：选模型、点胶囊、发消息、左滑进设置/插件。</p>
+        <h3>边界</h3>
+        <p>无快捷则胶囊不占位；有草稿则胶囊禁用；仅右缘起滑打开面板。</p>
+        <h3>异常</h3>
+        <p>未登录保持 WaitGate；手势与内容横滑隔离。</p>
+
+        <h2 id="s5">实现边界</h2>
+        <p>只改 <code>t4y-mobile-cowatch</code>。Hub 桌面座位不变，手机壳用 CSS/壳层消费既有 <code>.t4y-shortcut-bar</code>。</p>
+
+        <h2 id="s6">风险</h2>
+        <table>
+          <thead><tr><th>风险</th><th>缓解</th></tr></thead>
+          <tbody>
+            <tr><td>哈希类名</td><td>data-* / class*= 选择器</td></tr>
+            <tr><td>模型挪位失焦</td><td>视觉定位保留原 trigger</td></tr>
+            <tr><td>左滑误触</td><td>右缘手势 + 遮罩关闭</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="s7">交付</h2>
+        <ol>
+          <li>PRD：本页与 <code>prd.md</code></li>
+          <li>原型：<code>prototype/versions/mobile-go-shell-v1/pages/mobile_chat.html</code></li>
+          <li>泳道：<code>flow_core_swimlane.html</code></li>
+          <li>实现：cowatch → Web 390 宽测试</li>
+        </ol>
+      </article>
+    </main>
+  </div>
+</body>
+</html>

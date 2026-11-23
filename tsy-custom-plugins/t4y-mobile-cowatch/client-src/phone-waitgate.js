@@ -1,9 +1,27 @@
     /**
-     * Best-effort: rename dsh-mobile device label to enterprise displayName (Codex-style user binding).
+     * Best-effort: attach enterprise account + cross-browser device fingerprint.
      * @param {object} session
      */
     function bindDeviceLabel(session) {
       const displayName = typeof session?.displayName === 'string' ? session.displayName.trim() : ''
+      const model = modelFromUserAgent()
+      void (async () => {
+        let fingerprint = ''
+        try {
+          fingerprint = await crossBrowserDeviceFingerprint()
+        } catch { /* ignore */ }
+        void rawFetch('/api/t4y-mobile-cowatch/register-device', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            fingerprint: fingerprint || undefined,
+            model,
+            account: displayName || undefined,
+          }),
+          signal: timeoutSignal(FETCH_TIMEOUT_MS),
+        }).catch(() => { /* non-blocking */ })
+      })()
       if (displayName === '') return
       void rawFetch('/api/t4y-mobile-cowatch/bind-device-label', {
         method: 'POST',

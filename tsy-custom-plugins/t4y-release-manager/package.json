@@ -1,7 +1,7 @@
 {
   "name": "t4y-release-manager",
-  "version": "0.1.17",
-  "description": "\u6b66\u6c49\u5730\u94c1\u63d2\u4ef6\u53d1\u5e03\u7ba1\u7406\u5668\uff1a\u6309\u9879\u76ee\u6388\u6743\u8868\u5355\u4e0e\u63d2\u4ef6 latest.json \u5b89\u88c5\u4e0d\u53ef\u53d8\u7248\u672c\u3002",
+  "version": "0.1.18",
+  "description": "武汉地铁插件发布管理器：按项目授权表单与插件 latest.json 安装不可变版本。",
   "private": true,
   "type": "module",
   "main": "./index.js",

@@ -47,5 +47,5 @@ pnpm dsh web
 - `immediately: true`：client 脚本加载失败会拖垮 web-boot（identity 依赖本包）。
 - 不要在本包硬编码插件列表；列表只来自企业菜单 + Gitee `latest.json`。
 - Switch 状态需用 `listAllBundles` / 完整 bundle 状态，过滤后的 `listBundles` 会导致「永远关」。
-- 「技能」入口调用 `inputTriggers.toggleTrigger('/')`（不往草稿插入 `/`）。该 API 在 `@deepseek-ai/dsh-client-ui-input-trigger`；只更新 hub、核心 Client 仍是旧构建时，按钮会打开失败。命令 claim 仅 leading：有草稿 / 附件 / 非 plain 时应禁用按钮，否则选取会静默失败。
+- 「技能」入口调用 `inputTriggers.toggleTrigger('/')`（不往草稿插入 `/`）。该 API 在 `@deepseek-ai/dsh-client-ui-input-trigger`；只更新 hub、核心 Client 仍是旧构建时，按钮会打开失败。`toggleTrigger` 在面板已开时会关闭；成功判定须把「关面板」算成功，不能只看 `menu.open === true`，否则连点会误报「无法打开指令面板」。命令 claim 仅 leading：有草稿 / 附件 / 非 plain 时应禁用按钮，否则选取会静默失败。
 - 本机 `link:` 能跑不等于安装包能跑：Desktop stage 只拷 `files`；见仓库 [DEVELOPING.md](../DEVELOPING.md)「本机 Web 正常、安装包却炸」。

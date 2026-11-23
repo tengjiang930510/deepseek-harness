@@ -5,6 +5,6 @@
     - id: t4y-identity
       name: ./index.js
       config:
-        apiBaseUrl: https://jgyw.crfsdi.com.cn:51111/backendapi
+        apiBaseUrl: https://jgyw.crfsdi.com.cn:51010/backendapi
         brokerBaseUrl: http://192.10.51.138:4010
         newApiBaseUrl: http://192.10.51.138:4000/v1

@@ -1,0 +1,22 @@
+---
+description: Wuhan Metro t4y plugins — edit Web/repo first, then stage Desktop; never patch Desktop copies directly
+alwaysApply: true
+---
+
+# t4y：先 Web / 仓库，再 Desktop
+
+`tsy-custom-plugins/<pkg>/` is the source of truth. Web profile uses `link:` and picks up edits immediately.
+
+Desktop loads **copies** under `~/.dsh/profiles/desktop/.dsh-trial-plugins/` (and install-packaged `resources/trial-plugins/`). Those are not live sources.
+
+## Required order
+
+1. Edit only `tsy-custom-plugins/<pkg>/` (verify on Web when the change is Client/Host plugin behavior).
+2. Then sync/stage into Desktop: `node ./tsy-custom-plugins/scripts/sync-desktop-plugins.mjs` and/or `stage-desktop-trial-plugins.mjs` before packaging or Desktop acceptance.
+3. Restart Desktop after staging.
+
+## Forbidden
+
+- Do **not** edit Desktop-only trees as the primary fix: `.dsh-trial-plugins`, profile `node_modules/t4y-*`, `.desktop-build/trial-plugins`, or `win-unpacked/resources/trial-plugins`.
+- Do **not** leave Desktop ahead of the repo. If Desktop already diverged, copy Desktop → `tsy-custom-plugins` first, then resume Web-first edits.
+- Do **not** use enterprise host port `:51111` (retired). Login, Hub, release-manager, broker, overlays, and probes must use `https://jgyw.crfsdi.com.cn:51010/...` only.

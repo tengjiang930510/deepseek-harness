@@ -1,51 +1,52 @@
 {
-  "name": "t4y-mobile-cowatch",
-  "version": "0.1.2",
-  "description": "手机同看：遥控电脑 Host，不直连企业登录 / Broker / 内网大模型；含 per-host FRP Origin。",
-  "private": true,
-  "type": "module",
-  "main": "./index.js",
-  "exports": {
-    ".": "./index.js",
-    "./client": "./client.js",
-    "./package.json": "./package.json"
-  },
-  "files": [
-    "index.js",
-    "client.js",
-    "client-src",
-    "scripts/bundle-client.mjs",
-    "enter-page.js",
-    "enter-login.js",
-    "handoff.js",
-    "per-host-origin.js",
-    "cordis.patch.yml",
-    "README.md",
-    "README.zh.md"
-  ],
-  "scripts": {
-    "bundle:client": "node scripts/bundle-client.mjs",
-    "test": "node --test handoff.test.js regression.test.js"
-  },
-  "dsh": {
-    "bundle": {
-      "patch": "./cordis.patch.yml"
-    },
-    "client": {
-      "inject": [
-        "@deepseek-ai/dsh-client-ui-slots",
-        "@deepseek-ai/dsh-client-locale"
-      ],
-      "platform": "web"
-    }
-  },
-  "peerDependencies": {
-    "dsh-mobile": ">=0.8.0"
-  },
-  "peerDependenciesMeta": {
-    "dsh-mobile": {
-      "optional": true
-    }
-  },
-  "license": "MIT"
+    "name":  "t4y-mobile-cowatch",
+    "version":  "0.1.26",
+    "description":  "手机同看：遥控电脑 Host，不直连企业登录 / Broker / 内网大模型；含 per-host FRP Origin。",
+    "private":  true,
+    "type":  "module",
+    "main":  "./index.js",
+    "exports":  {
+                    ".":  "./index.js",
+                    "./client":  "./client.js",
+                    "./package.json":  "./package.json"
+                },
+    "files":  [
+                  "index.js",
+                  "client.js",
+                  "client-src",
+                  "scripts/bundle-client.mjs",
+                  "enter-page.js",
+                  "enter-login.js",
+                  "handoff.js",
+                  "per-host-origin.js",
+                  "frp-guard.js",
+                  "cordis.patch.yml",
+                  "README.md",
+                  "README.zh.md"
+              ],
+    "scripts":  {
+                    "bundle:client":  "node scripts/bundle-client.mjs",
+                    "test":  "node --test handoff.test.js regression.test.js frp-guard.test.js"
+                },
+    "dsh":  {
+                "bundle":  {
+                               "patch":  "./cordis.patch.yml"
+                           },
+                "client":  {
+                               "inject":  [
+                                              "@deepseek-ai/dsh-client-ui-slots",
+                                              "@deepseek-ai/dsh-client-locale"
+                                          ],
+                               "platform":  "web"
+                           }
+            },
+    "peerDependencies":  {
+                             "dsh-mobile":  "\u003e=0.8.0"
+                         },
+    "peerDependenciesMeta":  {
+                                 "dsh-mobile":  {
+                                                    "optional":  true
+                                                }
+                             },
+    "license":  "MIT"
 }

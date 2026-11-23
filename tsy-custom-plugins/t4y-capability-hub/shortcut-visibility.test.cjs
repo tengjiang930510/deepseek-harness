@@ -6,7 +6,7 @@ const vm = require('node:vm')
 
 function loadUi(react, win, fetch) {
   const source = fs.readFileSync(path.join(__dirname, 'client.js'), 'utf8')
-    .replace('    return module.exports\n', '    module.exports.__ui = { SkillEntry, PluginIcon }\n    return module.exports\n')
+    .replace('    return module.exports\n', '    module.exports.__ui = { SkillEntry, PluginIcon, skillsToggleOk }\n    return module.exports\n')
   let factory
   win.__ModuleLoader__ = { load: value => { factory = value.factory } }
   const localStorage = { getItem: () => null, setItem: () => {} }
@@ -83,6 +83,21 @@ test('SkillEntry disables while draft, attachments, or non-plain phase would blo
   const button = locked.children.find(node => node && node.props && node.props.type === 'button')
   assert.equal(button.props.disabled, true)
   assert.equal(button.props.title, 'shortcutDraft')
+})
+
+test('skillsToggleOk treats dismiss of an open slash panel as success', () => {
+  const { skillsToggleOk } = loadUi({
+    useState: value => [typeof value === 'function' ? value() : value, () => {}],
+    useEffect: () => () => {},
+    createElement: () => null,
+  }, {
+    location: { origin: 'http://localhost' },
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }, async () => ({ ok: true, text: async () => '{}' }))
+  assert.equal(skillsToggleOk(false, true), true)
+  assert.equal(skillsToggleOk(true, false), true)
+  assert.equal(skillsToggleOk(false, false), false)
 })
 
 test('a new icon URL does not retain the previous URL failure state', () => {

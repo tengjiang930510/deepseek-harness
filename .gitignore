@@ -47,3 +47,12 @@ worktrees/
 .agents/worktrees/
 .typert-*/
 native/system/test/bin/
+
+# Local agent / Desktop CDP scratch (do not commit)
+.tmp-vendor/
+*.cookies
+tsy-custom-plugins/scripts/_probe-*.mjs
+tsy-custom-plugins/**/scripts/_probe-*.mjs
+# One-off CDP/stream probes; keep unified-regression / enterprise-*-checklist tracked
+tsy-custom-plugins/**/scripts/cdp-*.mjs
+tsy-custom-plugins/**/scripts/probe-qwen-*.mjs

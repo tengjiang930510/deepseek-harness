@@ -357,6 +357,17 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * `toggleTrigger` closes when the slash panel was already open for `/`.
+     * That dismiss is success; only "was closed and stayed closed" is failure.
+     * @param wasOpenForSlash - menu already open under launcher `trigger:/`.
+     * @param isOpen - menu open after `toggleTrigger`.
+     * @returns whether the Skills click should clear rather than show shortcutFailed.
+     */
+    function skillsToggleOk(wasOpenForSlash, isOpen) {
+      return isOpen === true || wasOpenForSlash === true
+    }
+
+    /**
      * Composer tool-row entry: same slash panel as typing `/`, without inserting `/`.
      * Command claims are leading-only (`beginCommand`); disable while the draft,
      * attachments, or a non-plain phase would make a pick fail silently.
@@ -952,6 +963,9 @@ window.__ModuleLoader__.load({
             try {
               const controller = ctx.inputTriggers.sessionOf(actx)
               if (typeof controller.toggleTrigger !== 'function') return false
+              const slashLauncher = 'trigger:/'
+              const wasOpenForSlash = controller.launcher.getSnapshot() === slashLauncher
+                && controller.menu.getSnapshot().open === true
               controller.toggleTrigger({
                 trigger: '/',
                 query: '',
@@ -959,7 +973,7 @@ window.__ModuleLoader__.load({
                 position: position === 'inline' ? 'inline' : 'leading',
                 span,
               })
-              return controller.menu.getSnapshot().open === true
+              return skillsToggleOk(wasOpenForSlash, controller.menu.getSnapshot().open === true)
             } catch { return false }
           },
         }),

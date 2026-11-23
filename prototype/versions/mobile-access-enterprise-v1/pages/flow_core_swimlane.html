@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>职能泳道 · Desktop 移动访问与自研 App</title>
+  <style>
+    body { margin: 0; font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: #f8fafc; color: #0f172a; }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 24px; }
+    h1 { font-size: 22px; margin: 0 0 8px; }
+    .legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; color: #475569; margin-bottom: 16px; }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .sw { width: 28px; height: 14px; border-radius: 999px; border: 1px solid #94a3b8; background: #e2e8f0; }
+    .sw.d { border-radius: 4px; }
+    .sw.j { width: 16px; height: 16px; border-radius: 2px; transform: rotate(45deg); }
+    .sw.c { border-style: dashed; background: transparent; }
+    svg { width: 100%; height: auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; }
+    .note { margin-top: 16px; font-size: 14px; color: #475569; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Desktop 移动访问 · 职能泳道（浏览器 / H5）</h1>
+    <p class="note" style="margin-top:0">本地打开本页。图例：胶囊=起止 · 菱形=判断 · 矩形=处理 · 虚线框=约束。客户端为手机浏览器或未来 App 内 H5。</p>
+    <div class="legend">
+      <span><i class="sw"></i>起止</span>
+      <span><i class="sw j"></i>判断</span>
+      <span><i class="sw d"></i>处理</span>
+      <span><i class="sw c"></i>约束</span>
+    </div>
+    <svg viewBox="0 0 1120 560" xmlns="http://www.w3.org/2000/svg" aria-label="职能泳道图">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#64748b" />
+        </marker>
+      </defs>
+
+      <!-- columns -->
+      <rect x="16" y="16" width="260" height="528" fill="#f1f5f9" stroke="#cbd5e1" rx="8"/>
+      <rect x="292" y="16" width="260" height="528" fill="#f8fafc" stroke="#cbd5e1" rx="8"/>
+      <rect x="568" y="16" width="260" height="528" fill="#f1f5f9" stroke="#cbd5e1" rx="8"/>
+      <rect x="844" y="16" width="260" height="528" fill="#f8fafc" stroke="#cbd5e1" rx="8"/>
+
+      <text x="146" y="44" text-anchor="middle" font-size="14" font-weight="700" fill="#334155">员工 · 浏览器/H5</text>
+      <text x="422" y="44" text-anchor="middle" font-size="14" font-weight="700" fill="#334155">企业通道 / FRP</text>
+      <text x="698" y="44" text-anchor="middle" font-size="14" font-weight="700" fill="#334155">Desktop</text>
+      <text x="974" y="44" text-anchor="middle" font-size="14" font-weight="700" fill="#334155">企业身份 / cowatch</text>
+
+      <!-- start -->
+      <rect x="56" y="72" width="180" height="36" rx="18" fill="#e2e8f0" stroke="#64748b"/>
+      <text x="146" y="94" text-anchor="middle" font-size="12" fill="#0f172a">打开远程 Origin</text>
+
+      <!-- diamond bind -->
+      <path d="M146 140 L186 170 L146 200 L106 170 Z" fill="#e2e8f0" stroke="#64748b"/>
+      <text x="146" y="174" text-anchor="middle" font-size="11" fill="#0f172a">已绑定?</text>
+
+      <!-- bind process -->
+      <rect x="56" y="230" width="180" height="40" rx="6" fill="#fff" stroke="#64748b"/>
+      <text x="146" y="254" text-anchor="middle" font-size="12">配对链接首次绑定</text>
+
+      <!-- tunnel check diamond in FRP col -->
+      <path d="M422 140 L462 170 L422 200 L382 170 Z" fill="#e2e8f0" stroke="#64748b"/>
+      <text x="422" y="174" text-anchor="middle" font-size="11" fill="#0f172a">通道可达?</text>
+
+      <!-- desktop toggle -->
+      <rect x="608" y="72" width="180" height="36" rx="18" fill="#e2e8f0" stroke="#64748b"/>
+      <text x="698" y="94" text-anchor="middle" font-size="12">启动 Desktop</text>
+
+      <rect x="608" y="130" width="180" height="40" rx="6" fill="#fff" stroke="#64748b"/>
+      <text x="698" y="154" text-anchor="middle" font-size="12">打开「移动访问」</text>
+
+      <rect x="348" y="230" width="180" height="40" rx="6" fill="#fff" stroke="#64748b"/>
+      <text x="422" y="254" text-anchor="middle" font-size="12">frpc↔企业 frps 就绪</text>
+
+      <!-- login diamond -->
+      <path d="M974 140 L1014 170 L974 200 L934 170 Z" fill="#e2e8f0" stroke="#64748b"/>
+      <text x="974" y="174" text-anchor="middle" font-size="11" fill="#0f172a">电脑已登录?</text>
+
+      <rect x="884" y="230" width="180" height="40" rx="6" fill="#fff" stroke="#64748b"/>
+      <text x="974" y="254" text-anchor="middle" font-size="12">WaitGate 分步等待</text>
+
+      <rect x="608" y="230" width="180" height="40" rx="6" fill="#fff" stroke="#64748b"/>
+      <text x="698" y="254" text-anchor="middle" font-size="12">企业登录并选项目</text>
+
+      <!-- enter -->
+      <rect x="56" y="330" width="180" height="40" rx="6" fill="#fff" stroke="#64748b"/>
+      <text x="146" y="354" text-anchor="middle" font-size="12">进入手机简易壳 H5</text>
+
+      <rect x="884" y="330" width="180" height="40" rx="6" fill="#fff" stroke="#64748b"/>
+      <text x="974" y="354" text-anchor="middle" font-size="12">跟随会话 / 关遮罩</text>
+
+      <!-- end -->
+      <rect x="56" y="420" width="180" height="36" rx="18" fill="#e2e8f0" stroke="#64748b"/>
+      <text x="146" y="442" text-anchor="middle" font-size="12">日常遥控完成</text>
+
+      <!-- constraints -->
+      <rect x="328" y="420" width="220" height="56" rx="6" fill="none" stroke="#94a3b8" stroke-dasharray="5 4"/>
+      <text x="438" y="444" text-anchor="middle" font-size="11" fill="#475569">预置 Origin；员工不可改 Token</text>
+      <text x="438" y="462" text-anchor="middle" font-size="11" fill="#475569">本版浏览器；日后 H5 嵌 App</text>
+
+      <rect x="884" y="420" width="180" height="56" rx="6" fill="none" stroke="#94a3b8" stroke-dasharray="5 4"/>
+      <text x="974" y="444" text-anchor="middle" font-size="11" fill="#475569">手机不单独登企业号</text>
+      <text x="974" y="462" text-anchor="middle" font-size="11" fill="#475569">文案区分通道/登录</text>
+
+      <!-- paths vertical / horizontal -->
+      <path d="M146 108 V140" stroke="#64748b" fill="none" marker-end="url(#arr)"/>
+      <path d="M146 200 V230" stroke="#64748b" fill="none" marker-end="url(#arr)"/>
+      <text x="168" y="218" font-size="11" fill="#64748b">否</text>
+
+      <!-- yes bind -> tunnel: up then across -->
+      <path d="M186 170 H382" stroke="#64748b" fill="none" marker-end="url(#arr)"/>
+      <text x="270" y="162" font-size="11" fill="#64748b">是</text>
+
+      <path d="M698 108 V130" stroke="#64748b" fill="none" marker-end="url(#arr)"/>
+      <path d="M698 170 H462" stroke="#64748b" fill="none" marker-end="url(#arr)"/>
+      <path d="M422 200 V230" stroke="#64748b" fill="none" marker-end="url(#arr)"/>
+      <text x="436" y="218" font-size="11" fill="#64748b">是</text>
+
+      <!-- tunnel no -> app message via lower rail -->
+      <path d="M382 170 H320 V310 H146 V330" stroke="#64748b" fill="none" marker-end="url(#arr)"/>
+      <text x="300" y="188" font-size="11" fill="#64748b">否→tunnel_off</text>
+
+      <path d="M438 270 H934" stroke="#64748b" fill="none" marker-end="url(#arr)"/>
+      <path d="M974 200 V230" stroke="#64748b" fill="none" marker-end="url(#arr)"/>
+      <text x="990" y="218" font-size="11" fill="#64748b">否</text>
+
+      <path d="M698 270 V270" stroke="#64748b" fill="none"/>
+      <path d="M698 270 H934 V230" stroke="#64748b" fill="none" marker-end="url(#arr)"/>
+      <text x="800" y="262" font-size="11" fill="#64748b">登录后</text>
+
+      <path d="M1014 170 H1040 V310 H236 V330" stroke="#64748b" fill="none" marker-end="url(#arr)"/>
+      <text x="1050" y="188" font-size="11" fill="#64748b">是</text>
+
+      <path d="M974 270 V330" stroke="#64748b" fill="none" marker-end="url(#arr)"/>
+      <path d="M146 370 V420" stroke="#64748b" fill="none" marker-end="url(#arr)"/>
+    </svg>
+    <p class="note">
+      解读（学 Codex）：Desktop 开远程并出码；浏览器扫码/链接钉死本机；电脑「设备」统一撤销；cowatch 只处理「等电脑登录」。不做最近登录漂移。
+      对应 PRD：<code>docs/versions/mobile-access-enterprise-v1/prd.md</code>
+    </p>
+  </div>
+</body>
+</html>

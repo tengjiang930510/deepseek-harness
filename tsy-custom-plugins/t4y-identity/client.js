@@ -43,9 +43,10 @@ window.__ModuleLoader__.load({
     const LOCALE_NS = 't4y.identity'
     /**
      * Upstream enterprise API (Host config `apiBaseUrl`). Browser never calls it
-     * directly — mobile tunnels cannot rely on split-DNS / public :51111.
+     * directly — mobile tunnels cannot rely on split-DNS / public ports.
+     * Enterprise login/API default is :51010. Port :51111 is retired — never point here.
      */
-    const API_BASE_URL = 'https://jgyw.crfsdi.com.cn:51111/backendapi'
+    const API_BASE_URL = 'https://jgyw.crfsdi.com.cn:51010/backendapi'
     /** Same-origin Host proxy; PC forwards to {@link API_BASE_URL}. */
     const ENTERPRISE_PROXY_PATH = '/api/t4y-identity/enterprise-proxy'
     /** File host used when module logo/favicon come back as relative paths. */
@@ -84,6 +85,10 @@ window.__ModuleLoader__.load({
         enterpriseName: '企业名',
         username: '账号',
         password: '密码',
+        showPassword: '显示',
+        hidePassword: '隐藏',
+        showPasswordAria: '显示密码',
+        hidePasswordAria: '隐藏密码',
         accountLogin: '账户登录',
         signIn: '登录',
         logout: '退出登录',
@@ -112,6 +117,10 @@ window.__ModuleLoader__.load({
         enterpriseName: 'Enterprise',
         username: 'Username',
         password: 'Password',
+        showPassword: 'Show',
+        hidePassword: 'Hide',
+        showPasswordAria: 'Show password',
+        hidePasswordAria: 'Hide password',
         accountLogin: 'Account sign in',
         signIn: 'Sign in',
         logout: 'Sign out',
@@ -258,20 +267,25 @@ window.__ModuleLoader__.load({
             ...(options.body !== undefined ? { body: options.body } : {}),
           }),
         })
-      } catch {
-        return { ok: false, messageKey: 'networkError' }
-      }
-      if (response.status === 502) {
-        return { ok: false, messageKey: 'networkError' }
+      } catch (error) {
+        const detail = error instanceof Error && error.message ? error.message : ''
+        return {
+          ok: false,
+          messageKey: 'networkError',
+          ...(detail !== '' ? { detail } : {}),
+        }
       }
       let json
       try {
         json = await response.json()
       } catch {
-        return { ok: false, messageKey: 'networkError' }
+        return { ok: false, messageKey: 'networkError', detail: `HTTP ${response.status}` }
       }
-      if (json?.error === 'enterprise_upstream_unavailable' || json?.error === 'invalid_path') {
-        return { ok: false, messageKey: 'networkError' }
+      if (response.status === 502 || json?.error === 'enterprise_upstream_unavailable' || json?.error === 'invalid_path') {
+        const detail = typeof json?.message === 'string' && json.message !== ''
+          ? json.message
+          : (typeof json?.error === 'string' ? json.error : `HTTP ${response.status}`)
+        return { ok: false, messageKey: 'networkError', detail }
       }
       if (json?.code !== 200) {
         const msg = typeof json?.msg === 'string' && json.msg !== '' ? json.msg : null
@@ -675,26 +689,40 @@ window.__ModuleLoader__.load({
       })
     }
 
-    /** Phone enter / paired WebView — never treat as a fresh desktop identity login. */
-    function isMobileEnterMode() {
+    /**
+     * Cowatch/phone markers only — never infer enter mode from a redacted
+     * `mobile-cowatch` accessToken alone (Desktop used to poison itself that way
+     * after adopting GET /host-session).
+     */
+    function hasMobileCowatchMarkers() {
       try {
         if (window.__t4yMobileCowatch?.active === true) return true
         if (sessionStorage.getItem('t4y.mobile.cowatch') === '1') return true
         if (sessionStorage.getItem('t4y.mobile.cowatch.entered.v1') === '1') return true
         if (sessionStorage.getItem('t4y.mobile.hostReady.v1')) return true
         if (sessionStorage.getItem('t4y.mobile.switchAuth.v1')) return true
-        // Legacy localStorage seed — treat as enter mode, then prefer session-only.
         if (localStorage.getItem('t4y.mobile.switchAuth.v1')) return true
-        const raw = localStorage.getItem(SESSION_KEY)
-        if (raw) {
-          const session = JSON.parse(raw)
-          if (session && session.accessToken === 'mobile-cowatch') return true
-        }
+      } catch { /* ignore */ }
+      return false
+    }
+
+    /** Phone enter / paired WebView — never treat as a fresh desktop identity login. */
+    function isMobileEnterMode() {
+      try {
+        if (hasMobileCowatchMarkers()) return true
         const ua = typeof navigator !== 'undefined' ? (navigator.userAgent || '') : ''
         if (/Android|iPhone|iPad|iPod|Mobile|HarmonyOS|MicroMessenger|OpenHarmony/i.test(ua)) return true
         if (navigator.userAgentData && navigator.userAgentData.mobile === true) return true
       } catch { /* ignore */ }
       return false
+    }
+
+    /** Real enterprise JWT (Desktop). GET /host-session always returns the public placeholder. */
+    function isDesktopEnterpriseToken(accessToken) {
+      return typeof accessToken === 'string'
+        && accessToken !== ''
+        && accessToken !== 'mobile-cowatch'
+        && /^eyJ/.test(accessToken)
     }
 
     function readSession() {
@@ -704,6 +732,11 @@ window.__ModuleLoader__.load({
         const parsed = JSON.parse(raw)
         if (!parsed || typeof parsed.accessToken !== 'string' || sessionTenantId(parsed) === '') return null
         parsed.tenantId = sessionTenantId(parsed)
+        // Desktop must not keep a GET-redacted placeholder as a logged-in session.
+        if (parsed.accessToken === 'mobile-cowatch' && !isMobileEnterMode()) {
+          localStorage.removeItem(SESSION_KEY)
+          return null
+        }
         if (typeof parsed.expiresAt === 'number' && Date.now() >= parsed.expiresAt) {
           localStorage.removeItem(SESSION_KEY)
           return null
@@ -824,6 +857,21 @@ window.__ModuleLoader__.load({
         }
       } catch { /* fall through to network */ }
       try {
+        // Electron Desktop restores the real JWT; public GET stays redacted for phones.
+        const desktop = await fetch('/api/t4y-identity/host-session/desktop', {
+          method: 'GET',
+          credentials: 'same-origin',
+          signal: AbortSignal.timeout(5_000),
+        })
+        if (desktop.ok) {
+          const data = await desktop.json()
+          const session = data?.session
+          if (isShareableHostSession(session) && isDesktopEnterpriseToken(session.accessToken)) {
+            return session
+          }
+        }
+      } catch { /* non-Electron / missing — try public GET below (phones) */ }
+      try {
         const response = await fetch('/api/t4y-identity/host-session', {
           method: 'GET',
           credentials: 'same-origin',
@@ -831,7 +879,11 @@ window.__ModuleLoader__.load({
         })
         if (!response.ok) return null
         const data = await response.json()
-        return isShareableHostSession(data?.session) ? data.session : null
+        const session = data?.session
+        // Public GET is placeholder-only — never adopt as a Desktop JWT login.
+        if (!isShareableHostSession(session)) return null
+        if (!isDesktopEnterpriseToken(session.accessToken)) return null
+        return session
       } catch {
         return null
       }
@@ -1482,6 +1534,9 @@ window.__ModuleLoader__.load({
           }, props.children)))
     }
 
+    /** Temporary fixed enterprise for Wuhan Metro builds; field UI removed until multi-tenant returns. */
+    const FIXED_ENTERPRISE_NAME = 'znzs'
+
     function Field(props) {
       return React.createElement('label', { className: 't4y-identity-field' },
         React.createElement('span', null, props.label),
@@ -1494,6 +1549,31 @@ window.__ModuleLoader__.load({
           disabled: props.disabled,
           onChange: (event) => props.onChange(event.target.value),
         }))
+    }
+
+    function PasswordField(props) {
+      const [visible, setVisible] = React.useState(false)
+      const t = props.t
+      return React.createElement('label', { className: 't4y-identity-field' },
+        React.createElement('span', null, props.label),
+        React.createElement('div', { className: 't4y-identity-password-wrap' },
+          React.createElement('input', {
+            name: props.name,
+            type: visible ? 'text' : 'password',
+            autoComplete: props.autoComplete,
+            value: props.value,
+            disabled: props.disabled,
+            onChange: (event) => props.onChange(event.target.value),
+          }),
+          React.createElement('button', {
+            type: 'button',
+            className: 't4y-identity-password-toggle',
+            tabIndex: -1,
+            disabled: props.disabled,
+            'aria-label': visible ? t('hidePasswordAria') : t('showPasswordAria'),
+            'aria-pressed': visible ? 'true' : 'false',
+            onClick: () => setVisible((value) => !value),
+          }, visible ? t('hidePassword') : t('showPassword'))))
     }
 
     function IdentityOverlay(props) {
@@ -1513,13 +1593,12 @@ window.__ModuleLoader__.load({
       const [logoutOpen, setLogoutOpen] = React.useState(() => getOverlayUi().logoutOpen)
       const [moduleOpen, setModuleOpen] = React.useState(() => getOverlayUi().moduleOpen)
       const initialPrefs = React.useMemo(() => readPrefs(), [])
-      const [enterpriseName, setEnterpriseName] = React.useState(initialPrefs.enterpriseName)
       const [username, setUsername] = React.useState(initialPrefs.username)
       const [password, setPassword] = React.useState('')
       const [moduleId, setModuleId] = React.useState(initialPrefs.moduleId || '')
       const [error, setError] = React.useState(null)
       const [busy, setBusy] = React.useState(false)
-      const enterpriseRef = React.useRef(null)
+      const usernameRef = React.useRef(null)
 
       const closeModuleDialog = React.useCallback(() => setOverlayUi({ moduleOpen: false }), [])
       const closeLogoutDialog = React.useCallback(() => setOverlayUi({ logoutOpen: false }), [])
@@ -1749,7 +1828,6 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         if (session) return undefined
         const prefs = readPrefs()
-        setEnterpriseName(prefs.enterpriseName)
         setUsername(prefs.username)
         setModuleId(prefs.moduleId || '')
         return undefined
@@ -1813,13 +1891,14 @@ window.__ModuleLoader__.load({
         setError(null)
         const prefs = readPrefs()
         writePrefs({
-          enterpriseName: enterpriseName.trim(),
+          enterpriseName: FIXED_ENTERPRISE_NAME,
           username: username.trim(),
           moduleId: prefs.moduleId,
         })
-        const result = await loginRequest(enterpriseName.trim(), username.trim(), password)
+        const result = await loginRequest(FIXED_ENTERPRISE_NAME, username.trim(), password)
         if (!result.ok) {
-          setError(result.message || t(result.messageKey))
+          const base = result.message || t(result.messageKey)
+          setError(result.detail ? `${base}（${result.detail}）` : base)
           setBusy(false)
           return
         }
@@ -1894,26 +1973,18 @@ window.__ModuleLoader__.load({
             React.createElement('p', { className: 't4y-identity-description' }, t('loginDescription')),
             React.createElement('div', { className: 't4y-identity-body' },
               React.createElement(Field, {
-                label: t('enterpriseName'),
-                name: 'enterpriseName',
-                autoComplete: 'organization',
-                value: enterpriseName,
-                disabled: busy,
-                inputRef: enterpriseRef,
-                onChange: setEnterpriseName,
-              }),
-              React.createElement(Field, {
                 label: t('username'),
                 name: 'username',
                 autoComplete: 'username',
                 value: username,
                 disabled: busy,
+                inputRef: usernameRef,
                 onChange: setUsername,
               }),
-              React.createElement(Field, {
+              React.createElement(PasswordField, {
+                t,
                 label: t('password'),
                 name: 'password',
-                type: 'password',
                 autoComplete: 'current-password',
                 value: password,
                 disabled: busy,
@@ -1924,7 +1995,7 @@ window.__ModuleLoader__.load({
             React.createElement('button', {
               type: 'submit',
               className: 't4y-identity-btn t4y-identity-btn-primary',
-              disabled: busy || enterpriseName.trim() === '' || username.trim() === '' || password === '',
+              disabled: busy || username.trim() === '' || password === '',
             }, busy ? t('waiting') : t('signIn')))))
       }
 
@@ -2319,6 +2390,35 @@ window.__ModuleLoader__.load({
             font-size: 14px;
             line-height: 22px;
           }
+          .t4y-identity-password-wrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+          }
+          .t4y-identity-password-wrap input {
+            padding-right: 52px;
+          }
+          .t4y-identity-password-toggle {
+            position: absolute;
+            right: 6px;
+            top: 50%;
+            transform: translateY(-50%);
+            height: 28px;
+            padding: 0 8px;
+            border: 0;
+            border-radius: 6px;
+            background: transparent;
+            color: var(--dsw-alias-label-secondary, #64748b);
+            font-size: 12px;
+            font-weight: 500;
+            line-height: 1;
+            cursor: pointer;
+          }
+          .t4y-identity-password-toggle:hover:not(:disabled) {
+            color: var(--dsw-alias-label-primary, #0f172a);
+            background: var(--dsw-alias-interactive-bg-hover, rgba(15, 23, 42, 0.06));
+          }
+          .t4y-identity-password-toggle:disabled { opacity: 0.4; cursor: default; }
           .t4y-identity-field input:focus {
             outline: none;
             border-color: var(--dsw-alias-brand-primary, #4d6bfe);

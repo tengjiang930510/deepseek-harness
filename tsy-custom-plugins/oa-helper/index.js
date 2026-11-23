@@ -63,7 +63,8 @@ export function officeWorkflowTool() {
       exec.concludeTurn()
       return {
         kind: args.kind,
-        message: '已创建办公申请卡片。请停止回复并等待用户在卡片中补全、确认后提交；本轮不要再输出任何文字或调用工具。',
+        // Client commandview + design checklist match on「已创建办公申请」/「请在会话卡片中补全」。
+        message: '已创建办公申请，请在会话卡片中补全并确认。',
       }
     }
   })
@@ -231,7 +232,8 @@ export async function apply(ctx) {
         source: { kind: 'user' },
         content: [{ type: 'text', text }],
       })
-      return { kind: 'success', text: '正在分析申请内容。' }
+      // Immediate editable card via commandview; agent may still refine via office_workflow_prepare.
+      return { kind: 'success', text: '已创建办公申请，请在会话卡片中补全并确认。' }
     },
   })
 }

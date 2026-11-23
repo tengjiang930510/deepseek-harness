@@ -5,6 +5,6 @@
     - id: t4y-identity
       name: t4y-identity
       config:
-        apiBaseUrl: https://jgyw.crfsdi.com.cn:51111/backendapi
-        brokerBaseUrl: http://192.10.51.138:4010
-        newApiBaseUrl: http://192.10.51.138:4000/v1
+        apiBaseUrl: https://jgyw.crfsdi.com.cn:51010/backendapi
+        brokerBaseUrl: https://jgyw.crfsdi.com.cn:50000/whdt/proxy/t4y_key_broker
+        newApiBaseUrl: https://jgyw.crfsdi.com.cn:50000/whdt/proxy/t4y_new_api/v1
