@@ -20,6 +20,7 @@
  * `.agents/notes/implemented/architecture/2026-08-30-retain-ignorable-external-session-events.md`.
  */
 export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'action-cards/decision',
   'agent-preset/selected',
   'agent/inbox/spliced',
   'approval/asked',
@@ -83,6 +84,7 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'web/bailian-search-llm-request',
   'web/deepseek-search-llm-request',
   'working-directory/change',
+  'workspace-root/change',
   'workspace/changes',
 ])
 

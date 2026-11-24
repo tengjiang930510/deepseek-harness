@@ -9,7 +9,7 @@ const parse = (value: unknown) => z.resolve(value, Config, {})[0]
 const models = [{ id: 'harness', provider: 'fixture', model: 'fixture', cwd: '/workspace', tools: [], maxTokens: 128 }]
 
 it('enables upload after a profile replaces the entry config with only models', () => {
-  const entries = applyEntryPatches([], [
+  const { data: entries } = applyEntryPatches([], [
     { insert: [{ id: 'openai-server', name: 't4y-openai-service', config: { models, fileUpload: { enabled: false } } }] },
     { id: 'openai-server', config: { models } },
   ], message => { throw new Error(message) })
