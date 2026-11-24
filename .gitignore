@@ -1,3 +1,4 @@
+.env
 CLAUDE.local.md
 apps/desktop/.env.windows
 apps/desktop/.env.macos
