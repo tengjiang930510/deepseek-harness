@@ -23,7 +23,7 @@ function localPath(value: string, encoded: boolean): string | undefined {
  * Directories, outside-workspace inline paths, ordinary code, web links, and fenced code blocks are left untouched. Local files are retained.
  * @param text - Settled assistant Markdown, never tool traces or private reasoning.
  * @param delivery - Request-owned file component shared with the explicit delivery tool.
- * @returns Markdown whose published file references use HTTP(S) URLs.
+ * @returns Markdown with confirmed URLs and visible notices for references exceeding the file count.
  */
 export async function publishFiles(text: string, delivery: FileDelivery): Promise<string> {
   const { cwd, signal } = delivery
@@ -35,6 +35,7 @@ export async function publishFiles(text: string, delivery: FileDelivery): Promis
   }
   visit(fromMarkdown(text))
   const replacements: { start: number; end: number; value: string }[] = []
+  let definitionLimitExceeded = false
   try {
     for (const node of nodes) {
       signal.throwIfAborted()
@@ -42,21 +43,35 @@ export async function publishFiles(text: string, delivery: FileDelivery): Promis
       const value = node.type === 'inlineCode' ? node.value : node.url
       const path = localPath(value, node.type !== 'inlineCode')
       if (path === undefined || path.trim() === '') continue
-      try {
-        if (node.type === 'inlineCode' && !isWorkspacePath(await realpath(cwd), await realpath(resolve(cwd, path)))) continue
-        if ((await stat(resolve(cwd, path))).isDirectory()) continue
+      let limitExceeded = false
+      let url = node.type === 'inlineCode' ? undefined : delivery.previewUrl(path)
+      if (url === undefined) {
+        try {
+          if (node.type === 'inlineCode' && !isWorkspacePath(await realpath(cwd), await realpath(resolve(cwd, path)))) continue
+          if ((await stat(resolve(cwd, path))).isDirectory()) continue
+        }
+        catch (error) {
+          if (node.type === 'inlineCode' && error instanceof Error && 'code' in error
+            && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) continue
+          throw error
+        }
+        try {
+          url = (await delivery.deliver(path)).url
+        } catch (error) {
+          signal.throwIfAborted()
+          if (!(error instanceof FileDeliveryError) || !error.limitExceeded) throw error
+          limitExceeded = true
+        }
       }
-      catch (error) {
-        if (node.type === 'inlineCode' && error instanceof Error && 'code' in error
-          && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) continue
-        throw error
-      }
-      const { url } = await delivery.deliver(path)
       const start = node.position?.start.offset
       const end = node.position?.end.offset
       if (start === undefined || end === undefined) throw failure('A delivery reference has no Markdown position.')
       let replacement: string
-      if (node.type === 'definition') replacement = `[${node.identifier}]: <${url}>`
+      if (limitExceeded && node.type === 'definition') definitionLimitExceeded = true
+      if (limitExceeded) replacement = node.type === 'definition'
+        ? `[${node.identifier}]: #file-not-delivered "文件未交付：本轮文件数量已达上限，请下一轮单独请求。"`
+        : '（文件未交付：本轮文件数量已达上限，请下一轮单独请求。）'
+      else if (node.type === 'definition') replacement = `[${node.identifier}]: <${url}>`
       else if (node.type === 'inlineCode') replacement = `[${basename(path).replace(/[\\[\]]/gu, '\\$&')}](<${url}>)`
       else if (node.type === 'image') replacement = `![${(node.alt ?? '').replace(/[\\[\]]/gu, '\\$&')}](<${url}>)`
       else {
@@ -76,6 +91,9 @@ export async function publishFiles(text: string, delivery: FileDelivery): Promis
     }
     let result = text
     for (const change of replacements.reverse()) result = result.slice(0, change.start) + change.value + result.slice(change.end)
+    if (definitionLimitExceeded) {
+      result += '\n\n文件未交付：本轮文件数量已达上限，请下一轮单独请求。'
+    }
     return result
   } catch (error) {
     signal.throwIfAborted()

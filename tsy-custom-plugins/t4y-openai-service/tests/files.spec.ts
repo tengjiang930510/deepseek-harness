@@ -1,5 +1,5 @@
 /** File publication uses isolated files and controlled HTTP responses, without external uploads. */
-import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -95,7 +95,10 @@ it('stops on cancellation and limits the number of publications', async () => {
   controller.abort(error)
   await expect(publishFiles('[文件](a.txt)', root, config, controller.signal, () => {})).rejects.toBe(error)
   expect(fetch).not.toHaveBeenCalled()
-  await expect(publishFiles('[a](a.txt) [b](b.txt)', root, { ...config, maxFiles: 1 }, signal, () => {})).rejects.toMatchObject({ code: 'FILE_UPLOAD_FAILED' })
+  const answer = await publishFiles('[a](a.txt) [b](b.txt)', root, { ...config, maxFiles: 1 }, signal, () => {})
+  expect(answer).toContain('[a](<https://files.example.test/delivery>)')
+  expect(answer).toContain('文件未交付：本轮文件数量已达上限')
+  expect(answer).not.toContain('(b.txt)')
   expect(fetch).toHaveBeenCalledTimes(1)
 })
 
@@ -199,4 +202,53 @@ it('keeps outside-workspace original-path descriptions after a confirmed deliver
     await expect(rewriteReferences(`[下载原件](<${original}>)`, delivery)).rejects.toMatchObject({ code: 'FILE_UPLOAD_FAILED' })
     expect(fetch).toHaveBeenCalledTimes(1)
   } finally { await rm(originals, { recursive: true, force: true }) }
+})
+
+
+it('reuses uploaded images for workspace-relative preview URLs without uploading again', async () => {
+  await mkdir(join(root, 'photos'))
+  await writeFile(join(root, 'photos', 'photo 1.png'), 'example')
+  const fetch = successful()
+  await using delivery = new FileDelivery(root, config, signal)
+  const { url } = await delivery.deliver('photos/photo 1.png')
+  const text = `![Photo](/files/photos/photo%201.png) [Download](${url})`
+  expect(await rewriteReferences(text, delivery)).toBe(`![Photo](<${url}>) [Download](${url})`)
+  expect(fetch).toHaveBeenCalledTimes(1)
+})
+
+it('does not use unconfirmed preview paths to publish a file', async () => {
+  const filename = 'unpublished-preview.png'
+  await writeFile(join(root, filename), 'example')
+  const fetch = successful()
+  await using delivery = new FileDelivery(root, config, signal)
+  await expect(rewriteReferences(`![Photo](/files/${filename})`, delivery)).rejects.toMatchObject({
+    code: 'FILE_UPLOAD_FAILED',
+  })
+  expect(fetch).not.toHaveBeenCalled()
+})
+
+
+it('marks excess image and reference destinations while retaining later confirmed links', async () => {
+  await writeFile(join(root, 'a.txt'), 'example')
+  await writeFile(join(root, 'b.txt'), 'example')
+  const fetch = successful()
+  await using delivery = new FileDelivery(root, { ...config, maxFiles: 1 }, signal)
+  const { url } = await delivery.deliver('a.txt')
+  const answer = await rewriteReferences(`![额外](b.txt) [额外附件][extra] [已上传](a.txt)\n\n[extra]: b.txt`, delivery)
+  expect(answer).toContain(`[已上传](<${url}>)`)
+  expect(answer).toContain('文件未交付：本轮文件数量已达上限')
+  expect(answer).toContain('[extra]: #file-not-delivered')
+  expect(answer).not.toContain('](b.txt)')
+  expect(fetch).toHaveBeenCalledTimes(1)
+})
+
+
+it('allocates the file size plus a growth-check byte with a 50 MiB upload limit', async () => {
+  await writeFile(join(root, 'small.txt'), 'example')
+  successful()
+  const allocate = vi.spyOn(Buffer, 'alloc')
+  await using delivery = new FileDelivery(root, { ...config, maxFileBytes: 52428800 }, signal)
+  expect((await delivery.deliver('small.txt')).size).toBe(7)
+  expect(allocate).toHaveBeenCalledWith(8)
+  expect(allocate).not.toHaveBeenCalledWith(52428801)
 })

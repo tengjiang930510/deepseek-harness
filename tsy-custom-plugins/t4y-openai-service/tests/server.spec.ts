@@ -124,7 +124,7 @@ async function fixture(script: (StreamChunk[] | 'hang')[] = [text('answer')], ov
   ctx.loader.builtins.openai = Server
   const config: Config = Config({ fileUpload: { enabled: false }, ...authenticate ? { apiKeyEnv: 'TEST_SERVICE_KEY' } : {},
     models: [{ id: 'harness', provider: 'mock', model: 'model', cwd: root, tools: ['echo'], maxTokens: 128 }],
-    maxConcurrent: 4, maxBodyBytes: 8192, maxInputImageBytes: 8192, imageDownloadTimeoutMs: 15000,
+    maxConcurrent: 4, queueTimeoutMs: 10000, maxBodyBytes: 8192, maxInputImageBytes: 8192, imageDownloadTimeoutMs: 15000,
     fileDownloadOrigins: [], fileDownloadPathPrefixes: [], maxInputFileBytes: 26214400, fileDownloadTimeoutMs: 15000,
     maxOutputBytes: 8192, progressDelayMs: 1500, streamContentDelayMs: 35, requestTimeoutMs: 30000,
     maxSteps: 4, maxTotalTokens: 5000, maxBufferedBytes: 8192, ...overrides })
@@ -532,11 +532,91 @@ describe('OpenAI-compatible serving', () => {
     expect(h.ctx.agents.list()).toHaveLength(0)
   })
 
-  it('rejects excess concurrency and cancels work on unload', async () => {
+  it('serves all 20 requests with at most eight simultaneous model executions', async () => {
+    const replies = Array.from({ length: 20 }, () => text('answer'))
+    const h = await fixture(replies, { maxConcurrent: 8 })
+    const release = Promise.withResolvers<void>()
+    let active = 0
+    let peak = 0
+    h.model.beforeStream = async () => {
+      active++
+      peak = Math.max(peak, active)
+      try { await release.promise }
+      finally { active-- }
+    }
+    const responses = Promise.all(Array.from({ length: 20 }, () => h.send()))
+    try {
+      await vi.waitFor(() => expect(h.model.requests).toHaveLength(8), { timeout: 10000 })
+    } finally { release.resolve() }
+    expect((await responses).map(response => response.status)).toEqual(Array(20).fill(200))
+    expect(h.model.requests).toHaveLength(20)
+    expect(peak).toBe(8)
+  })
+
+  it('expires a queued request without opening a Session or invoking its model', async () => {
+    const h = await fixture(['hang'], { maxConcurrent: 1, queueTimeoutMs: 50 })
+    const abort = new AbortController()
+    const first = h.send({}, { signal: abort.signal }).catch(error => error)
+    try {
+      await h.model.entered.promise
+      const second = await h.send({ stream: true })
+      expect(second.status).toBe(504)
+      expect(await second.json()).toMatchObject({ error: { code: 'QUEUE_TIMEOUT' } })
+      expect(h.ctx.agents.list()).toHaveLength(1)
+      expect(h.model.requests).toHaveLength(1)
+      expect((await h.send({ model: 'missing' })).status).toBe(404)
+    } finally {
+      abort.abort()
+      await first
+    }
+  })
+
+  it('reports scheduler state and preserves the timeout error for opted-in streams', async () => {
+    const h = await fixture(['hang'], { maxConcurrent: 1, queueTimeoutMs: 50 })
+    const abort = new AbortController()
+    const first = h.send({}, { signal: abort.signal }).catch(error => error)
+    try {
+      await h.model.entered.promise
+      const response = await h.send({ stream: true }, {
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-key', 'X-DSH-Job-Status': '1' },
+      })
+      expect(response.status).toBe(200)
+      const wire = await response.text()
+      expect(wire).toContain('"dsh_job_status":"queued"')
+      expect(wire).toContain('"code":"QUEUE_TIMEOUT"')
+      expect(wire).not.toContain('"dsh_job_status":"running"')
+      expect(wire).not.toContain('[DONE]')
+      expect(h.model.requests).toHaveLength(1)
+    } finally {
+      abort.abort()
+      await first
+    }
+  })
+
+  it('reports a queued request starting on the same stream and leaves the default stream unchanged', async () => {
+    const h = await fixture([text('plain'), text('opted in')], { maxConcurrent: 1 })
+    const release = Promise.withResolvers<void>()
+    h.model.beforeStream = () => release.promise
+    const first = h.send({ stream: true })
+    let second: Response
+    try {
+      await h.model.entered.promise
+      second = await h.send({ stream: true }, {
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-key', 'X-DSH-Job-Status': '1' },
+      })
+      expect(h.model.requests).toHaveLength(1)
+    } finally { release.resolve() }
+
+    const wire = await second.text()
+    expect(wire).toMatch(/"dsh_job_status":"queued"[\s\S]*"dsh_job_status":"running"/)
+    expect(answerFragments(wire).join('')).toBe('opted in')
+    expect(await (await first).text()).not.toContain('dsh_job_status')
+  })
+
+  it('cancels work on unload', async () => {
     const h = await fixture(['hang'], { maxConcurrent: 1 })
     const first = h.send()
     await h.model.entered.promise
-    expect((await h.send()).status).toBe(429)
     const entry = [...h.ctx.loader.entries()].find(entry => entry.options.name === 'cordis:openai')
     await entry?.fiber?.dispose()
     expect((await first).status).toBe(503)
@@ -768,14 +848,15 @@ describe('explicit deliver_file tool', () => {
   it.each([false, true])('returns a confirmed tool URL and persists it without uploading again: stream=%s', async stream => {
     const upload = await startUploadFixture()
     try {
-      const h = await fixture([tool('deliver_file', 0, { path: 'report.pdf' }), text('[下载报告](report.pdf)')], { fileUpload: {
+      const h = await fixture([tool('deliver_file', 0, { path: 'report.pdf' }), text('[下载报告](report.pdf)\n\n[预览报告](/files/report.pdf)')], { fileUpload: {
         enabled: true, url: upload.url, businessKey: 'zhjl', maxFileBytes: 1024, maxFiles: 2, timeoutMs: 30000, maxResponseBytes: 1024,
       } })
       const { metadata } = await seedDeliveryFile(h.root)
       const response = await h.send({ stream, metadata })
       const body = await response.text()
       expect(response.status, body).toBe(200)
-      expect(body).toContain('https://files.example.test/delivery')
+      expect(body).toContain('[下载报告](<https://files.example.test/delivery>)')
+      expect(body).toContain('[预览报告](<https://files.example.test/delivery>)')
       expect(upload.count()).toBe(1)
       expect(JSON.stringify(h.model.requests[1]?.messages)).toContain('https://files.example.test/delivery')
       const event = h.events.find(event => event.type === 'tool/result')
@@ -787,6 +868,23 @@ describe('explicit deliver_file tool', () => {
       const recorded = parseSessionLog(persisted).find(event => event.type === 'tool/result')
       expect(JSON.stringify(recorded)).toContain('https://files.example.test/delivery')
       expect(h.ctx.agents.list()).toHaveLength(0)
+    } finally { await upload.close() }
+  })
+
+  it.each([false, true])('keeps confirmed downloads when an extra reference exceeds the count: stream=%s', async stream => {
+    const upload = await startUploadFixture()
+    try {
+      const h = await fixture([tool('deliver_file', 0, { path: 'report.pdf' }), text('[已交付](report.pdf) 额外文件：`extra.txt`')], { fileUpload: {
+        enabled: true, url: upload.url, businessKey: 'zhjl', maxFileBytes: 1024, maxFiles: 1, timeoutMs: 30000, maxResponseBytes: 1024,
+      } })
+      const { file, metadata } = await seedDeliveryFile(h.root)
+      await writeFile(join(file, '..', 'extra.txt'), 'extra')
+      const response = await h.send({ stream, metadata })
+      const body = await response.text()
+      expect(response.status, body).toBe(200)
+      expect(body).toContain('https://files.example.test/delivery')
+      expect(body).toContain('文件未交付：本轮文件数量已达上限')
+      expect(upload.count()).toBe(1)
     } finally { await upload.close() }
   })
 

@@ -40,7 +40,7 @@ async function readDelivery(path: string, config: FileUploadConfig, signal: Abor
   if (!stat.isFile() || stat.size === 0 || stat.size > config.maxFileBytes) {
     throw failure('A delivery file is empty, not a regular file, or exceeds the upload size limit.')
   }
-  const bytes = Buffer.alloc(config.maxFileBytes + 1)
+  const bytes = Buffer.alloc(stat.size + 1)
   let length = 0
   while (length < bytes.length) {
     signal.throwIfAborted()
@@ -48,7 +48,7 @@ async function readDelivery(path: string, config: FileUploadConfig, signal: Abor
     if (bytesRead === 0) break
     length += bytesRead
   }
-  if (length === 0 || length > config.maxFileBytes) throw failure('A delivery file changed or exceeds the upload size limit.')
+  if (length !== stat.size) throw failure('A delivery file changed or exceeds the upload size limit.')
   return bytes.subarray(0, length)
 }
 
@@ -90,6 +90,7 @@ export class FileDelivery implements AsyncDisposable {
   readonly signal: AbortSignal
   private readonly controller = new AbortController()
   private readonly publications = new Map<string, Promise<DeliveredFile>>()
+  private readonly previewUrls = new Map<string, string>()
   private readonly pending = new Set<Promise<DeliveredFile>>()
 
   /**
@@ -118,6 +119,15 @@ export class FileDelivery implements AsyncDisposable {
     return operation.finally(() => { this.pending.delete(operation) })
   }
 
+  /**
+   * Resolve a preview path using files already published by this request.
+   * @param path - Decoded Markdown destination beginning with `/files/`.
+   * @returns The confirmed URL if the preview names a published workspace file.
+   */
+  previewUrl(path: string): string | undefined {
+    return this.previewUrls.get(path)
+  }
+
   private async publish(path: string, signal: AbortSignal): Promise<DeliveredFile> {
     try {
       signal.throwIfAborted()
@@ -130,7 +140,7 @@ export class FileDelivery implements AsyncDisposable {
       const key = createHash('sha256').update(target).update('\0').update(bytes).digest('hex')
       let publication = this.publications.get(key)
       if (publication === undefined) {
-        if (this.publications.size >= this.config.maxFiles) throw failure('The request exceeds the configured delivery-file count.')
+        if (this.publications.size >= this.config.maxFiles) throw new FileDeliveryError('The request exceeds the configured delivery-file count.', { limitExceeded: true })
         publication = (async (): Promise<DeliveredFile> => {
           this.notice(basename(target))
           const url = await upload(target, bytes, this.config, signal)
@@ -140,6 +150,7 @@ export class FileDelivery implements AsyncDisposable {
       }
       const result = await publication
       signal.throwIfAborted()
+      this.previewUrls.set(`/files/${relative(root, target).split(sep).join('/')}`, result.url)
       return result
     } catch (error) {
       signal.throwIfAborted()
@@ -153,5 +164,6 @@ export class FileDelivery implements AsyncDisposable {
     this.controller.abort(failure('File delivery is closing; remote effects may have occurred.'))
     await Promise.allSettled(this.pending)
     this.publications.clear()
+    this.previewUrls.clear()
   }
 }

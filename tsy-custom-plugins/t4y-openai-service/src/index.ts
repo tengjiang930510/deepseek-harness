@@ -20,6 +20,7 @@ import { ConversationQueue, resolveSessionTarget } from './conversation.ts'
 import { readBody, sendFrame, sendJson, streamAnswer } from './http.ts'
 import { PythonMissingReport } from './python-missing.ts'
 import { loadPythonGuidance } from './python-guidance.ts'
+import { RequestQueue } from './request-queue.ts'
 
 /** Stable Loader plugin identity. */
 export const name = 'openai-server'
@@ -88,7 +89,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   })
   const lifetime = new AbortController()
   const pending = new Set<Promise<void>>()
-  let activeChats = 0
+  const requests = new RequestQueue(config.maxConcurrent, config.queueTimeoutMs)
   ctx.effect(() => async () => {
     lifetime.abort(new OpenAiServerError('Harness server is shutting down; effects may have occurred.', 'UNAVAILABLE', 503))
     await Promise.all(pending)
@@ -103,7 +104,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       throw new OpenAiServerError('A valid Bearer API key is required.', 'UNAUTHORIZED', 401)
     }
   }
-  const serve = async (req: IncomingMessage, res: ServerResponse, chat: boolean, atCapacity: boolean): Promise<void> => {
+  const serve = async (req: IncomingMessage, res: ServerResponse, chat: boolean): Promise<void> => {
     const requestId = randomUUID()
     res.setHeader('X-Request-ID', requestId)
     try {
@@ -118,7 +119,6 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         sendJson(res, 200, { object: 'list', data: [...models.keys()].map(id => ({ id, object: 'model', created: 0, owned_by: 'deepseek-harness' })) }, config.maxBufferedBytes)
         return
       }
-      if (atCapacity) throw new OpenAiServerError('Harness concurrent request limit reached.', 'CAPACITY', 429)
       await complete(req, res, requestId)
     } catch (error) {
       const failure = publicError(error)
@@ -135,9 +135,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   }
   const complete = async (req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> => {
     const cancelled = new AbortController()
-    const timer = setTimeout(() => {
+    const expire = (): void => {
       cancelled.abort(new OpenAiServerError('Harness request deadline exceeded; effects may have occurred.', 'TIMEOUT', 504))
-    }, config.requestTimeoutMs)
+    }
+    const startedAt = performance.now()
+    let timer = setTimeout(expire, config.requestTimeoutMs)
     const disconnect = (): void => {
       cancelled.abort(new OpenAiServerError('Client disconnected; effects may have occurred.', 'CANCELLED', 499))
     }
@@ -152,17 +154,24 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       if (route === undefined) throw new OpenAiServerError('Unknown model; query /v1/models for available identifiers.', 'MODEL_NOT_FOUND', 404)
       const target = resolveSessionTarget(route.id, request.metadata?.conversation_id, requestId)
       res.setHeader('X-DSH-Session-ID', target.id)
+      const id = `chatcmpl-${requestId}`
+      const created = Math.floor(Date.now() / 1000)
+      const chunk = (delta: object, finishReason: string | null = null) => ({ id, object: 'chat.completion.chunk', created, model: route.id,
+        choices: [{ index: 0, delta, finish_reason: finishReason }] })
+      const startStream = (): void => {
+        if (res.headersSent) return
+        res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no' })
+        sendFrame(res, chunk({ role: 'assistant' }), config.maxBufferedBytes)
+      }
+      const reportStatus = (status: 'queued' | 'running'): void => {
+        if (!request.stream || req.headers['x-dsh-job-status'] !== '1') return
+        startStream()
+        sendFrame(res, chunk({ dsh_job_status: status }), config.maxBufferedBytes)
+      }
       const execute = async (): Promise<void> => {
         await ctx.loader.await()
-        const id = `chatcmpl-${requestId}`
-        const created = Math.floor(Date.now() / 1000)
-        const chunk = (delta: object, finishReason: string | null = null) => ({ id, object: 'chat.completion.chunk', created, model: route.id,
-          choices: [{ index: 0, delta, finish_reason: finishReason }] })
-        const startStream = (): void => {
-          if (res.headersSent) return
-          res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no' })
-          sendFrame(res, chunk({ role: 'assistant' }), config.maxBufferedBytes)
-        }
+        signal.throwIfAborted()
+        reportStatus('running')
         const result = await runChat(ctx, config, route, request, signal, (text) => {
           if (!request.stream) return
           startStream()
@@ -187,8 +196,14 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
             ...usage === undefined ? {} : { usage } }, config.maxBufferedBytes)
         }
       }
-      if (target.persistent) await conversations.run(target.id, signal, execute)
-      else await execute()
+      clearTimeout(timer)
+      const remainingMs = config.requestTimeoutMs - (performance.now() - startedAt)
+      if (remainingMs <= 0) expire()
+      await requests.run(signal, async () => {
+        timer = setTimeout(expire, remainingMs)
+        if (target.persistent) await conversations.run(target.id, signal, execute)
+        else await execute()
+      }, () => reportStatus('queued'))
     } finally {
       clearTimeout(timer)
       req.off('aborted', disconnect)
@@ -197,11 +212,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   }
   for (const [path, chat] of [['/v1/models', false], ['/v1/chat/completions', true]] as const) {
     ctx.effect(() => ctx.webServer.register({ kind: 'exact', path, auth: 'anonymous', handler: (req, res) => {
-      const atCapacity = chat && activeChats >= config.maxConcurrent
-      if (chat && !atCapacity) activeChats++
-      const task = serve(req, res, chat, atCapacity)
+      const task = serve(req, res, chat)
       pending.add(task)
-      return task.finally(() => { pending.delete(task); if (chat && !atCapacity) activeChats-- })
+      return task.finally(() => { pending.delete(task) })
     } }))
   }
 }

@@ -33,7 +33,7 @@ pnpm run build
 pnpm dsh openai
 ```
 
-监听地址默认为 `127.0.0.1:34221`。`DSH_OPENAI_HOST` 和 `DSH_OPENAI_PORT` 覆盖监听地址，`DSH_OPENAI_PROVIDER` 和 `DSH_OPENAI_MODEL` 选择上游路由。公开模型别名默认为 `harness`，单次调用输出上限为 65536 Token，默认启用 `web_search` 和 `web_fetch`。对话模型使用自己的 Harness 凭据。
+监听地址默认为 `127.0.0.1:34221`。项目 `.env` 中的 `OPENAI_SERVICE_HOST` 和 `OPENAI_SERVICE_PORT` 覆盖监听地址，启动环境导出的 `DSH_OPENAI_HOST` 和 `DSH_OPENAI_PORT` 优先；`DSH_OPENAI_PROVIDER` 和 `DSH_OPENAI_MODEL` 选择上游路由。公开模型别名默认为 `harness`，单次调用输出上限为 65536 Token，默认启用 `web_search` 和 `web_fetch`。对话模型使用自己的 Harness 凭据。
 
 网页搜索使用 `deepseek-search-api` 和 `DEEPSEEK_SEARCH_API_KEY` 凭据。每台机器在项目根目录的 `.env` 配置该密钥，然后从项目根目录启动。网页解析使用内置 HTTP 提供方。
 
@@ -47,7 +47,7 @@ pnpm dsh openai
 
 用户图片支持直接返回图片字节的绝对 HTTP(S) 地址，也支持 FastGPT 上传本地图片时使用的 Base64 数据 URL。附件服务校验 PNG、JPEG、WebP 和 GIF，并保存图片引用供后续会话复用。`maxInputImageBytes` 默认限制每次请求的图片字节合计为 10 MiB，`maxBodyBytes` 默认限制含 Base64 的整个 JSON 请求体为 15 MiB。HTTP 下载每张还受 `imageDownloadTimeoutMs` 限制，默认 15 秒。系统消息与助手历史使用文本。对于描述图片、识别画面和读取可见文字，提示词要求模型直接使用收到的图片。
 
-用户消息可通过 FastGPT 的 `file_url` 内容块传入原件地址 `url` 和可选文件名 `name`。FastGPT 的 HTTP(S) 地址只要路径含有完整的 `/api/common/file/read` 路径段即可下载，主机、端口和部署前缀可不同。其他下载地址可在 `openai-server` profile 中通过 `fileDownloadOrigins` 配置完整来源，或通过 `fileDownloadPathPrefixes` 配置绝对目录地址。下载需要允许的地址直接返回 HTTP 200。下载默认每请求合计 25 MiB（`maxInputFileBytes`），每文件限时 15 秒（`fileDownloadTimeoutMs`）。附件服务保存原始字节，会话保存文件引用供后续轮次使用。路由上启用的文件工具可读取原件，并在会话工作区写入编辑后的副本。下载被拒绝或失败时，本轮在模型运行前结束。
+用户消息可通过 FastGPT 的 `file_url` 内容块传入原件地址 `url` 和可选文件名 `name`。FastGPT 的 HTTP(S) 地址只要路径含有完整的 `/api/common/file/read` 路径段即可下载，主机、端口和部署前缀可不同。其他下载地址可在 `openai-server` profile 中通过 `fileDownloadOrigins` 配置完整来源，或通过 `fileDownloadPathPrefixes` 配置绝对目录地址。下载需要允许的地址直接返回 HTTP 200。下载默认每请求合计 50 MiB（`maxInputFileBytes`），每文件限时 60 秒（`fileDownloadTimeoutMs`）。附件服务保存原始字节，会话保存文件引用供后续轮次使用。路由上启用的文件工具可读取原件，并在会话工作区写入编辑后的副本。下载被拒绝或失败时，本轮在模型运行前结束。
 
 生成参数支持 `temperature`、`stop`，以及 `max_tokens` 或 `max_completion_tokens` 之一。输出 token 限制作用于根智能体的每次对话模型调用，且不能超过路由上限。`n` 仅支持 1；`top_p`、频率惩罚与存在惩罚仅支持中性值。仅支持文本响应格式，不支持外部工具。其他字段与不支持的值返回 400，不会被忽略；`user` 仅作为客户端元数据被接收，不赋予身份或权限。
 
@@ -83,15 +83,17 @@ Python 提示要求模型优先使用符合任务要求的标准库和共享包�
 
 OpenAI 服务在使用共享解释器的 Bash 或 PowerShell 前台调用报告模块缺失后，写入 `.openai-service-workspace/python-missing.md`。调用用 `2>&1` 把异常堆栈重定向到标准输出时，服务先核实共享环境中确实缺少该顶层模块，再计入报表。表格对每个模块按全部已记录的不同会话累计计数。表中的包名供管理员核对，确认后可更新 `requirements-python.txt`。
 
-配置可限制并发、上传字节、输出字节、耗时、根智能体模型步骤、已报告 token 与响应积压。token 预算在根步骤之间检查，可能超出一次调用量；它不包含辅助调用与子智能体调用，也不是计费上限。客户端断开、超时或插件卸载会取消所属 Agent 并等待释放。Session 持久化由组合的提供方决定；每次请求结束后释放执行资源。
+聊天请求通过验证后，超出执行容量的请求按到达顺序等待 `maxConcurrent` 执行名额，默认同时执行 8 个。`queueTimeoutMs` 默认是 30 分钟，和默认 25 分钟的执行超时 `requestTimeoutMs` 分开计时。排队请求保持 HTTP 连接，断开连接会将对应请求移出队列。调用方负责限制同时提交的请求数。配置可限制上传字节、输出字节、根智能体模型步骤、已报告 token 与响应积压。token 预算在根步骤之间检查，可能超出一次调用量；它不包含辅助调用与子智能体调用，也不是计费上限。客户端断开、超时或插件卸载会取消所属 Agent 并等待释放。Session 持久化由组合的提供方决定；每次请求结束后释放执行资源。
 
-凭据无效返回 401，未知别名返回 404，并发或步骤/token 预算耗尽返回 429，请求体过大返回 413，输出超限返回 502，超时返回 504。模型或清理失败返回隐藏内部细节的 5xx 错误，并记录关联请求的服务端诊断。SSE 响应头发出后，失败使用错误帧，不发送成功标记。工具可能已经产生副作用；超时、取消和失败不会回滚这些副作用。不要自动重试有副作用的请求。
+凭据无效返回 401，未知别名返回 404，步骤/token 预算耗尽返回 429，请求体过大返回 413，输出超限返回 502，超时返回 504。排队超时在创建 Session 前返回 `QUEUE_TIMEOUT`。模型或清理失败返回隐藏内部细节的 5xx 错误，并记录关联请求的服务端诊断。SSE 响应头发出后，失败使用错误帧，不发送成功标记。工具可能已经产生副作用；超时、取消和失败不会回滚这些副作用。不要自动重试有副作用的请求。
+
+流式客户端可发送 `X-DSH-Job-Status: 1`，通过 `choices[0].delta.dsh_job_status` 接收 `queued` 和 `running` 状态。流开始后，排队超时会以 `QUEUE_TIMEOUT` 错误帧返回。
 
 ### FastGPT
 
 关闭 FastGPT 的“隐藏 AI 思考过程”选项，即可在思考面板显示执行进度。
 
-新增自定义语言模型，使其 ID 与公开别名一致，例如 `harness`。选择 OpenAI 渠道，将 `http://<server>:34221/v1` 配置为 Base URL。若客户端允许，API key 留空；否则在服务端未启用鉴权时填写占位值。启用鉴权后填写配置的服务密钥。若填写完整自定义请求地址，则使用 `http://<server>:34221/v1/chat/completions`。关闭该模型的外部函数调用、多模态输入与结构化响应格式。FastGPT 管理检索、工作流与对话历史；Harness 在每次请求内执行配置的工具。复用 Session 需要客户端转发稳定的对话标识，仅开启历史记录不会提供该标识。不要为所有聊天配置同一个固定标识。代理与客户端超时应匹配部署期限。
+新增自定义语言模型，使其 ID 与公开别名一致，例如 `harness`。选择 OpenAI 渠道，将 `http://<server>:34221/v1` 配置为 Base URL。若客户端允许，API key 留空；否则在服务端未启用鉴权时填写占位值。启用鉴权后填写配置的服务密钥。若填写完整自定义请求地址，则使用 `http://<server>:34221/v1/chat/completions`。关闭该模型的外部函数调用、多模态输入与结构化响应格式。FastGPT 管理检索、工作流与对话历史；Harness 在每次请求内执行配置的工具。复用 Session 需要客户端转发稳定的对话标识，仅开启历史记录不会提供该标识。不要为所有聊天配置同一个固定标识。设置代理和客户端超时时，应同时考虑排队和执行耗时。
 
 -----
 
@@ -100,15 +102,15 @@ OpenAI 服务在使用共享解释器的 Bash 或 PowerShell 前台调用报告�
 
 插件 Config schema 默认启用 `openai-server.fileUpload`，即使 profile 用仅含 `models` 的配置替换整个条目，上传仍会启用。它向 `https://jgyw.crfsdi.com.cn:51111/backendapi/file/anonymous-upload` 发送 multipart 字段 `businessKey=zhjl-deepseek-harness` 和 `file`，可用 `DSH_FILE_UPLOAD_URL` 覆盖接口地址。成功响应必须同时满足 HTTP 2xx、数字 `code: 200` 和 HTTP(S) `data.url`。TLS 验证保持开启，上传不会自动重试。
 
-支持图片、PDF、Office 文档、ZIP 及其他单个文件。上传文件使用唯一名称并保留原扩展名，MIME 根据扩展名确定。`src/file-delivery-config.ts` 中经过验证的默认值限制每次回复最多 8 个不同文件、每个文件 20 MiB、每次上传 30 秒、上传响应 64 KiB。可覆盖 `fileUpload: { enabled: false }` 关闭上传；部分上传配置会继承其余经过验证的默认值，显式设置 `enabled: false` 会被保留。接口地址的环境默认值在插件模块加载时读取，修改后需重启。
+支持图片、PDF、Office 文档、ZIP 及其他单个文件。上传文件使用唯一名称并保留原扩展名，MIME 根据扩展名确定。`src/file-delivery-config.ts` 中经过验证的默认值限制每次回复最多 10 个不同文件、每个文件 50 MiB、每次上传 60 秒、上传响应 64 KiB。可覆盖 `fileUpload: { enabled: false }` 关闭上传；部分上传配置会继承其余经过验证的默认值，显式设置 `enabled: false` 会被保留。接口地址的环境默认值在插件模块加载时读取，修改后需重启。
 
 启用上传后，每个 API Agent 会自动获得作用域内的 `deliver_file` 工具，独立于路由的全局工具白名单。创建文件后使用 `{"path":"report.pdf"}` 调用，工具通过正常持久化的 `tool/result` 记录返回已确认的 `name`、`url`、`size` 和 `mediaType`，模型可以据此在回答中使用真实 URL。关闭上传时不提供交付工具，系统指导要求模型使用此工具，而不是启动本地下载服务器。
 
 可复用的 `FileDelivery` 组件和 `fileDeliveryConfig` 校验器从 `t4y-openai-service/file-delivery` 导出，供 Harness profile 内的插件使用。每个请求创建一个组件，等待 `deliver(path, signal?)`，并通过 `await using` 或 `Symbol.asyncDispose` 关闭，以取消并等待已接收的工作。工具与 Markdown 适配器共享此组件，相同解析路径和字节复用一次上传；字节变化需重新上传；同一请求内不会重试未变化内容的失败上传。不同版本计入同一个文件预算。
 
-最终 Markdown 文件链接、图片目标、引用定义和行内代码路径仍作为兼容措施，调用同一组件。网页链接、代码块、目录和工作目录外的行内代码路径说明保持原样；显式交付工具的路径与 Markdown 文件目标仍须遵守工作目录限制，文件及符号链接目标必须解析到 Session 工作区内。优先使用 `deliver_file` 确认的 URL，图片预览使用 Markdown 图片。纯文本提及的文件无法可靠识别为兼容交付物，目录内容不会自动打包或上传。
+最终 Markdown 文件链接、图片目标、引用定义和行内代码路径仍作为兼容措施，调用同一组件。网页链接、代码块、目录和工作目录外的行内代码路径说明保持原样；显式交付工具的路径与 Markdown 文件目标仍须遵守工作目录限制，文件及符号链接目标必须解析到 Session 工作区内。Markdown 预览优先使用 `deliver_file` 确认的 URL。同一请求内已经交付的文件也可以通过 `/files/<工作区相对路径>` 复用确认过的 URL。纯文本提及的文件无法可靠识别为兼容交付物，目录内容不会自动打包或上传。
 
-上传期间会输出公开进度，全部引用文件确认成功后才发送最终正文。工具失败会记录 `FILE_UPLOAD_FAILED`，不返回已确认 URL；兼容转换失败通过 HTTP 错误返回此代码；此前的文件可能已上传，取消不会删除远端文件。本地原文件始终保留。显式工具交付会将 URL 保存到工具记录；兼容转换在 Session 中保留助手原始本地引用，仅在此次 HTTP 回复中替换为上传后的 URL。返回地址的保留期限和访问权限由外部文件服务负责，客户端浏览器必须能够访问它。
+上传期间会输出公开进度，文件交付处理结束后才发送最终正文。工具失败会记录 `FILE_UPLOAD_FAILED`，不返回已确认 URL；达到文件数量上限时，兼容转换保留已确认链接，将超限的本地引用替换为明确提示，请用户下一轮单独请求。其他兼容转换失败通过 HTTP 错误返回此代码；此前的文件可能已上传，取消不会删除远端文件。本地原文件始终保留。显式工具交付会将 URL 保存到工具记录；兼容转换在 Session 中保留助手原始本地引用，仅在此次 HTTP 回复中替换为上传后的 URL。返回地址的保留期限和访问权限由外部文件服务负责，客户端浏览器必须能够访问它。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
