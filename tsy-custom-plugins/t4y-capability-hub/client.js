@@ -32,7 +32,7 @@ window.__ModuleLoader__.load({
     /** Tab chrome only — not per-plugin product copy. */
     const hubCopy = {
       zh: {
-        tab: '能力插件',
+        tab: '自定义能力插件',
         intro: '开启或关闭智能助手能力插件。关闭后相关斜杠命令不再进入菜单。部分变更可能需要重启后生效。',
         commands: '命令',
         enabled: '已开启',
@@ -250,8 +250,10 @@ window.__ModuleLoader__.load({
         }
       }, 't4y capability hub: styles')
 
-      ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
-        name: 'settings.plugins.tab',
+      // A settings page of its own: the settings panel lists it by `label`, and the Plugins page shows it on this
+      // bundle's page because the loading module is this package's name. `settings.plugins.tab` no longer exists.
+      ctx.slots.inject('settings.section', () => ctx.slots.register({
+        name: 'settings.section',
         id: 't4y-capability',
         order: 20,
         label: () => tSettings('tab'),
