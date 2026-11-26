@@ -28,9 +28,10 @@
     - id: openai-server
       name: 't4y-openai-service'
       config:
+        fileDownloadOrigins: [https://jgyw.crfsdi.com.cn:59111]
         models:
           - id: harness
-            provider: !!js process.env.DSH_OPENAI_PROVIDER ?? 'deepseek-official'
-            model: !!js process.env.DSH_OPENAI_MODEL ?? 'deepseek-flash'
-            tools: [web_search, web_fetch]
+            provider: !!js process.env.DSH_OPENAI_PROVIDER ?? process.env.OPENAI_SERVICE_PROVIDER ?? 'qwen-token-plan'
+            model: !!js process.env.DSH_OPENAI_MODEL ?? process.env.OPENAI_SERVICE_MODEL ?? 'deepseek-v4.1-flash'
+            tools: [bash, web_search, web_fetch, bilibili_video_search, office_workflow_prepare, zjy_leave_submit]
             maxTokens: 65536

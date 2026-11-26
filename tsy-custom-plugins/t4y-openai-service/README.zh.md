@@ -33,9 +33,11 @@ pnpm run build
 pnpm dsh openai
 ```
 
-监听地址默认为 `127.0.0.1:34221`。项目 `.env` 中的 `OPENAI_SERVICE_HOST` 和 `OPENAI_SERVICE_PORT` 覆盖监听地址，启动环境导出的 `DSH_OPENAI_HOST` 和 `DSH_OPENAI_PORT` 优先；`DSH_OPENAI_PROVIDER` 和 `DSH_OPENAI_MODEL` 选择上游路由。公开模型别名默认为 `harness`，单次调用输出上限为 65536 Token，默认启用 `web_search` 和 `web_fetch`。对话模型使用自己的 Harness 凭据。
+监听地址默认为 `127.0.0.1:34221`。项目 `.env` 中的 `OPENAI_SERVICE_HOST` 和 `OPENAI_SERVICE_PORT` 覆盖监听地址，启动环境导出的 `DSH_OPENAI_HOST` 和 `DSH_OPENAI_PORT` 优先；`OPENAI_SERVICE_PROVIDER` 和 `OPENAI_SERVICE_MODEL` 可在项目 `.env` 中选择上游路由，启动环境导出的同名 `DSH_OPENAI_*` 变量优先。源码启动默认使用项目自定义组合包定义的 `qwen-token-plan / deepseek-v4.1-flash`，密钥从 `QWEN_TOKEN_PLAN_API_KEY` 读取。公开模型别名默认为 `harness`，单次调用输出上限为 65536 Token，默认启用 Bash、网页搜索与解析、B 站搜索、Office 工作流准备和请假提交工具。对话模型使用自己的 Harness 凭据。
 
 网页搜索使用 `deepseek-search-api` 和 `DEEPSEEK_SEARCH_API_KEY` 凭据。每台机器在项目根目录的 `.env` 配置该密钥，然后从项目根目录启动。网页解析使用内置 HTTP 提供方。
+
+新机器从项目根目录启动时自动注册自定义组合包；工作区默认使用当前项目下的 `.openai-service-workspace`，各会话使用独立子目录。原件下载允许 FastGPT 文件路径及 `https://jgyw.crfsdi.com.cn:59111` 来源。
 
 在 `$DSH_HOME/profiles/openai/cordis.patch.yml`（默认主目录为 `~/.dsh`）设置部署覆盖。修改 `openai-server` 行并明确配置 `models[].tools`。[配置源码](src/config.ts)定义全部限制与校验。本 bundle 不提供应用二进制入口，源码与构建产物均通过 `dsh` 启动。
 

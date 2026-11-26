@@ -33,9 +33,11 @@ pnpm run build
 pnpm dsh openai
 ```
 
-The listener defaults to `127.0.0.1:34221`. `OPENAI_SERVICE_HOST` and `OPENAI_SERVICE_PORT` in the project `.env` override the bind address. Exported `DSH_OPENAI_HOST` and `DSH_OPENAI_PORT` take precedence; `DSH_OPENAI_PROVIDER` and `DSH_OPENAI_MODEL` select the upstream route. The public model alias defaults to `harness`, with a per-call output ceiling of 65536 tokens and `web_search` and `web_fetch` enabled. The conversation model uses its own Harness credential.
+The listener defaults to `127.0.0.1:34221`. `OPENAI_SERVICE_HOST` and `OPENAI_SERVICE_PORT` in the project `.env` override the bind address. Exported `DSH_OPENAI_HOST` and `DSH_OPENAI_PORT` take precedence; `OPENAI_SERVICE_PROVIDER` and `OPENAI_SERVICE_MODEL` select the upstream route from the project `.env`, with exported `DSH_OPENAI_*` counterparts taking precedence. Source startup defaults to `qwen-token-plan / deepseek-v4.1-flash`, defined by the project custom bundles, with credentials from `QWEN_TOKEN_PLAN_API_KEY`. The public model alias defaults to `harness`, with a per-call output ceiling of 65536 tokens and Bash, web search and fetch, Bilibili search, Office workflow preparation, and leave submission tools enabled. The conversation model uses its own Harness credential.
 
 Web search uses `deepseek-search-api` with the `DEEPSEEK_SEARCH_API_KEY` credential. Set that key in the project-root `.env` on each machine and launch from the project root. Web fetch uses the built-in HTTP provider.
+
+Source startup from a new checkout registers the custom bundles automatically. The default workspace is the current project’s `.openai-service-workspace`, with separate Session directories. Original downloads accept FastGPT file paths and the `https://jgyw.crfsdi.com.cn:59111` origin.
 
 Set deployment overrides in `$DSH_HOME/profiles/openai/cordis.patch.yml` (default home: `~/.dsh`). Target the `openai-server` row and configure `models[].tools` explicitly. The [configuration source](src/config.ts) owns all limits and validation. This bundle adds no application binary: both source and built operation launch through `dsh`.
 

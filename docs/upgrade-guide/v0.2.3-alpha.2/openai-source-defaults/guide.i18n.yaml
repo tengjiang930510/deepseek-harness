@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.3-alpha.2/openai-source-defaults/guide.md
+/:
+  en: 408c36f0932f12fd
+  zh: 61d49b713d785722
+/openai-source-profile-defaults:
+  en: 2520d01ea9486470
+  zh: 37dfe9a2ca27f32f
+/openai-source-profile-defaults/change:
+  en: f6aaf28965e9b096
+  zh: b1dbdaa48955cecb
+/openai-source-profile-defaults/migration:
+  en: 6165f87cbe62e29f
+  zh: 81d3b530d1179f09
