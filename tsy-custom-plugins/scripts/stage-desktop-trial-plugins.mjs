@@ -21,7 +21,25 @@ const desktopRoot = path.join(repoRoot, 'apps/desktop')
 const output = path.join(desktopRoot, '.desktop-build/trial-plugins')
 const mobileFetchRoot = path.join(desktopRoot, '.desktop-build/dsh-mobile-fetch')
 const envFiles = ['.env.macos', '.env.windows'].map(file => path.join(desktopRoot, file))
-const ENV_LINE = 'DSH_DESKTOP_TRIAL_PLUGINS_DIR=.desktop-build/trial-plugins'
+const ENV_UPSERTS = {
+  DSH_DESKTOP_TRIAL_PLUGINS_DIR: '.desktop-build/trial-plugins',
+  DSH_DESKTOP_TRIAL_DEFAULTS_FILE: path.join(pluginsRoot, 'desktop-enterprise-defaults.json'),
+}
+
+/**
+ * Upsert one KEY=VALUE line without rewriting the rest of the file.
+ * @param {string} text
+ * @param {string} key
+ * @param {string} value
+ * @returns {string}
+ */
+function upsertEnvLine(text, key, value) {
+  const line = `${key}=${value}`
+  const pattern = new RegExp(`^${key}=.*$`, 'm')
+  if (pattern.test(text)) return text.replace(pattern, line)
+  const trimmed = text.replace(/\s*$/, '')
+  return `${trimmed === '' ? '' : `${trimmed}\n`}${line}\n`
+}
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'))
@@ -142,6 +160,12 @@ function ensureDshMobileSource() {
   return fs.realpathSync(installed)
 }
 
+// Shared non-secret packaging origins / APP_ID / enterprise defaults (team-wide).
+execFileSync(process.execPath, [path.join(pluginsRoot, 'scripts/ensure-desktop-package-env.mjs')], {
+  cwd: repoRoot,
+  stdio: 'inherit',
+})
+
 fs.rmSync(output, { recursive: true, force: true })
 fs.mkdirSync(output, { recursive: true })
 // Omit the development bootstrap manifest from the installer. With no manifest,
@@ -153,12 +177,14 @@ for (const plugin of T4Y_PLUGIN_NAMES) {
 stagePackage(ensureDshMobileSource(), 'dsh-mobile')
 
 for (const envFile of envFiles) {
-  const env = fs.existsSync(envFile) ? fs.readFileSync(envFile, 'utf8') : ''
-  const next = /^DSH_DESKTOP_TRIAL_PLUGINS_DIR=/m.test(env)
-    ? env.replace(/^DSH_DESKTOP_TRIAL_PLUGINS_DIR=.*$/m, ENV_LINE)
-    : `${env.replace(/\s*$/, '')}\n${ENV_LINE}\n`
-  if (next !== env) {
-    fs.writeFileSync(envFile, next)
-    console.log(`set ${ENV_LINE} in apps/desktop/${path.basename(envFile)}`)
+  let env = fs.existsSync(envFile) ? fs.readFileSync(envFile, 'utf8') : ''
+  const before = env
+  for (const [key, value] of Object.entries(ENV_UPSERTS)) {
+    env = upsertEnvLine(env, key, value)
+  }
+  if (env !== before) {
+    if (!env.endsWith('\n')) env += '\n'
+    fs.writeFileSync(envFile, env)
+    console.log(`upserted trial paths in apps/desktop/${path.basename(envFile)}`)
   }
 }

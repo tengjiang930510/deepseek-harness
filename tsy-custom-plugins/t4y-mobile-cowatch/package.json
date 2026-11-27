@@ -1,6 +1,6 @@
 {
     "name":  "t4y-mobile-cowatch",
-    "version":  "0.1.26",
+    "version":  "0.1.30",
     "description":  "手机同看：遥控电脑 Host，不直连企业登录 / Broker / 内网大模型；含 per-host FRP Origin。",
     "private":  true,
     "type":  "module",

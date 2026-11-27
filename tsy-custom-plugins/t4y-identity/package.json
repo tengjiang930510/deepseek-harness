@@ -1,6 +1,6 @@
 {
   "name": "t4y-identity",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "description": "企业后端登录门禁：RSA 登录、nickName 展示、module 切换，并驱动租户与品牌。",
   "private": true,
   "type": "module",

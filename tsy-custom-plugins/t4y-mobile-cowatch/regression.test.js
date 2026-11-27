@@ -133,7 +133,7 @@ describe('mobile-cowatch hardening regressions', () => {
     assert.match(index, /findActivePairedDevice/)
     assert.match(index, /device_revoked/)
     assert.match(index, /换浏览器请先在电脑端点/)
-    assert.match(read(join('client-src', 'desktop-access.js')), /每张码只能扫一次/)
+    assert.match(read(join('client-src', 'desktop-access.js')), /用手机扫描下方二维码/)
     assert.doesNotMatch(
       index,
       /Prefer enterprise displayName whenever Host already has a shared session/,

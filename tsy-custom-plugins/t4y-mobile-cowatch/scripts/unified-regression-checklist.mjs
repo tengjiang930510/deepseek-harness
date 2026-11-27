@@ -41,9 +41,13 @@ function adminEval(expression) {
 }
 
 async function connectCdp() {
-  const list = await (await fetch('http://127.0.0.1:9222/json/list')).json()
-  const page = list.find((p) => p.type === 'page')
-  if (!page) throw new Error('no CDP page')
+  const cdpPort = process.env.CDP_PORT || '9222'
+  const list = await (await fetch(`http://127.0.0.1:${cdpPort}/json/list`)).json()
+  const page =
+    list.find((p) => p.type === 'page' && /127\.0\.0\.1:3080|localhost:3080/.test(p.url || '')) ||
+    list.find((p) => p.type === 'page' && !/^(chrome|edge|devtools|chrome-extension):/i.test(p.url || '')) ||
+    list.find((p) => p.type === 'page')
+  if (!page) throw new Error(`no CDP page on :${cdpPort}`)
   const ws = new WebSocket(page.webSocketDebuggerUrl)
   let id = 0
   const pending = new Map()

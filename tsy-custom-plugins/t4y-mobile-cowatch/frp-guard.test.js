@@ -23,4 +23,36 @@ describe('frp-guard', () => {
     assert.doesNotMatch(guard, /spawnOwnedFrpc|renderFrpcToml|writeFile/)
     assert.match(guard, /must NEVER point frpc at setup\.json upstream/)
   })
+
+  it('enforces a single accepting Host on the shared FRP slot', () => {
+    const host = read('index.js')
+    assert.match(host, /AcceptingSlotBusyError/)
+    assert.match(host, /accepting_slot_busy/)
+    assert.match(host, /ACCEPTING_INSTANCE_ID/)
+    assert.match(host, /holderId/)
+    assert.match(host, /desktopReclaim/)
+    assert.match(host, /ACCEPTING_HOLDER_STALE_MS/)
+  })
+
+  it('soft-off does not kill frpc while another Host holds accepting', () => {
+    const guard = read('frp-guard.js')
+    assert.match(guard, /sharedAcceptingAlive/)
+    assert.match(guard, /deferred_kill_shared_holder_active/)
+    assert.match(guard, /t4y-accepting\.json/)
+  })
+
+  it('Host reconnects when guard reports needReconnect while accepting', () => {
+    const host = read('index.js')
+    assert.match(host, /needReconnect/)
+    assert.match(host, /remote\/reconnect/)
+    assert.match(host, /hostLoopbackBase/)
+  })
+
+  it('QR panel invalidates stale codes when the channel drops', () => {
+    const desktop = read('client-src/desktop-access.js')
+    assert.match(desktop, /markChannelDown/)
+    assert.match(desktop, /pairing\/close/)
+    assert.match(desktop, /用手机扫描下方二维码/)
+    assert.doesNotMatch(desktop, /本机入口/)
+  })
 })

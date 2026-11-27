@@ -35,6 +35,35 @@ export function frpcTomlPath() {
 }
 
 /**
+ * Shared across Web + Desktop Hosts on one machine.
+ * @returns {string}
+ */
+export function acceptingStatePath() {
+  return join(dshHome(), 'mobile-access', 't4y-accepting.json')
+}
+
+/** Match Host accepting heartbeat stale window. */
+const ACCEPTING_HOLDER_STALE_MS = 45_000
+
+/**
+ * True when the shared accepting file says some Host still holds the FRP slot.
+ * Soft-off on Desktop must not kill Web's frpc (same ~/.dsh/mobile-access tree).
+ * @returns {Promise<boolean>}
+ */
+export async function sharedAcceptingAlive() {
+  try {
+    const parsed = JSON.parse(await readFile(acceptingStatePath(), 'utf8'))
+    if (parsed?.accepting === false) return false
+    const heartbeatAt = typeof parsed?.heartbeatAt === 'number' && Number.isFinite(parsed.heartbeatAt)
+      ? parsed.heartbeatAt
+      : (typeof parsed?.updatedAt === 'number' && Number.isFinite(parsed.updatedAt) ? parsed.updatedAt : 0)
+    return Date.now() - heartbeatAt < ACCEPTING_HOLDER_STALE_MS
+  } catch {
+    return false
+  }
+}
+
+/**
  * @param {string} text
  * @returns {number[]}
  */
@@ -158,6 +187,18 @@ export async function ensureFrpRuntimeGuard(options) {
   }
 
   if (!accepting) {
+    // Another Host (usually Web vs Desktop) still owns the shared slot — do not kill its frpc.
+    if (await sharedAcceptingAlive()) {
+      return {
+        healthy: true,
+        repaired: false,
+        needReconnect: false,
+        accepting: false,
+        tomlPresent,
+        frpcPids: pids,
+        detail: 'deferred_kill_shared_holder_active',
+      }
+    }
     if (pids.length > 0) {
       await killPids(pids)
       repaired = true

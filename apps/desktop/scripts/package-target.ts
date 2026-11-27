@@ -389,10 +389,23 @@ async function main(): Promise<void> {
       await packagingStep(run.directory, 'windows-package', () => packageTarget(invocation, environment, run), secrets)
     }
     success = true
+    if (!invocation.prepareOnly && environment.DSH_DESKTOP_TRIAL_DEFAULTS_FILE) {
+      await packagingStep(run.directory, 'enterprise-assert', async () => {
+        const { assertEnterprisePackage } = await import(
+          join(REPOSITORY_ROOT, 'tsy-custom-plugins/scripts/assert-enterprise-package.mjs'),
+        ) as { assertEnterprisePackage: (resourcesDir?: string) => string }
+        const output = desktopArtifactOutput(desktopTargetBuildPaths(target.name), invocation)
+        const resources = target.platform === 'win32'
+          ? join(output.directory, 'win-unpacked', 'resources')
+          : output.directory
+        assertEnterprisePackage(resources)
+      }, secrets)
+    }
   } catch (error) {
     process.stderr.write(`${packagingErrorDetails(error, secrets)}\n`)
     process.stderr.write(`desktop package: failed; see ${run.directory}/events.jsonl\n`)
     process.exitCode = 1
+    success = false
   } finally {
     if (previousDirectory === undefined) delete process.env.DSH_DESKTOP_PACKAGING_RUN_DIR
     else process.env.DSH_DESKTOP_PACKAGING_RUN_DIR = previousDirectory

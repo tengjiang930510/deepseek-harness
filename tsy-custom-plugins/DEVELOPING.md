@@ -75,7 +75,7 @@ pnpm dsh plugin --profile web add ./tsy-custom-plugins/t4y-mobile-cowatch
 |---|---|
 | 安装包 `resources/trial-defaults.json` = `desktop-enterprise-defaults.json`（`credentialRef: T4Y_DESKTOP_ENTERPRISE_GATE`） | 漏设 `DSH_DESKTOP_TRIAL_DEFAULTS_FILE`，或指向空/错误文件 |
 | 安装包同时带 `resources/trial-plugins/`（含已启用的 `t4y-identity`）并完成 stage | 只 stage 了插件、没带 enterprise defaults |
-| Windows：`.env.windows` 写绝对路径指向 `tsy-custom-plugins/desktop-enterprise-defaults.json` 再 `package:desktop:win:x64:unsigned` | 跑完 `seed-desktop-trial-defaults.mjs` 后未改回企业标记，又把 defaults 换成 Qwen Key 文件却未随包带上 |
+| Windows：先跑 `ensure-desktop-package-env.mjs`（或 stage，会自动 ensure）再 `package:desktop:win:x64:unsigned` | 跑完 `seed-desktop-trial-defaults.mjs` 后未再跑 ensure，defaults 仍指向 Qwen Key 文件 |
 | mac unsigned：shell **export 绝对路径**（不读 `.env.macos`） | 只改了 `.env.macos` 却以为 mac 打包会读到 |
 | 验收企业登录：打开 `win-unpacked/DeepSeek Harness.exe` 或已安装 App | 用裸 `pnpm start:desktop` 验收门禁（**未打包进程不读 `trial-defaults.json`**，无官方 Key 时必出欢迎页） |
 
@@ -133,7 +133,15 @@ pnpm run package:desktop:mac:arm64:unsigned
 
 正式给用户用：把 `.app` 装进 `/Applications`（或 Windows 安装器），不要长期从 DMG / 临时目录直接跑。插件依赖会 seed 到用户 profile 的 `.dsh-trial-plugins/`，不绑安装盘路径。
 
-Windows unsigned：`pnpm run package:desktop:win:x64:unsigned`（先填 `apps/desktop/.env.windows`）。
+Windows unsigned（团队共用非秘密地址已写死，一条命令即可）：
+
+```sh
+node ./tsy-custom-plugins/scripts/ensure-desktop-package-env.mjs
+node ./tsy-custom-plugins/scripts/stage-desktop-trial-plugins.mjs
+pnpm run package:desktop:win:x64:unsigned
+```
+
+`ensure-desktop-package-env.mjs` 会写入/合并 `apps/desktop/.env.windows`：`APP_ID`、HTTPS 占位 origin、`npmmirror`、以及指向 `desktop-enterprise-defaults.json` 的绝对路径；**不覆盖**本机签名/COS 等密钥行。`stage` 只会 upsert `TRIAL_*` 行，不会整文件冲掉 env。打包成功后会自动跑 `assert-enterprise-package.mjs`（缺 `T4Y_DESKTOP_ENTERPRISE_GATE` 或 `trial-plugins/t4y-identity` 则失败）。
 
 Desktop CI 也可通过 `DSH_PACKAGING_CONFIG_DIR` 和 `DSH_PACKAGING_PRESET` 读取机器目录下的公开预设及独立签名密钥文件；公开预设不接受签名 PIN 或对象存储密钥。无签名或仅准备模式如何读取签名文件，以 [加载器](../apps/desktop/scripts/desktop-package-environment.mjs) 为准，密钥不得提交到仓库。
 

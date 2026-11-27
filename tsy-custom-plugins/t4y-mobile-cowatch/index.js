@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { readFile, writeFile, rename as renameFile, mkdir, access } from 'node:fs/promises'
 import http from 'node:http'
 import https from 'node:https'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { dirname, join, basename } from 'node:path'
@@ -476,9 +476,15 @@ function acceptingPath() {
 
 /** Soft-off keeps FRP briefly so phones can still load「电脑不在线」. Host guard must honor this. */
 const SOFT_OFF_FRP_GRACE_MS = 60_000
+/** Another Host's accepting heartbeat is stale after this (shared frps slot). */
+const ACCEPTING_HOLDER_STALE_MS = 45_000
 
 /** @type {number | null} */
 let frpReleaseAtMs = null
+
+/** Stable id for this Host process (Web vs Desktop share ~/.dsh accepting file). */
+const ACCEPTING_INSTANCE_ID = randomUUID()
+const ACCEPTING_HOLDER_KIND = process.versions?.electron ? 'desktop' : 'web'
 
 /**
  * @returns {boolean}
@@ -497,16 +503,52 @@ function shouldKeepFrpAlive() {
 }
 
 /**
+ * @param {unknown} parsed
+ * @returns {{ accepting: boolean, holderId: string, holderKind: string, heartbeatAt: number, frpReleaseAt: number | null }}
+ */
+function normalizeAcceptingFile(parsed) {
+  const heartbeatAt = typeof parsed?.heartbeatAt === 'number' && Number.isFinite(parsed.heartbeatAt)
+    ? parsed.heartbeatAt
+    : (typeof parsed?.updatedAt === 'number' && Number.isFinite(parsed.updatedAt) ? parsed.updatedAt : 0)
+  const releaseAt = parsed?.frpReleaseAt
+  return {
+    accepting: parsed?.accepting !== false,
+    holderId: typeof parsed?.holderId === 'string' ? parsed.holderId : '',
+    holderKind: parsed?.holderKind === 'desktop' ? 'desktop' : 'web',
+    heartbeatAt,
+    frpReleaseAt: typeof releaseAt === 'number' && Number.isFinite(releaseAt) ? releaseAt : null,
+  }
+}
+
+/**
+ * Fresh foreign holder still owns the shared FRP slot.
+ * @param {ReturnType<typeof normalizeAcceptingFile>} state
+ * @returns {boolean}
+ */
+function foreignHolderActive(state) {
+  if (!state.accepting) return false
+  if (state.holderId === '' || state.holderId === ACCEPTING_INSTANCE_ID) return false
+  return Date.now() - state.heartbeatAt < ACCEPTING_HOLDER_STALE_MS
+}
+
+/**
  * Synchronous boot load so public intercepts never race an open default.
- * Missing file → first install defaults to accepting.
+ * Missing file → first install defaults to accepting (Desktop) or yields when Desktop holds the slot (Web).
  * @returns {boolean}
  */
 function loadAcceptingSync() {
   try {
-    const parsed = JSON.parse(readFileSync(acceptingPath(), 'utf8'))
-    acceptingEngagements = parsed?.accepting !== false
-    const releaseAt = parsed?.frpReleaseAt
-    frpReleaseAtMs = typeof releaseAt === 'number' && Number.isFinite(releaseAt) ? releaseAt : null
+    const parsed = normalizeAcceptingFile(JSON.parse(readFileSync(acceptingPath(), 'utf8')))
+    if (foreignHolderActive(parsed)) {
+      // Product rule: one accepting Host per FRP account. Prefer Desktop; Web stays soft-off.
+      if (ACCEPTING_HOLDER_KIND === 'web' || parsed.holderKind === 'desktop') {
+        acceptingEngagements = false
+        frpReleaseAtMs = parsed.frpReleaseAt
+        return acceptingEngagements
+      }
+    }
+    acceptingEngagements = parsed.accepting
+    frpReleaseAtMs = parsed.frpReleaseAt
     if (acceptingEngagements) frpReleaseAtMs = null
   } catch {
     acceptingEngagements = true
@@ -520,6 +562,17 @@ function loadAcceptingSync() {
  */
 async function loadAccepting() {
   return loadAcceptingSync()
+}
+
+class AcceptingSlotBusyError extends Error {
+  /**
+   * @param {{ holderKind?: string }} [detail]
+   */
+  constructor(detail = {}) {
+    super('accepting_slot_busy')
+    this.name = 'AcceptingSlotBusyError'
+    this.holderKind = detail.holderKind === 'desktop' ? 'desktop' : 'web'
+  }
 }
 
 /**
@@ -558,28 +611,60 @@ function hostLoopbackBase(ctx) {
 
 /**
  * Persist soft-off / soft-on. When turning off, revoke paired phones so live sessions drop.
+ * Turning on fails with AcceptingSlotBusyError when another Host still holds the slot.
  * @param {boolean} accepting
- * @returns {Promise<{ accepting: boolean, revoked: number }>}
+ * @param {{ heartbeatOnly?: boolean }} [options]
+ * @returns {Promise<{ accepting: boolean, revoked: number, frpReleaseAt: number | null, holderId: string, holderKind: string }>}
  */
-async function setAccepting(accepting) {
-  acceptingEngagements = accepting === true
-  const now = Date.now()
-  frpReleaseAtMs = acceptingEngagements ? null : now + SOFT_OFF_FRP_GRACE_MS
+async function setAccepting(accepting, options = {}) {
+  const wantOn = accepting === true
   const file = acceptingPath()
+  let existing = null
+  try {
+    existing = normalizeAcceptingFile(JSON.parse(readFileSync(file, 'utf8')))
+  } catch {
+    existing = null
+  }
+  if (wantOn && existing && foreignHolderActive(existing)) {
+    // Desktop may reclaim from Web; Web must not steal from Desktop or another Web.
+    const desktopReclaim = ACCEPTING_HOLDER_KIND === 'desktop' && existing.holderKind === 'web'
+    if (!desktopReclaim) {
+      throw new AcceptingSlotBusyError({ holderKind: existing.holderKind })
+    }
+  }
+  if (options.heartbeatOnly === true && !wantOn) {
+    throw new Error('accepting_heartbeat_requires_on')
+  }
+  acceptingEngagements = wantOn
+  const now = Date.now()
+  if (!options.heartbeatOnly) {
+    frpReleaseAtMs = acceptingEngagements ? null : now + SOFT_OFF_FRP_GRACE_MS
+  } else if (acceptingEngagements) {
+    frpReleaseAtMs = null
+  }
   await mkdir(dirname(file), { recursive: true })
   const body = `${JSON.stringify({
     accepting: acceptingEngagements,
     updatedAt: now,
+    heartbeatAt: now,
+    holderId: ACCEPTING_INSTANCE_ID,
+    holderKind: ACCEPTING_HOLDER_KIND,
     frpReleaseAt: frpReleaseAtMs,
   })}\n`
   const temporary = join(dirname(file), `.t4y-accepting.${randomBytes(8).toString('hex')}.tmp`)
   await writeFile(temporary, body, { encoding: 'utf8', flag: 'wx', mode: 0o600 })
   await renameFile(temporary, file)
   let revoked = 0
-  if (!acceptingEngagements) {
+  if (!acceptingEngagements && options.heartbeatOnly !== true) {
     revoked = await revokeAllMobileDevices()
   }
-  return { accepting: acceptingEngagements, revoked, frpReleaseAt: frpReleaseAtMs }
+  return {
+    accepting: acceptingEngagements,
+    revoked,
+    frpReleaseAt: frpReleaseAtMs,
+    holderId: ACCEPTING_INSTANCE_ID,
+    holderKind: ACCEPTING_HOLDER_KIND,
+  }
 }
 
 /**
@@ -810,7 +895,7 @@ p{margin:0;color:#6b7280;font-size:.9rem;line-height:1.5}
 <body>
 <div class="card">
   <h1>配对已过期</h1>
-  <p>请在电脑端账号菜单打开「移动访问」，点「刷新二维码」后再扫。</p>
+  <p>这张码已用过、已过期，或电脑已换了新码。请到<strong>要连接的那台电脑</strong>账号菜单打开「移动访问」，点「刷新二维码」后再扫。</p>
 </div>
 </body>
 </html>`
@@ -2149,13 +2234,51 @@ export function apply(ctx) {
     }
   })
 
+  // Claim the shared accepting slot on boot when this Host is accepting.
+  if (isAccepting()) {
+    void setAccepting(true, { heartbeatOnly: true }).catch(() => {
+      // Another Host won the race — soft-off locally so we do not dual-pull frpc.
+      acceptingEngagements = false
+    })
+  }
+
   // Keep public FRP while accepting, and through soft-off grace for「电脑不在线」.
+  // When guard asks for reconnect (frpc_missing / cleared), Host starts official FrpController
+  // itself — Client auto-ensure alone is too slow / may be on a background tab.
   ctx.effect(() => {
     let busy = false
     const run = () => {
       if (busy) return
       busy = true
-      void ensureFrpRuntimeGuard({ accepting: shouldKeepFrpAlive() })
+      const heartbeat = isAccepting()
+        ? setAccepting(true, { heartbeatOnly: true }).catch((error) => {
+          if (error instanceof AcceptingSlotBusyError) acceptingEngagements = false
+        })
+        : Promise.resolve()
+      void heartbeat
+        .then(() => ensureFrpRuntimeGuard({ accepting: shouldKeepFrpAlive() }))
+        .then(async (guard) => {
+          if (!guard?.needReconnect || !isAccepting()) return
+          const base = hostLoopbackBase(ctx)
+          const headers = {
+            'content-type': 'application/json',
+            'x-dsh-mobile-web-admin': 'same-origin-json',
+          }
+          try {
+            await fetch(`${base}/api/mobile-access/remote/control`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ running: true, provider: 'frp' }),
+            })
+          } catch { /* reconnect below */ }
+          try {
+            await fetch(`${base}/api/mobile-access/remote/reconnect`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ provider: 'frp' }),
+            })
+          } catch { /* next tick */ }
+        })
         .catch(() => { /* next tick */ })
         .finally(() => { busy = false })
     }
@@ -2607,7 +2730,11 @@ export function apply(ctx) {
     async fetch(request) {
       try {
         if (request.method === 'GET') {
-          return json(200, { accepting: isAccepting() })
+          return json(200, {
+            accepting: isAccepting(),
+            holderKind: ACCEPTING_HOLDER_KIND,
+            holderId: ACCEPTING_INSTANCE_ID,
+          })
         }
         let body
         try {
@@ -2622,6 +2749,15 @@ export function apply(ctx) {
         const result = await setAccepting(body.accepting)
         return json(200, result)
       } catch (error) {
+        if (error instanceof AcceptingSlotBusyError) {
+          return json(409, {
+            error: 'accepting_slot_busy',
+            message: error.holderKind === 'desktop'
+              ? '请在 Desktop 端开启移动访问（当前槽位已被 Desktop 占用）'
+              : '另一端已开启移动访问，请先在那一端关闭后再试',
+            holderKind: error.holderKind,
+          })
+        }
         return json(500, {
           error: error instanceof Error ? error.message : 'accepting_failed',
         })

@@ -185,10 +185,10 @@
             color: #0f172a;
           }
           #t4y-mobile-access-qr-root .t4y-ma-qr-desc {
-            margin: 0 0 1rem;
+            margin: 0 0 0.85rem;
             color: #64748b;
             font-size: 0.84rem;
-            line-height: 1.5;
+            line-height: 1.45;
             text-align: left;
           }
           #t4y-mobile-access-qr-root .t4y-ma-qr-frame {
@@ -424,7 +424,14 @@
         let body = {}
         try { body = text.trim() ? JSON.parse(text) : {} } catch { body = {} }
         if (!response.ok) {
-          throw new Error(typeof body?.error === 'string' ? body.error : `HTTP ${response.status}`)
+          const err = new Error(
+            typeof body?.message === 'string' && body.message !== ''
+              ? body.message
+              : (typeof body?.error === 'string' ? body.error : `HTTP ${response.status}`),
+          )
+          err.status = response.status
+          err.code = typeof body?.error === 'string' ? body.error : undefined
+          throw err
         }
         return body
       }
@@ -537,7 +544,7 @@
             <h2 id="t4y-ma-qr-title">扫码连接本机</h2>
             <button type="button" class="t4y-ma-qr-close" data-action="close" aria-label="关闭">×</button>
           </div>
-          <p class="t4y-ma-qr-desc">用手机摄像头扫码，免登录进入当前电脑。每张码只能扫一次；换浏览器请先刷新二维码再扫。</p>
+          <p class="t4y-ma-qr-desc">用手机扫描下方二维码</p>
           <p class="t4y-ma-qr-connected" data-connected data-empty="1">暂无手机连接</p>
           <div class="t4y-ma-qr-frame">
             <div class="t4y-ma-qr-svg" data-qr data-state="loading" aria-live="polite">正在生成</div>
@@ -556,6 +563,8 @@
         let paintBusy = false
         /** @type {ReturnType<typeof window.setTimeout> | undefined} */
         let qrExpireTimer
+        /** @type {ReturnType<typeof window.setInterval> | undefined} */
+        let channelWatchTimer
         const clearQrExpireTimer = () => {
           if (qrExpireTimer !== undefined) {
             window.clearTimeout(qrExpireTimer)
@@ -572,6 +581,19 @@
             void paint()
           }, wait)
         }
+        const markChannelDown = () => {
+          const box = root.querySelector('[data-qr]')
+          const meta = root.querySelector('[data-meta]')
+          if (!(box instanceof HTMLElement)) return
+          // Stop advertising a stale QR that would hit nginx Not Found on the phone.
+          clearQrExpireTimer()
+          box.dataset.state = 'error'
+          box.textContent = '远程通道断开，当前二维码已失效。恢复后会自动刷新…'
+          if (meta instanceof HTMLElement) {
+            meta.hidden = false
+            meta.textContent = '也可手动点「刷新二维码」'
+          }
+        }
         const paint = async () => {
           if (paintBusy) return
           paintBusy = true
@@ -587,6 +609,13 @@
           meta.hidden = true
           meta.textContent = ''
           try {
+            // Invalidate any previous open pairing so old codes fail closed (配对已过期), not half-alive.
+            try {
+              await adminJson('/api/mobile-access/remote/pairing/close', {
+                method: 'POST',
+                body: '{}',
+              })
+            } catch { /* none open */ }
             // FrpController must be ready (gateway()) before pairing/open.
             try {
               const originInfo = await syncPerHostOrigin()
@@ -623,7 +652,8 @@
             }
             if (expiresAt > Date.now()) {
               meta.hidden = false
-              meta.textContent = `有效至 ${new Date(expiresAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+              const until = new Date(expiresAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+              meta.textContent = `有效至 ${until}`
               armQrExpireRefresh(expiresAt)
             } else {
               meta.hidden = true
@@ -655,6 +685,27 @@
         }
         void paintConnected()
         const connectedTimer = window.setInterval(() => { void paintConnected() }, 3_000)
+        // Drop stale QR when FRP dies (phone would otherwise see nginx Not Found); remint when healthy.
+        channelWatchTimer = window.setInterval(() => {
+          if (!document.getElementById(QR_ROOT_ID) || paintBusy) return
+          void (async () => {
+            const box = root.querySelector('[data-qr]')
+            if (!(box instanceof HTMLElement)) return
+            try {
+              const st = await adminJson('/api/mobile-access/remote/control')
+              const ok = st?.provider === 'frp' && st?.running === true && st?.state === 'ready'
+              if (!ok) {
+                if (box.dataset.state === 'ready') markChannelDown()
+                const snap = await ensureFrpTunnel({ reason: 'qr-watch' }).catch(() => null)
+                if (snap?.state === 'ready' && box.dataset.state === 'error') void paint()
+                return
+              }
+              if (box.dataset.state === 'error' && /通道断开|已失效/.test(box.textContent || '')) {
+                void paint()
+              }
+            } catch { /* next tick */ }
+          })()
+        }, 5_000)
         const onKey = (event) => {
           if (event.key === 'Escape') {
             event.preventDefault()
@@ -665,6 +716,7 @@
         qrPanelCleanup = () => {
           clearQrExpireTimer()
           window.clearInterval(connectedTimer)
+          if (channelWatchTimer !== undefined) window.clearInterval(channelWatchTimer)
           window.removeEventListener('keydown', onKey)
         }
         root.addEventListener('click', (event) => {
@@ -833,11 +885,17 @@
           }
           if (!on) closeQrPanel()
           else if (options.openQr === true) void openQrPanel()
-        } catch {
+        } catch (error) {
           writeUserOff(wantOn)
           paintMenuSwitch(switchEl, !wantOn, false)
           if (item instanceof HTMLElement) syncQrHint(item, !wantOn)
-          showRemoteToast(wantOn ? '移动访问开启失败' : '移动访问关闭失败')
+          const busy = error && typeof error === 'object' && error.code === 'accepting_slot_busy'
+          const detail = error instanceof Error && error.message ? error.message : ''
+          showRemoteToast(
+            busy && detail !== ''
+              ? detail
+              : (wantOn ? '移动访问开启失败' : '移动访问关闭失败'),
+          )
         }
       }
 

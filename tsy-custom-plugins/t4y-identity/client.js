@@ -56,6 +56,9 @@ window.__ModuleLoader__.load({
      * Enterprise login `data.expires_in` is minutes (43200 = 30 days).
      */
     const MODEL_KEY_MAX_SECONDS = 30 * 24 * 60 * 60
+    /** Cold restore must not hang forever on Broker / enterprise profile. */
+    const RESTORE_BUDGET_MS = 12_000
+    const ENTERPRISE_FETCH_TIMEOUT_MS = 8_000
 
     /**
      * Convert enterprise login `expires_in` (minutes) to Broker seconds.
@@ -100,6 +103,7 @@ window.__ModuleLoader__.load({
         encryptError: '密码加密失败，请重试。',
         infoError: '登录成功但获取用户信息失败，请重试。',
         keyError: '登录成功但创建模型访问凭据失败，请重试。',
+        restoreKeyTimeout: '登录已恢复，但模型凭据同步超时，可稍后重试对话。',
         waiting: '正在登录…',
         restoring: '正在恢复登录…',
         pickModuleTitle: '选择项目',
@@ -132,6 +136,7 @@ window.__ModuleLoader__.load({
         encryptError: 'Failed to encrypt password. Please try again.',
         infoError: 'Signed in, but failed to load profile. Please try again.',
         keyError: 'Signed in, but failed to create model access credentials. Please try again.',
+        restoreKeyTimeout: 'Session restored, but model credentials timed out. Retry chat later.',
         waiting: 'Signing in…',
         restoring: 'Restoring session…',
         pickModuleTitle: 'Choose a project',
@@ -266,6 +271,7 @@ window.__ModuleLoader__.load({
             headers,
             ...(options.body !== undefined ? { body: options.body } : {}),
           }),
+          signal: options.signal ?? AbortSignal.timeout(ENTERPRISE_FETCH_TIMEOUT_MS),
         })
       } catch (error) {
         const detail = error instanceof Error && error.message ? error.message : ''
@@ -345,6 +351,35 @@ window.__ModuleLoader__.load({
       return { 'X-T4Y-Access-Token': accessToken }
     }
 
+    /**
+     * @param {number} ms
+     * @returns {Promise<never>}
+     */
+    function rejectAfter(ms, reason) {
+      return new Promise((_, reject) => {
+        window.setTimeout(() => reject(new Error(reason)), ms)
+      })
+    }
+
+    /**
+     * Whether Host already holds a usable model key (skip Broker on restore).
+     * @returns {Promise<boolean>}
+     */
+    async function hostModelKeyPresent() {
+      try {
+        const response = await fetch('/api/t4y-identity/host-session', {
+          method: 'GET',
+          credentials: 'same-origin',
+          signal: AbortSignal.timeout(3_000),
+        })
+        if (!response.ok) return false
+        const data = await response.json()
+        return data?.modelKeyPresent === true
+      } catch {
+        return false
+      }
+    }
+
     async function issueModelKey(accessToken, expiresIn, context) {
       if (accessToken === 'mobile-cowatch') {
         return { ok: false, error: 'desktop_key_required' }
@@ -368,6 +403,7 @@ window.__ModuleLoader__.load({
               }
               : {}),
           }),
+          signal: AbortSignal.timeout(ENTERPRISE_FETCH_TIMEOUT_MS),
         })
         let data = null
         try { data = await response.json() } catch { data = null }
@@ -1755,38 +1791,68 @@ window.__ModuleLoader__.load({
             return
           }
 
-          const result = await loadProfile(existing.accessToken, existing.expiresAt, existing)
-          if (cancelled) return
-          if (!result.ok) {
-            if (fromHost) await clearHostSession()
-            await doLogout()
-            setBootstrapping(false)
-            return
-          }
-          if (!result.session.needsModulePick) {
-            const key = await issueModelKey(existing.accessToken, remainingExpiresIn(existing), {
-              tenantId: sessionTenantId(result.session),
-              moduleId: result.session.moduleId,
-              moduleName: result.session.moduleName,
-              reason: fromHost ? 'host-sync' : 'restore',
-            })
+          try {
+            await Promise.race([
+              (async () => {
+                const result = await loadProfile(existing.accessToken, existing.expiresAt, existing)
+                if (cancelled) return
+                if (!result.ok) {
+                  if (fromHost) await clearHostSession()
+                  await doLogout()
+                  return
+                }
+                if (!result.session.needsModulePick) {
+                  const localKeyFresh = typeof existing.llmApiKeyExpiresAt === 'number'
+                    && existing.llmApiKeyExpiresAt > Date.now()
+                  const hostHasKey = localKeyFresh || await hostModelKeyPresent()
+                  if (hostHasKey) {
+                    result.session.llmApiKeyExpiresAt = localKeyFresh
+                      ? existing.llmApiKeyExpiresAt
+                      : (existing.llmApiKeyExpiresAt || Date.now() + 3_600_000)
+                    result.session.keyHomeModuleId = existing.keyHomeModuleId || result.session.moduleId
+                  } else {
+                    const key = await issueModelKey(existing.accessToken, remainingExpiresIn(existing), {
+                      tenantId: sessionTenantId(result.session),
+                      moduleId: result.session.moduleId,
+                      moduleName: result.session.moduleName,
+                      reason: fromHost ? 'host-sync' : 'restore',
+                    })
+                    if (cancelled) return
+                    if (!key.ok) {
+                      if (fromHost) await clearHostSession()
+                      await doLogout()
+                      return
+                    }
+                    result.session.llmApiKeyExpiresAt = key.expiresAt
+                    result.session.keyHomeModuleId = key.homeModuleId || result.session.moduleId
+                  }
+                }
+                writeSession(result.session, fromHost ? 'host-sync' : 'restore')
+                setSession(result.session)
+                setModuleId(result.session.moduleId || '')
+                if (!result.session.needsModulePick) {
+                  await afterProjectContext(result.session, {
+                    reason: fromHost ? 'host-sync' : 'restore',
+                  })
+                }
+              })(),
+              rejectAfter(RESTORE_BUDGET_MS, 'restore_timeout'),
+            ])
+          } catch (error) {
             if (cancelled) return
-            if (!key.ok) {
+            const timedOut = error instanceof Error && error.message === 'restore_timeout'
+            // Keep a usable JWT shell open; only drop when we have nothing to show.
+            if (existing && isDesktopEnterpriseToken(existing.accessToken)) {
+              writeSession(existing, fromHost ? 'host-sync' : 'restore', { skipHostPush: true })
+              setSession(existing)
+              setModuleId(existing.moduleId || '')
+              emitBrand(existing)
+              emitTenant(existing, fromHost ? 'host-sync' : 'restore')
+              if (timedOut) setError(t('restoreKeyTimeout'))
+            } else {
               if (fromHost) await clearHostSession()
               await doLogout()
-              setBootstrapping(false)
-              return
             }
-            result.session.llmApiKeyExpiresAt = key.expiresAt
-            result.session.keyHomeModuleId = key.homeModuleId || result.session.moduleId
-          }
-          writeSession(result.session, fromHost ? 'host-sync' : 'restore')
-          setSession(result.session)
-          setModuleId(result.session.moduleId || '')
-          if (!result.session.needsModulePick) {
-            await afterProjectContext(result.session, {
-              reason: fromHost ? 'host-sync' : 'restore',
-            })
           }
           if (cancelled) return
           setBootstrapping(false)
